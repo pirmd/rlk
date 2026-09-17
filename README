@@ -1,0 +1,79 @@
+RLK
+---
+
+Minimal C99 grid library for roguelikes and 2D grid-based games. A companion
+to [PXL](https://github.com/pirmd/pxl): RLK owns the game grid (cells, tiles,
+viewports/cameras); PXL owns the pixels. RLK itself is graphics-backend
+agnostic and has no rendering dependency.
+
+Features:
+  - Grid: 2D array of tile cells with bounds-safe get/set, fill, fill_rect
+  - View: a clamped camera/window onto a grid (origin + size in cells),
+          with center/move helpers and cell-to-grid mapping
+  - Backend agnostic: rendering is left to the user / a companion lib
+  - Minimal C99, header-friendly public API, strict-warning clean
+  - Unit tests + a PXL-backed demo
+
+Build:
+  make          # Build librlk.a
+  make lint     # Static analysis with strict warnings (-Werror)
+  make test     # Run unit tests
+  make demo     # Build demos (requires PXL, see below)
+  make clean    # Remove build artifacts
+
+Build configuration:
+  Main configuration is defined in Makefile.inc.
+  Copy 'config.mk.example' to 'config.mk' to override CFLAGS or the PXL
+  location used by the demo.
+
+PXL for the demo:
+  The demo links against PXL, RLK's companion graphics library. Either place
+  a pxl checkout at ../pxl (the default) or set PXL_DIR in config.mk:
+
+    cp config.mk.example config.mk
+    # PXL_DIR = /path/to/pxl
+    # PXL_BACKEND = sdl    # x11 (default) or sdl
+
+  Then build pxl (see the pxl README), and from rlk:
+
+    make demo
+
+Quick start:
+    /* Build and show a grid through a PXL-backed view */
+    rlk_grid_t map;
+    rlk_grid_init(&map, 40, 30);
+    rlk_grid_fill(&map, TILE_FLOOR);
+    rlk_grid_fill_rect(&map, 0, 0, 40, 1, TILE_WALL);
+
+    rlk_view_t view;
+    rlk_view_init(&view, &map, 0, 0, 32, 28);
+    rlk_view_center(&view, 20, 15);
+
+    /* In your render loop: */
+    for (int vy = 0; vy < view.vh; ++vy)
+      for (int vx = 0; vx < view.vw; ++vx) {
+        rlk_tile_t t = rlk_view_get(&view, vx, vy);
+        /* ...draw a TILE_PX square for t with your renderer (e.g. PXL)... */
+      }
+
+    rlk_grid_deinit(&map);
+
+  See demo/demo_grid.c for a complete PXL-backed example.
+
+Demos:
+  - demo_grid.c - Renders an rlk grid with PXL: a small dungeon, a panning
+                  view, arrow-key camera, ESC to quit.
+
+Architecture:
+  Core:
+    err.h   - Error codes
+    grid.h  - Grid: 2D tile array (get/set/fill/fill_rect), bounds-safe
+    view.h  - View: clamped camera window onto a grid (map/center/move)
+  rlk.h - umbrella header that includes all public headers.
+
+Testing:
+  Framework: test/test.h (minimalist assert-based testing).
+  Run tests: make test.
+
+License:
+  MIT. See LICENSE.

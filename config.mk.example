@@ -1,0 +1,16 @@
+# rlk user config - copy this file to config.mk and edit as needed.
+#
+#   cp config.mk.example config.mk
+#
+# PXL location (path to a pxl checkout). rlk is a companion to pxl; the demo
+# links against it. Default is the sibling checkout ../pxl.
+#PXL_DIR = ../pxl
+#
+# PXL backend to build the demo against: x11 (default) or sdl.
+#PXL_BACKEND = sdl
+#
+# Release build: optimizations + assertions disabled.
+# NOTE: these flags REPLACE the default CFLAGS (defined in Makefile).
+# RLK_CFLAGS are always appended afterwards.
+#CFLAGS = -O2 -DNDEBUG -std=c99 -Wall -Wextra
+#CC = clang
