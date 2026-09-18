@@ -8,6 +8,7 @@
  * rlk never includes pxl.h. The demo/ target bridges rlk to pxl.
  */
 #include "rl/err.h"
+#include "rl/math.h"
 #include "rl/rng.h"
 #include "rl/noise.h"
 #include "rl/world/tilemap.h"

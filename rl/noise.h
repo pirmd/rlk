@@ -4,6 +4,8 @@
 #include <assert.h>
 #include <stdint.h>
 
+#include "math.h"
+
 /*
  * Deterministic, allocation-free value noise.
  *
@@ -55,12 +57,10 @@ rlk_noise_lerp(float a, float b, float t) {
 static inline float
 rlk_noise_value(const rlk_noise_t *n, float x, float y) {
     assert(n);
-    int32_t x0 = (int32_t)x;
-    int32_t y0 = (int32_t)y;
+    int32_t x0 = (int32_t)rlk_floorf(x);
+    int32_t y0 = (int32_t)rlk_floorf(y);
     float fx = x - (float)x0;
     float fy = y - (float)y0;
-    if (fx < 0.0f) fx += 1.0f, x0 -= 1;   /* floor for negatives */
-    if (fy < 0.0f) fy += 1.0f, y0 -= 1;
 
     float v00 = rlk_noise_lattice(n, x0,     y0);
     float v10 = rlk_noise_lattice(n, x0 + 1, y0);
