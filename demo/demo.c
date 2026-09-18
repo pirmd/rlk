@@ -151,7 +151,7 @@ static void demo_draw(DemoState *d) {
     snprintf(buf, sizeof(buf), "rlk demo | seed: 0x%016llX | region: (%d,%d)",
              (unsigned long long)d->seed, d->region_x, d->region_y);
     pxl_draw_text(d->ren, 10, 10, buf, (pxl_color_t){255,255,255,255});
-    snprintf(buf, sizeof(buf), "WASD/Arrows: pan  |  R: regenerate  |  Q/ESC: quit");
+    snprintf(buf, sizeof(buf), "HJKL/Arrows: pan  |  R: regenerate  |  Q/ESC: quit");
     pxl_draw_text(d->ren, 10, 30, buf, (pxl_color_t){200,200,200,255});
 }
 
@@ -177,19 +177,19 @@ static void demo_handle_input(DemoState *d) {
                 d->seed = demo_rand_seed();
                 demo_generate_region(d);
                 break;
-            case PXL_KEY_w:
+            case PXL_KEY_k:
             case PXL_KEY_UP:
                 d->cam_y -= 8.0f;
                 break;
-            case PXL_KEY_s:
+            case PXL_KEY_j:
             case PXL_KEY_DOWN:
                 d->cam_y += 8.0f;
                 break;
-            case PXL_KEY_a:
+            case PXL_KEY_h:
             case PXL_KEY_LEFT:
                 d->cam_x -= 8.0f;
                 break;
-            case PXL_KEY_d:
+            case PXL_KEY_l:
             case PXL_KEY_RIGHT:
                 d->cam_x += 8.0f;
                 break;
