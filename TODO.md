@@ -6,7 +6,7 @@ Current status updates as work progresses.
 ## Status
 
 - [x] Design documents (`docs/`) — foundation laid on `phase/0-socle-deterministe`.
-- [~] Phase 0 — Socle déterministe (core modules + tests done; region-gen demo pending).
+- [x] Phase 0 — Socle déterministe (modules + region gen + tests done; pxl demo pending on phase/0b).
 - [ ] Phase 1 — RegionSaveState.
 - [ ] Phase 2 — Densité + scatter.
 - [ ] Phase 3 — ECS + entity_grid.
@@ -27,7 +27,7 @@ See [`docs/ROADMAP.md`](docs/ROADMAP.md) for scope and verification per phase.
       density field).
 - [x] `Tilemap` (`rl/world/tilemap.h`): `tilemap_required_size` + `tilemap_init`
       (Pattern A, buffer provided by caller). `Tile` struct + `occ_mask`.
-- [ ] Region generation from seed; bit-identical reproducibility test. (Phase 2 territory)
+- [x] Region generation from seed; bit-identical reproducibility test.
 - [x] `rlk_err_t` error codes (`rl/err.h`).
 - [x] Build skeleton: `make` (-> test), `make lint`, `make test` (headless),
       `make demo` (pxl, opt-in, degrades gracefully if missing).

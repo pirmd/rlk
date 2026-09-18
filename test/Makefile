@@ -7,7 +7,7 @@ CC     ?= cc
 CFLAGS ?= -O0 -g -std=c99 -Wall -Wextra
 CFLAGS += -I$(RLK_DIR) -I.
 
-TST = test_rng test_noise test_tilemap
+TST = test_rng test_noise test_tilemap test_region
 
 all: test
 
@@ -25,6 +25,9 @@ test_noise: test_noise.c test.h $(RLK_DIR)/rlk.h
 
 test_tilemap: test_tilemap.c test.h $(RLK_DIR)/rlk.h
 	$(CC) $(CFLAGS) test_tilemap.c -o test_tilemap
+
+test_region: test_region.c test.h $(RLK_DIR)/rlk.h
+	$(CC) $(CFLAGS) test_region.c -o test_region
 
 clean:
 	@rm -f $(TST)

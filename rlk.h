@@ -11,5 +11,6 @@
 #include "rl/rng.h"
 #include "rl/noise.h"
 #include "rl/world/tilemap.h"
+#include "rl/gen/region.h"
 
 #endif /* RLK_H */

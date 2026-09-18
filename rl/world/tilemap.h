@@ -60,6 +60,12 @@ rlk_tilemap_required_size(int32_t width, int32_t height) {
     return cells * sizeof(rlk_tilecell_t) + mask_bytes;
 }
 
+/* Compile-time buffer size for a fixed-size stack/static tilemap buffer.
+   Suitable for `unsigned char buf[RLK_TM_BUF_SIZE(W, H)];`. */
+#define RLK_TM_BUF_SIZE(width, height) \
+    ((size_t)(width) * (size_t)(height) * sizeof(rlk_tilecell_t) \
+     + (((size_t)(width) * (size_t)(height) + 7u) / 8u))
+
 /*
  * Initialize a tilemap over a caller-provided buffer. The buffer must be at
  * least rlk_tilemap_required_size(width, height) bytes. Fails RLK_E_BUFSIZE on
