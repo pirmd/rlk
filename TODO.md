@@ -7,7 +7,7 @@ Current status updates as work progresses.
 
 - [x] Design documents (`docs/`) — foundation laid on `phase/0-socle-deterministe`.
 - [x] Phase 0 — Socle déterministe (modules + region gen + tests done).
-- [x] Phase 0b — Pont pxl (démo Tilemap).
+- [x] Phase 0b — Pont pxl (démo Tilemap) + module view (caméra clampée).
 - [ ] Phase 1 — RegionSaveState.
 - [ ] Phase 2 — Densité + scatter.
 - [ ] Phase 3 — ECS + entity_grid.
@@ -45,6 +45,11 @@ Lives alongside Phase 0; first honest visualization.
 - [x] Reproducibility check visually (reload seed → identical image).
 - [x] `demo/Makefile`: opt-in, detects pxl, degrades gracefully; strict
       `lint` target validates demo syntax-only when pxl headers present.
+- [x] `rl/world/view.h`: clamped camera onto a Tilemap (no allocation). Adopted
+      from PR #1's view module, adapted to the buffer-provided Tilemap. Demo
+      now pans a large map through an rlk_view instead of regenerating each
+      frame.
+- [x] `test/test_view.c`: init/clamp/oversize/map/center/move tests.
 
 ## Phase 1 — RegionSaveState  `phase/1-region-savestate`
 

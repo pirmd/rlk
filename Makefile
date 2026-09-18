@@ -13,7 +13,7 @@ CFLAGS_LINT += -Wpedantic -Wshadow -Wvla
 CFLAGS_LINT += -Wwrite-strings -Wold-style-definition
 CFLAGS_LINT += -Wno-unused-function -Wconversion
 
-HDR = rlk.h rl/err.h rl/rng.h rl/noise.h rl/world/tilemap.h rl/gen/region.h
+HDR = rlk.h rl/err.h rl/rng.h rl/noise.h rl/world/tilemap.h rl/world/view.h rl/gen/region.h
 
 all: test
 

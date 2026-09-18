@@ -136,6 +136,16 @@ density field as a heatmap + Poisson-disk points + `occ_mask` overlay
 (Phase 2); draw growth stages and trigger harvest on click; use pxl's
 `stepper.time_scale` to fast-forward regrowth/respawn timers (Phase 5/6).
 
+### Camera: `rl/world/view.h`
+
+A clamped view (camera/window) onto a `Tilemap`, with `center`/`move` and
+cell-to-tilemap mapping. It owns nothing and allocates nothing — fully
+compatible with the allocation convention. The concept was adopted from PR
+#1's `view` module, adapted to the buffer-provided `Tilemap` (PR #1's
+`grid` used `calloc`/`free` internally, which violates the convention and was
+*not* carried over). The Phase 0b demo pans a large generated map through an
+`rlk_view` rather than regenerating each frame.
+
 ### Honesty rule for the demo
 
 A demo that regenerates from the seed **lies** once mutations exist: it

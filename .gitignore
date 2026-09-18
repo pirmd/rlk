@@ -7,6 +7,7 @@ test/test_rng
 test/test_noise
 test/test_tilemap
 test/test_region
+test/test_view
 
 # Demo binaries
 demo/demo_tilemap
