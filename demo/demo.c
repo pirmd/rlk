@@ -62,6 +62,7 @@ typedef struct {
     pxl_renderer_t *ren;
     int             quit;
     int             show_grid;      /* toggle grid overlay */
+    float           zoom;           /* render scale, 1.0 = 100% */
 } DemoState;
 
 static DemoState g;
@@ -140,22 +141,23 @@ static void demo_draw(DemoState *d) {
                 col.b = (uint8_t)(col.b * 0.7f);
             }
             
+            float z = d->zoom;
             pxl_draw_rect(d->ren,
-                (float)(x * TILE_SZ - d->cam_x),
-                (float)(y * TILE_SZ - d->cam_y),
-                (float)TILE_SZ, (float)TILE_SZ, col);
+                (x * TILE_SZ - d->cam_x) * z,
+                (y * TILE_SZ - d->cam_y) * z,
+                TILE_SZ * z, TILE_SZ * z, col);
             
             /* Draw grid lines (optional) */
             if (d->show_grid) {
                 pxl_color_t grid_col = {80, 80, 80, 180};
                 /* Vertical line (right edge) */
                 pxl_draw_rect(d->ren,
-                    (float)((x+1) * TILE_SZ - d->cam_x), (float)(y * TILE_SZ - d->cam_y),
-                    1.0f, (float)TILE_SZ, grid_col);
+                    ((x+1) * TILE_SZ - d->cam_x) * z, (y * TILE_SZ - d->cam_y) * z,
+                    1.0f * z, TILE_SZ * z, grid_col);
                 /* Horizontal line (bottom edge) */
                 pxl_draw_rect(d->ren,
-                    (float)(x * TILE_SZ - d->cam_x), (float)((y+1) * TILE_SZ - d->cam_y),
-                    (float)TILE_SZ, 1.0f, grid_col);
+                    (x * TILE_SZ - d->cam_x) * z, ((y+1) * TILE_SZ - d->cam_y) * z,
+                    TILE_SZ * z, 1.0f * z, grid_col);
             }
         }
     }
@@ -165,7 +167,7 @@ static void demo_draw(DemoState *d) {
     snprintf(buf, sizeof(buf), "rlk demo | seed: 0x%016llX | region: (%d,%d)",
              (unsigned long long)d->seed, d->region_x, d->region_y);
     pxl_draw_text(d->ren, 10, 10, buf, (pxl_color_t){255,255,255,255});
-    snprintf(buf, sizeof(buf), "HJKL/Arrows: pan  |  G: grid  |  R: regen  |  Q/ESC: quit");
+    snprintf(buf, sizeof(buf), "HJKL/Arrows: pan  |  G: grid  |  +/-: zoom  |  R: regen  |  Q/ESC: quit");
     pxl_draw_text(d->ren, 10, 30, buf, (pxl_color_t){200,200,200,255});
 }
 
@@ -180,6 +182,13 @@ static void demo_handle_input(DemoState *d) {
         switch (ev.type) {
         case PXL_EVENT_QUIT:
             d->quit = 1;
+            break;
+        case PXL_EVENT_MOUSE_WHEEL:
+            if (ev.wheel.y > 0) {
+                d->zoom = fminf(d->zoom * 1.1f, 4.0f);
+            } else if (ev.wheel.y < 0) {
+                d->zoom = fmaxf(d->zoom / 1.1f, 0.25f);
+            }
             break;
         case PXL_EVENT_KEY_DOWN:
             switch (ev.key.keysym) {
@@ -210,6 +219,12 @@ static void demo_handle_input(DemoState *d) {
             case PXL_KEY_g:
                 d->show_grid = !d->show_grid;
                 break;  /* toggle grid */
+            case PXL_KEY_PLUS:
+                d->zoom = fminf(d->zoom * 1.1f, 4.0f);
+                break;
+            case PXL_KEY_MINUS:
+                d->zoom = fmaxf(d->zoom / 1.1f, 0.25f);
+                break;
             default:
                 break;
             }
@@ -255,6 +270,7 @@ int main(void) {
     g.cam_y     = 0.0f;
     g.quit      = 0;
     g.show_grid = 0;  /* grid off by default */
+    g.zoom      = 1.0f; /* default scale */
     
     demo_generate_region(&g);
     
