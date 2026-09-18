@@ -9,14 +9,17 @@
  * Minimal, self-contained demo that:
  * 1. Generates a deterministic rlk region (tilemap + occ_mask)
  * 2. Renders it with pxl (SDL2) using a simple color palette
- * 3. Allows panning with arrow keys / WASD
- * 4. Shows the region seed and coordinates
+ * 3. Allows panning with arrow keys / HJKL
+ * 4. Supports both 2D and isometric views
  * 
  * Build: make -C demo  (requires pxl and SDL2)
  * Run:   ./demo_region
  * 
  * Controls:
- *   WASD / Arrow keys — pan the camera
+ *   HJKL / Arrow keys — pan the camera
+ *   G                 — toggle grid overlay
+ *   +/- / Mouse wheel — zoom in/out
+ *   I                 — toggle isometric view
  *   R                 — regenerate with a new random seed
  *   Q / ESC          — quit
  * ============================================================================
@@ -63,9 +66,28 @@ typedef struct {
     int             quit;
     int             show_grid;      /* toggle grid overlay */
     float           zoom;           /* render scale, 1.0 = 100% */
+    int             isometric;      /* 0 = 2D, 1 = iso */
 } DemoState;
 
 static DemoState g;
+
+/* ---------------------------------------------------------------------------
+ * Convert tile coordinates to screen coordinates
+ * ---------------------------------------------------------------------------
+ */
+
+static void demo_tile_to_screen(DemoState *d, int32_t x, int32_t y, float *sx, float *sy) {
+    float z = d->zoom;
+    if (!d->isometric) {
+        *sx = (x * (float)TILE_SZ - d->cam_x) * z;
+        *sy = (y * (float)TILE_SZ - d->cam_y) * z;
+        return;
+    }
+    /* Isometric: diamond projection with 0.5 height factor */
+    float iso_scale = (TILE_SZ / 2.0f) * z;
+    *sx = (x - y) * iso_scale - d->cam_x * z;
+    *sy = (x + y) * iso_scale * 0.5f - d->cam_y * z;
+}
 
 /* ---------------------------------------------------------------------------
  * Generate a new region
@@ -114,11 +136,17 @@ static uint64_t demo_rand_seed(void) {
 static void demo_draw(DemoState *d) {
     pxl_clear(d->ren, (pxl_color_t){ 20, 20, 20, 255 });
     
-    /* Compute visible tile range */
-    int32_t tx0 = (int32_t)(d->cam_x / TILE_SZ);
-    int32_t ty0 = (int32_t)(d->cam_y / TILE_SZ);
-    int32_t tx1 = tx0 + (SCREEN_W / TILE_SZ) + 1;
-    int32_t ty1 = ty0 + (SCREEN_H / TILE_SZ) + 1;
+    /* Camera offset for isometric view (center vertically) */
+    float cam_y_offset = d->isometric ?
+        (SCREEN_H / 2.0f) / (TILE_SZ * d->zoom) : 0.0f;
+    
+    /* Visible tile range (account for zoom in iso mode) */
+    float tile_screen_w = (float)TILE_SZ * d->zoom;
+    float tile_screen_h = (float)TILE_SZ * d->zoom * (d->isometric ? 0.5f : 1.0f);
+    int32_t tx0 = (int32_t)((d->cam_x) / (float)TILE_SZ);
+    int32_t ty0 = (int32_t)((d->cam_y + cam_y_offset) / (float)TILE_SZ);
+    int32_t tx1 = tx0 + (int32_t)(SCREEN_W / tile_screen_w) + 2;
+    int32_t ty1 = ty0 + (int32_t)(SCREEN_H / tile_screen_h) + 2;
     
     /* Clamp to region bounds */
     tx0 = tx0 < 0 ? 0 : (tx0 >= REGION_W ? REGION_W - 1 : tx0);
@@ -126,8 +154,12 @@ static void demo_draw(DemoState *d) {
     tx1 = tx1 > REGION_W ? REGION_W : tx1;
     ty1 = ty1 > REGION_H ? REGION_H : ty1;
     
-    /* Draw tiles */
-    for (int32_t y = ty0; y < ty1; y++) {
+    /* Draw tiles (reverse y order for isometric depth sorting) */
+    int32_t y_start = d->isometric ? ty1 - 1 : ty0;
+    int32_t y_end   = d->isometric ? ty0 - 1 : ty1;
+    int32_t y_step  = d->isometric ? -1 : 1;
+    
+    for (int32_t y = y_start; y != y_end; y += y_step) {
         for (int32_t x = tx0; x < tx1; x++) {
             const rlk_tilecell_t *c = rlk_tilemap_get_c(&d->tm, x, y);
             if (!c) continue;
@@ -141,23 +173,33 @@ static void demo_draw(DemoState *d) {
                 col.b = (uint8_t)(col.b * 0.7f);
             }
             
-            float z = d->zoom;
-            pxl_draw_rect(d->ren,
-                (x * TILE_SZ - d->cam_x) * z,
-                (y * TILE_SZ - d->cam_y) * z,
-                TILE_SZ * z, TILE_SZ * z, col);
+            /* Tile position */
+            float sx, sy;
+            demo_tile_to_screen(d, x, y, &sx, &sy);
+            
+            pxl_draw_rect(d->ren, sx, sy, TILE_SZ * d->zoom, TILE_SZ * d->zoom, col);
             
             /* Draw grid lines (optional) */
             if (d->show_grid) {
                 pxl_color_t grid_col = {80, 80, 80, 180};
-                /* Vertical line (right edge) */
-                pxl_draw_rect(d->ren,
-                    ((x+1) * TILE_SZ - d->cam_x) * z, (y * TILE_SZ - d->cam_y) * z,
-                    1.0f * z, TILE_SZ * z, grid_col);
-                /* Horizontal line (bottom edge) */
-                pxl_draw_rect(d->ren,
-                    (x * TILE_SZ - d->cam_x) * z, ((y+1) * TILE_SZ - d->cam_y) * z,
-                    TILE_SZ * z, 1.0f * z, grid_col);
+                if (d->isometric) {
+                    /* Iso grid: diagonal lines along tile edges */
+                    float sx1, sy1, sx2, sy2;
+                    demo_tile_to_screen(d, x+1, y,   &sx1, &sy1);
+                    demo_tile_to_screen(d, x,   y+1, &sx2, &sy2);
+                    pxl_draw_line(d->ren, sx, sy, sx1, sy1, grid_col);  /* right edge */
+                    pxl_draw_line(d->ren, sx, sy, sx2, sy2, grid_col);  /* bottom edge */
+                } else {
+                    /* 2D grid: straight lines */
+                    pxl_draw_rect(d->ren,
+                        (x+1) * (float)TILE_SZ * d->zoom - d->cam_x * d->zoom,
+                        y * (float)TILE_SZ * d->zoom - d->cam_y * d->zoom,
+                        1.0f * d->zoom, TILE_SZ * d->zoom, grid_col);
+                    pxl_draw_rect(d->ren,
+                        x * (float)TILE_SZ * d->zoom - d->cam_x * d->zoom,
+                        (y+1) * (float)TILE_SZ * d->zoom - d->cam_y * d->zoom,
+                        TILE_SZ * d->zoom, 1.0f * d->zoom, grid_col);
+                }
             }
         }
     }
@@ -167,7 +209,7 @@ static void demo_draw(DemoState *d) {
     snprintf(buf, sizeof(buf), "rlk demo | seed: 0x%016llX | region: (%d,%d)",
              (unsigned long long)d->seed, d->region_x, d->region_y);
     pxl_draw_text(d->ren, 10, 10, buf, (pxl_color_t){255,255,255,255});
-    snprintf(buf, sizeof(buf), "HJKL/Arrows: pan  |  G: grid  |  +/-: zoom  |  R: regen  |  Q/ESC: quit");
+    snprintf(buf, sizeof(buf), "HJKL/Arrows: pan  |  G: grid  |  +/-: zoom  |  I: iso  |  R: regen  |  Q/ESC: quit");
     pxl_draw_text(d->ren, 10, 30, buf, (pxl_color_t){200,200,200,255});
 }
 
@@ -199,6 +241,9 @@ static void demo_handle_input(DemoState *d) {
             case PXL_KEY_r:
                 d->seed = demo_rand_seed();
                 demo_generate_region(d);
+                break;
+            case PXL_KEY_i:
+                d->isometric = !d->isometric;
                 break;
             case PXL_KEY_k:
             case PXL_KEY_UP:
@@ -263,14 +308,15 @@ int main(void) {
     }
     
     /* Init demo state */
-    g.seed      = 0x123456789ABCDEF0ULL;
-    g.region_x  = 0;
-    g.region_y  = 0;
-    g.cam_x     = 0.0f;
-    g.cam_y     = 0.0f;
-    g.quit      = 0;
-    g.show_grid = 0;  /* grid off by default */
-    g.zoom      = 1.0f; /* default scale */
+    g.seed        = 0x123456789ABCDEF0ULL;
+    g.region_x    = 0;
+    g.region_y    = 0;
+    g.cam_x       = 0.0f;
+    g.cam_y       = 0.0f;
+    g.quit        = 0;
+    g.show_grid   = 0;    /* grid off by default */
+    g.zoom        = 1.0f; /* default scale */
+    g.isometric   = 0;    /* start in 2D mode */
     
     demo_generate_region(&g);
     
