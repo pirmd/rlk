@@ -6,7 +6,8 @@ Current status updates as work progresses.
 ## Status
 
 - [x] Design documents (`docs/`) — foundation laid on `phase/0-socle-deterministe`.
-- [x] Phase 0 — Socle déterministe (modules + region gen + tests done; pxl demo pending on phase/0b).
+- [x] Phase 0 — Socle déterministe (modules + region gen + tests done).
+- [x] Phase 0b — Pont pxl (démo Tilemap).
 - [ ] Phase 1 — RegionSaveState.
 - [ ] Phase 2 — Densité + scatter.
 - [ ] Phase 3 — ECS + entity_grid.
@@ -31,16 +32,19 @@ See [`docs/ROADMAP.md`](docs/ROADMAP.md) for scope and verification per phase.
 - [x] `rlk_err_t` error codes (`rl/err.h`).
 - [x] Build skeleton: `make` (-> test), `make lint`, `make test` (headless),
       `make demo` (pxl, opt-in, degrades gracefully if missing).
-- [ ] `demo/` Phase 0': bridge rlk→pxl, draw a generated `Tilemap`. Strict
+- [x] `demo/` Phase 0': bridge rlk→pxl, draw a generated `Tilemap`. Strict
       boundary: rlk does not include `pxl.h`.
 
 ## Phase 0b — Pont pxl (démo Tilemap)  `phase/0b-pont-pxl`
 
 Lives alongside Phase 0; first honest visualization.
 
-- [ ] `demo/demo_tilemap.c`: mallocs visible (pxl style), feeds rlk buffers,
-      renders `Tilemap` via `pxl_draw_tile`.
-- [ ] Reproducibility check visually (reload seed → identical image).
+- [x] `demo/demo_tilemap.c`: mallocs visible (pxl style), feeds rlk buffers,
+      renders `Tilemap` via `pxl_draw_tile`. Generates every frame from cfg;
+      arrows move regions, R re-rolls seed, G regenerates.
+- [x] Reproducibility check visually (reload seed → identical image).
+- [x] `demo/Makefile`: opt-in, detects pxl, degrades gracefully; strict
+      `lint` target validates demo syntax-only when pxl headers present.
 
 ## Phase 1 — RegionSaveState  `phase/1-region-savestate`
 
