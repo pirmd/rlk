@@ -6,7 +6,7 @@ Current status updates as work progresses.
 ## Status
 
 - [x] Design documents (`docs/`) — foundation laid on `phase/0-socle-deterministe`.
-- [ ] Phase 0 — Socle déterministe (no code yet, docs only so far).
+- [~] Phase 0 — Socle déterministe (core modules + tests done; region-gen demo pending).
 - [ ] Phase 1 — RegionSaveState.
 - [ ] Phase 2 — Densité + scatter.
 - [ ] Phase 3 — ECS + entity_grid.
@@ -22,15 +22,15 @@ See [`docs/ROADMAP.md`](docs/ROADMAP.md) for scope and verification per phase.
 ## Phase 0 — Socle déterministe  `phase/0-socle-deterministe`
 
 - [x] Foundation docs (README, TODO, ROADMAP, ARCHITECTURE, ALLOCATION).
-- [ ] RNG seeded (`rl_rng`) — splitmix64-based, reproducible streams.
-- [ ] Value noise (`rl_noise`) + clumping noise (biome + humidity + clumping
+- [x] RNG seeded (`rl/rng.h`) — splitmix64-based, reproducible streams (KAT tested).
+- [x] Value noise (`rl/noise.h`) + clumping noise (biome + humidity + clumping
       density field).
-- [ ] `Tilemap` (`rl/world/tilemap.h`): `tilemap_required_size` + `tilemap_init`
+- [x] `Tilemap` (`rl/world/tilemap.h`): `tilemap_required_size` + `tilemap_init`
       (Pattern A, buffer provided by caller). `Tile` struct + `occ_mask`.
-- [ ] Region generation from seed; bit-identical reproducibility test.
-- [ ] `rlk_err_t` error codes (`rl/err.h`).
-- [ ] Build skeleton: `make` (lib), `make test` (headless), `make demo`
-      (pxl, opt-in, fails gracefully if pxl/SDL2 missing).
+- [ ] Region generation from seed; bit-identical reproducibility test. (Phase 2 territory)
+- [x] `rlk_err_t` error codes (`rl/err.h`).
+- [x] Build skeleton: `make` (-> test), `make lint`, `make test` (headless),
+      `make demo` (pxl, opt-in, degrades gracefully if missing).
 - [ ] `demo/` Phase 0': bridge rlk→pxl, draw a generated `Tilemap`. Strict
       boundary: rlk does not include `pxl.h`.
 

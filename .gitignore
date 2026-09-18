@@ -1,0 +1,11 @@
+# Build artifacts
+*.o
+*.a
+
+# Test binaries
+test/test_rng
+test/test_noise
+test/test_tilemap
+
+# Demo binaries
+demo/demo_tilemap
