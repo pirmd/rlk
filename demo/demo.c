@@ -61,6 +61,7 @@ typedef struct {
     pxl_window_t   *win;
     pxl_renderer_t *ren;
     int             quit;
+    int             show_grid;      /* toggle grid overlay */
 } DemoState;
 
 static DemoState g;
@@ -143,6 +144,19 @@ static void demo_draw(DemoState *d) {
                 (float)(x * TILE_SZ - d->cam_x),
                 (float)(y * TILE_SZ - d->cam_y),
                 (float)TILE_SZ, (float)TILE_SZ, col);
+            
+            /* Draw grid lines (optional) */
+            if (d->show_grid) {
+                pxl_color_t grid_col = {80, 80, 80, 180};
+                /* Vertical line (right edge) */
+                pxl_draw_rect(d->ren,
+                    (float)((x+1) * TILE_SZ - d->cam_x), (float)(y * TILE_SZ - d->cam_y),
+                    1.0f, (float)TILE_SZ, grid_col);
+                /* Horizontal line (bottom edge) */
+                pxl_draw_rect(d->ren,
+                    (float)(x * TILE_SZ - d->cam_x), (float)((y+1) * TILE_SZ - d->cam_y),
+                    (float)TILE_SZ, 1.0f, grid_col);
+            }
         }
     }
     
@@ -151,7 +165,7 @@ static void demo_draw(DemoState *d) {
     snprintf(buf, sizeof(buf), "rlk demo | seed: 0x%016llX | region: (%d,%d)",
              (unsigned long long)d->seed, d->region_x, d->region_y);
     pxl_draw_text(d->ren, 10, 10, buf, (pxl_color_t){255,255,255,255});
-    snprintf(buf, sizeof(buf), "HJKL/Arrows: pan  |  R: regenerate  |  Q/ESC: quit");
+    snprintf(buf, sizeof(buf), "HJKL/Arrows: pan  |  G: grid  |  R: regen  |  Q/ESC: quit");
     pxl_draw_text(d->ren, 10, 30, buf, (pxl_color_t){200,200,200,255});
 }
 
@@ -193,6 +207,9 @@ static void demo_handle_input(DemoState *d) {
             case PXL_KEY_RIGHT:
                 d->cam_x += 8.0f;
                 break;
+            case PXL_KEY_g:
+                d->show_grid = !d->show_grid;
+                break;  /* toggle grid */
             default:
                 break;
             }
@@ -237,6 +254,7 @@ int main(void) {
     g.cam_x     = 0.0f;
     g.cam_y     = 0.0f;
     g.quit      = 0;
+    g.show_grid = 0;  /* grid off by default */
     
     demo_generate_region(&g);
     
