@@ -1,0 +1,20 @@
+RLK
+---
+
+Minimal C99 library for 2D grid-based games and roguelikes.
+
+Build:
+  make                  # Build librlk.a
+  make lint             # Static analysis (-Werror)
+  make test             # Run unit tests
+  make clean            # Remove build artifacts
+
+Configuration:
+  Copy config.mk.example to config.mk to customize CFLAGS or library paths.
+
+Headers:
+  err.h                # Error handling
+  tilemap.h            # 2D grid with occupancy
+
+License:
+  MIT. See LICENSE.
