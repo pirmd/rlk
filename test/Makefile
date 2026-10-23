@@ -1,13 +1,8 @@
 # rlk - Unit tests
 
-TST  = test_tilemap
+TST  = test_tilemap test_fmath test_hash test_noise test_rng test_err test_wg_nf test_wg_nf_modulator
 
 RLK_DIR=..
-
--include $(RLK_DIR)/config.mk
-
-CC     ?= cc
-CFLAGS ?= -O0 -g -std=c99 -Wall -Wextra
 
 include $(RLK_DIR)/Makefile.inc
 

@@ -13,10 +13,14 @@ typedef struct {
 } rlk_tile_t;
 
 typedef struct {
-    int         width, height;
+    int         width;
+    int         height;
     rlk_tile_t *tiles;  /* width*height cells, caller-provided */
 } rlk_tilemap_t;
 
+/* Init a tilemap over a caller-provided buffer. Asserts dimensions > 0 and
+ * buffer large enough — the size check is the main value over raw POD init.
+ */
 static inline void
 rlk_tilemap_init(rlk_tilemap_t *tm, int width, int height,
                  void *buf, size_t buf_sz) {

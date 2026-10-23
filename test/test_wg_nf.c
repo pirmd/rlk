@@ -1,0 +1,534 @@
+#include <assert.h>
+#include <stdint.h>
+#include "wg_nf.h"
+
+#define MAP 64
+
+static rlk_tile_t tilebuf1[MAP * MAP];
+static rlk_tile_t tilebuf2[MAP * MAP];
+
+/* Writers --------------------------------------------------------------------- */
+
+static void
+write_simple(const rlk_wg_nf_ctx_t *ctx, const void *data, rlk_tile_t *out) {
+    (void)data;
+    out->type = (uint8_t)ctx->zone;
+    out->biome = (uint8_t)ctx->zone;
+}
+
+/* Biome + clamped field[0] quantized into variant. */
+static void
+write_field0(const rlk_wg_nf_ctx_t *ctx, const void *data, rlk_tile_t *out) {
+    (void)data;
+    out->biome = (uint8_t)ctx->zone;
+    out->variant = (uint8_t)(rlk_clampf(ctx->field[0], 0.0f, 1.0f) * 255.0f);
+}
+
+/* field[0..2] quantized into type/variant/flags + biome. */
+static void
+write_fields012(const rlk_wg_nf_ctx_t *ctx, const void *data, rlk_tile_t *out) {
+    (void)data;
+    out->type = (uint8_t)(ctx->field[0] * 255.0f);
+    out->variant = (uint8_t)(ctx->field[1] * 255.0f);
+    out->flags = (uint8_t)(ctx->field[2] * 255.0f);
+    out->biome = (uint8_t)ctx->zone;
+}
+
+/* Capture ctx for tests that inspect pipeline internals. */
+static rlk_wg_nf_ctx_t g_ctx;
+static int g_ctx_count;
+
+static void
+write_capture(const rlk_wg_nf_ctx_t *ctx, const void *data, rlk_tile_t *out) {
+    (void)data;
+    g_ctx = *ctx;
+    g_ctx_count++;
+    out->type = (uint8_t)ctx->zone;
+    out->biome = (uint8_t)ctx->zone;
+}
+
+/* Stages ---------------------------------------------------------------------- */
+
+/* Overwrite field[0] with the constant pointed to by `data`. */
+static void
+stage_const_field0(rlk_wg_nf_ctx_t *ctx, const void *data) {
+    ctx->field[0] = *(const float *)data;
+}
+
+/* Overwrite field[2] with the constant pointed to by `data`. */
+static void
+stage_const_field2(rlk_wg_nf_ctx_t *ctx, const void *data) {
+    ctx->field[2] = *(const float *)data;
+}
+
+/* Derive field[2] as the average of field[0] and field[1]. */
+static void
+stage_derive_avg(rlk_wg_nf_ctx_t *ctx, const void *data) {
+    (void)data;
+    ctx->field[2] = (ctx->field[0] + ctx->field[1]) * 0.5f;
+}
+
+/* Derive field[1] as 1 - field[0] (into a derived slot). */
+static void
+stage_derive_complement(rlk_wg_nf_ctx_t *ctx, const void *data) {
+    (void)data;
+    ctx->field[1] = 1.0f - ctx->field[0];
+}
+
+/* Config fixtures --------------------------------------------------------------- */
+
+/* Minimal valid config: 1 FBM field, 1 full-coverage zone. */
+static rlk_wg_nf_t
+wg_min(void) {
+    rlk_wg_nf_t wg = {0};
+    wg.seed = 12345ULL;
+    wg.depth_scale = 0.20f;
+    wg.transition_width = 0.20f;
+    wg.nsampled = 1;
+    wg.fields[0] = (rlk_wg_nf_field_t){ .freq = 0.01f };
+    wg.naxes = 2;
+    wg.nzones = 1;
+    wg.zones[0] = (rlk_wg_nf_zone_t){ .lo = {0.0f, 0.0f}, .hi = {1.0f, 1.0f},
+                                        .write = write_simple };
+    return wg;
+}
+
+/* 2 fields mapped on 2 axes, 4 quadrant zones split at 0.5. */
+static rlk_wg_nf_t
+wg_quad(float freq) {
+    rlk_wg_nf_t wg = {0};
+    wg.seed = 12345ULL;
+    wg.depth_scale = 0.20f;
+    wg.transition_width = 0.20f;
+    wg.nsampled = 2;
+    wg.fields[0] = (rlk_wg_nf_field_t){ .freq = freq };
+    wg.fields[1] = (rlk_wg_nf_field_t){ .freq = freq };
+    wg.naxes = 2;
+    wg.axes[0] = (rlk_wg_nf_axis_t){ .field = 0 };
+    wg.axes[1] = (rlk_wg_nf_axis_t){ .field = 1 };
+    wg.nzones = 4;
+    wg.zones[0] = (rlk_wg_nf_zone_t){ .lo = {0.0f, 0.0f}, .hi = {0.5f, 0.5f}, .write = write_simple };
+    wg.zones[1] = (rlk_wg_nf_zone_t){ .lo = {0.5f, 0.0f}, .hi = {1.0f, 0.5f}, .write = write_simple };
+    wg.zones[2] = (rlk_wg_nf_zone_t){ .lo = {0.0f, 0.5f}, .hi = {0.5f, 1.0f}, .write = write_simple };
+    wg.zones[3] = (rlk_wg_nf_zone_t){ .lo = {0.5f, 0.5f}, .hi = {1.0f, 1.0f}, .write = write_simple };
+    return wg;
+}
+
+/* Tilemap helper ----------------------------------------------------------------- */
+
+/* 1 if at least one tile byte differs between a and b (same dimensions). */
+static int
+tm_differ(const rlk_tilemap_t *a, const rlk_tilemap_t *b) {
+    for (int y = 0; y < a->height; y++) {
+        for (int x = 0; x < a->width; x++) {
+            const rlk_tile_t *t1 = rlk_tilemap_get(a, x, y);
+            const rlk_tile_t *t2 = rlk_tilemap_get(b, x, y);
+            if (t1->type != t2->type || t1->flags != t2->flags ||
+                t1->biome != t2->biome || t1->variant != t2->variant)
+                return 1;
+        }
+    }
+    return 0;
+}
+
+/* Tests --------------------------------------------------------------------------- */
+
+static void
+test_rlk_wg_nf_init_defaults(void) {
+    rlk_wg_nf_t wg = wg_min();
+    rlk_wg_nf_init(&wg);
+    assert(wg.nsampled == 1);
+    assert(wg.fields[0].octaves == 3);        /* 0 -> 3 */
+    assert(wg.fields[0].gain == 0.5f);       /* 0 -> 0.5 */
+    assert(wg.nzones == 1);
+    assert(wg.naxes == 2);                   /* set by fixture */
+    assert(wg.depth_scale == 0.20f);         /* set by fixture, not default */
+    assert(wg.transition_width == 0.20f);    /* set by fixture, not default */
+    assert(wg.nstages == 0);
+    assert(wg.nderived == 0);
+}
+
+static void
+test_chunk_generation_minimal(void) {
+    rlk_wg_nf_t wg = wg_min();
+    rlk_wg_nf_init(&wg);
+    rlk_tilemap_t tm;
+    rlk_tilemap_init(&tm, 16, 16, tilebuf1, sizeof(tilebuf1));
+    rlk_wg_nf_chunk(&wg, 0, 0, &tm);
+    /* At least one tile must have been written (biome set to zone 0). */
+    const rlk_tile_t *t = rlk_tilemap_get(&tm, 0, 0);
+    assert(t);
+    assert(t->biome == 0);
+}
+
+static void
+test_chunk_generation_deterministic(void) {
+    rlk_wg_nf_t wg1 = wg_quad(0.05f);
+    rlk_wg_nf_t wg2 = wg_quad(0.05f);
+    rlk_wg_nf_init(&wg1);
+    rlk_wg_nf_init(&wg2);
+    rlk_tilemap_t tm1, tm2;
+    rlk_tilemap_init(&tm1, MAP, MAP, tilebuf1, sizeof(tilebuf1));
+    rlk_tilemap_init(&tm2, MAP, MAP, tilebuf2, sizeof(tilebuf2));
+    rlk_wg_nf_chunk(&wg1, 0, 0, &tm1);
+    rlk_wg_nf_chunk(&wg2, 0, 0, &tm2);
+    assert(!tm_differ(&tm1, &tm2));
+}
+
+/* chunk(cx, cy) must equal fill() at the same world origin (incl. negative). */
+static void
+test_chunk_fill_equivalence(void) {
+    rlk_wg_nf_t wg = wg_quad(0.05f);
+    rlk_wg_nf_init(&wg);
+    rlk_tilemap_t tm1, tm2;
+    rlk_tilemap_init(&tm1, 16, 16, tilebuf1, sizeof(tilebuf1));
+    rlk_tilemap_init(&tm2, 16, 16, tilebuf2, sizeof(tilebuf2));
+    rlk_wg_nf_chunk(&wg, 2, -3, &tm1);
+    rlk_wg_nf_fill(&wg, 2 * 16, -3 * 16, &tm2);
+    assert(!tm_differ(&tm1, &tm2));
+}
+
+static void
+test_chunk_different_seed(void) {
+    rlk_wg_nf_t wg1 = wg_min();
+    rlk_wg_nf_t wg2 = wg_min();
+    wg2.seed = 54321ULL;
+    wg1.zones[0].write = write_field0;
+    wg2.zones[0].write = write_field0;
+    rlk_wg_nf_init(&wg1);
+    rlk_wg_nf_init(&wg2);
+    rlk_tilemap_t tm1, tm2;
+    rlk_tilemap_init(&tm1, MAP, MAP, tilebuf1, sizeof(tilebuf1));
+    rlk_tilemap_init(&tm2, MAP, MAP, tilebuf2, sizeof(tilebuf2));
+    rlk_wg_nf_chunk(&wg1, 0, 0, &tm1);
+    rlk_wg_nf_chunk(&wg2, 0, 0, &tm2);
+    assert(tm_differ(&tm1, &tm2));
+}
+
+/* Deterministic classification: a stage pins field[0], so depth/edge/zone2
+   are exact functions of the pinned value. Zones split axis 0 at 0.5,
+   depth_scale = transition_width = 0.20. */
+static void
+test_classify_depth_edge(void) {
+    const float cs[4] = { 0.25f, 0.45f, 0.50f, 0.75f };
+
+    for (int i = 0; i < 4; i++) {
+        rlk_wg_nf_t wg = {0};
+        wg.seed = 12345ULL;
+        wg.depth_scale = 0.20f;
+        wg.transition_width = 0.20f;
+        wg.nsampled = 1;
+        wg.fields[0] = (rlk_wg_nf_field_t){ .freq = 0.01f };
+        wg.naxes = 2;
+        wg.nzones = 2;
+        wg.zones[0] = (rlk_wg_nf_zone_t){ .lo = {0.0f, -RLK_WG_NF_OPEN},
+                                           .hi = {0.5f, RLK_WG_NF_OPEN},
+                                           .write = write_capture };
+        wg.zones[1] = (rlk_wg_nf_zone_t){ .lo = {0.5f, -RLK_WG_NF_OPEN},
+                                           .hi = {1.0f, RLK_WG_NF_OPEN},
+                                           .write = write_capture };
+        assert(rlk_wg_nf_add_stage(&wg, stage_const_field0, &cs[i]) == RLK_OK);
+        rlk_wg_nf_init(&wg);
+
+        g_ctx_count = 0;
+        rlk_tile_t buf;
+        rlk_tilemap_t tm;
+        rlk_tilemap_init(&tm, 1, 1, &buf, sizeof(buf));
+        rlk_wg_nf_fill(&wg, 0, 0, &tm);
+        const rlk_wg_nf_ctx_t *ctx = &g_ctx;
+
+        /* Runner-up is always the other zone. */
+        assert(ctx->zone2 == 1 - ctx->zone);
+
+        switch (i) {
+        case 0: /* deep inside zone 0 */
+            assert(ctx->zone == 0);
+            assert(ctx->depth > 0.99f);
+            assert(ctx->edge == 0.0f);
+            break;
+        case 1: /* margin 0.05: depth = 0.25, edge = 0.5 */
+            assert(ctx->zone == 0);
+            assert(ctx->depth > 0.24f && ctx->depth < 0.26f);
+            assert(ctx->edge > 0.49f && ctx->edge < 0.51f);
+            break;
+        case 2: /* exact tie: first zone wins, full edge */
+            assert(ctx->zone == 0);
+            assert(ctx->depth == 0.0f);
+            assert(ctx->edge == 1.0f);
+            break;
+        case 3: /* deep inside zone 1 */
+            assert(ctx->zone == 1);
+            assert(ctx->depth > 0.99f);
+            assert(ctx->edge == 0.0f);
+            break;
+        }
+    }
+}
+
+/* Single zone: zone2 falls back to zone, edge is always 0. */
+static void
+test_single_zone_edge_zero(void) {
+    rlk_wg_nf_t wg = wg_min();
+    float c = 0.5f;
+    assert(rlk_wg_nf_add_stage(&wg, stage_const_field0, &c) == RLK_OK);
+    wg.zones[0].write = write_capture;
+    rlk_wg_nf_init(&wg);
+
+    g_ctx_count = 0;
+    rlk_tile_t buf;
+    rlk_tilemap_t tm;
+    rlk_tilemap_init(&tm, 1, 1, &buf, sizeof(buf));
+    rlk_wg_nf_fill(&wg, 0, 0, &tm);
+    const rlk_wg_nf_ctx_t *ctx = &g_ctx;
+    assert(ctx->zone == 0);
+    assert(ctx->zone2 == 0);
+    assert(ctx->edge == 0.0f);
+    assert(ctx->depth > 0.99f);
+}
+
+/* 3 axes: zones split on axis 2 only. */
+static void
+test_zone3_classification(void) {
+    const float cs[2] = { 0.25f, 0.75f };
+    const uint8_t want[2] = { 0, 1 };
+
+    for (int i = 0; i < 2; i++) {
+        rlk_wg_nf_t wg = {0};
+        wg.seed = 12345ULL;
+        wg.depth_scale = 0.20f;
+        wg.transition_width = 0.20f;
+        wg.nsampled = 3;
+        for (int f = 0; f < 3; f++)
+            wg.fields[f] = (rlk_wg_nf_field_t){ .freq = 0.01f };
+        wg.naxes = 3;
+        wg.axes[0] = (rlk_wg_nf_axis_t){ .field = 0 };
+        wg.axes[1] = (rlk_wg_nf_axis_t){ .field = 1 };
+        wg.axes[2] = (rlk_wg_nf_axis_t){ .field = 2 };
+        wg.nzones = 2;
+        wg.zones[0] = (rlk_wg_nf_zone_t){ .lo = {-RLK_WG_NF_OPEN, -RLK_WG_NF_OPEN, 0.0f},
+                                           .hi = { RLK_WG_NF_OPEN,  RLK_WG_NF_OPEN, 0.5f},
+                                           .write = write_capture };
+        wg.zones[1] = (rlk_wg_nf_zone_t){ .lo = {-RLK_WG_NF_OPEN, -RLK_WG_NF_OPEN, 0.5f},
+                                           .hi = { RLK_WG_NF_OPEN,  RLK_WG_NF_OPEN, 1.0f},
+                                           .write = write_capture };
+        assert(rlk_wg_nf_add_stage(&wg, stage_const_field2, &cs[i]) == RLK_OK);
+        rlk_wg_nf_init(&wg);
+
+        g_ctx_count = 0;
+        rlk_tile_t buf;
+        rlk_tilemap_t tm;
+        rlk_tilemap_init(&tm, 1, 1, &buf, sizeof(buf));
+        rlk_wg_nf_fill(&wg, 0, 0, &tm);
+        assert(g_ctx.zone == want[i]);
+    }
+}
+
+/* rlk_wg_nf_write_const copies type/flags/variant; fill sets biome = zone. */
+static void
+test_rlk_wg_nf_write_const(void) {
+    static const rlk_tile_t k_tile = { .type = 7, .flags = 3, .variant = 9 };
+    rlk_wg_nf_t wg = wg_min();
+    wg.zones[0].write = rlk_wg_nf_write_const;
+    wg.zones[0].data = &k_tile;
+    rlk_wg_nf_init(&wg);
+
+    rlk_tilemap_t tm;
+    rlk_tilemap_init(&tm, 8, 8, tilebuf1, sizeof(tilebuf1));
+    rlk_wg_nf_fill(&wg, 100, 100, &tm);
+    for (int y = 0; y < 8; y++) {
+        for (int x = 0; x < 8; x++) {
+            const rlk_tile_t *t = rlk_tilemap_get(&tm, x, y);
+            assert(t->type == 7);
+            assert(t->flags == 3);
+            assert(t->variant == 9);
+            assert(t->biome == 0);
+        }
+    }
+}
+
+/* Ridge kind must produce a different field than FBM for the same seed. */
+static void
+test_chunk_ridge_field(void) {
+    rlk_wg_nf_t wg1 = wg_min();
+    rlk_wg_nf_t wg2 = wg_min();
+    wg2.fields[0].kind = RLK_WG_NF_RIDGE;
+    wg1.zones[0].write = write_field0;
+    wg2.zones[0].write = write_field0;
+    rlk_wg_nf_init(&wg1);
+    rlk_wg_nf_init(&wg2);
+
+    rlk_tilemap_t tm1, tm2;
+    rlk_tilemap_init(&tm1, MAP, MAP, tilebuf1, sizeof(tilebuf1));
+    rlk_tilemap_init(&tm2, MAP, MAP, tilebuf2, sizeof(tilebuf2));
+    rlk_wg_nf_chunk(&wg1, 0, 0, &tm1);
+    rlk_wg_nf_chunk(&wg2, 0, 0, &tm2);
+    assert(tm_differ(&tm1, &tm2));
+}
+
+/* Axis jitter must wobble the zone border somewhere on the map. */
+static void
+test_axis_jitter(void) {
+    rlk_wg_nf_t wg1 = wg_quad(0.05f);
+    rlk_wg_nf_t wg2 = wg_quad(0.05f);
+    wg2.axes[0].jitter_field = 1;
+    wg2.axes[0].jitter_amp = 0.04f;
+    rlk_wg_nf_init(&wg1);
+    rlk_wg_nf_init(&wg2);
+
+    rlk_tilemap_t tm1, tm2;
+    rlk_tilemap_init(&tm1, MAP, MAP, tilebuf1, sizeof(tilebuf1));
+    rlk_tilemap_init(&tm2, MAP, MAP, tilebuf2, sizeof(tilebuf2));
+    rlk_wg_nf_chunk(&wg1, 1, 1, &tm1);
+    rlk_wg_nf_chunk(&wg2, 1, 1, &tm2);
+    assert(tm_differ(&tm1, &tm2));
+}
+
+/* Stage writes derived slot field[2] = avg(field[0], field[1]); the writer
+   exposes all three, so the average identity is checked per tile. */
+static void
+test_stages_derive(void) {
+    rlk_wg_nf_t wg = wg_min();
+    wg.nsampled = 2;
+    wg.fields[1] = (rlk_wg_nf_field_t){ .freq = 0.02f };
+    wg.nderived = 1;
+    assert(rlk_wg_nf_add_stage(&wg, stage_derive_avg, NULL) == RLK_OK);
+    wg.zones[0].write = write_fields012;
+    rlk_wg_nf_init(&wg);
+
+    rlk_tilemap_t tm;
+    rlk_tilemap_init(&tm, MAP, MAP, tilebuf1, sizeof(tilebuf1));
+    rlk_wg_nf_chunk(&wg, 0, 0, &tm);
+    for (int y = 0; y < MAP; y++) {
+        for (int x = 0; x < MAP; x++) {
+            const rlk_tile_t *t = rlk_tilemap_get(&tm, x, y);
+            int avg2 = 2 * (int)t->flags;
+            int sum = (int)t->type + (int)t->variant;
+            assert(avg2 - sum <= 3 && sum - avg2 <= 3);
+        }
+    }
+}
+
+/* Axis reading a derived slot: zone split on axis 1 = 1 - field[0]. */
+static void
+test_derived_slot_axis(void) {
+    rlk_wg_nf_t wg = {0};
+    wg.seed = 12345ULL;
+    wg.depth_scale = 0.20f;
+    wg.transition_width = 0.20f;
+    wg.nsampled = 1;
+    wg.fields[0] = (rlk_wg_nf_field_t){ .freq = 0.05f };
+    wg.nderived = 1;
+    wg.naxes = 2;
+    wg.axes[0] = (rlk_wg_nf_axis_t){ .field = 0 };
+    wg.axes[1] = (rlk_wg_nf_axis_t){ .field = 1 };
+    wg.nzones = 2;
+    wg.zones[0] = (rlk_wg_nf_zone_t){ .lo = {-RLK_WG_NF_OPEN, 0.0f},
+                                       .hi = { RLK_WG_NF_OPEN, 0.5f},
+                                       .write = write_field0 };
+    wg.zones[1] = (rlk_wg_nf_zone_t){ .lo = {-RLK_WG_NF_OPEN, 0.5f},
+                                       .hi = { RLK_WG_NF_OPEN, 1.0f},
+                                       .write = write_field0 };
+    assert(rlk_wg_nf_add_stage(&wg, stage_derive_complement, NULL) == RLK_OK);
+    rlk_wg_nf_init(&wg);
+
+    rlk_tilemap_t tm;
+    rlk_tilemap_init(&tm, MAP, MAP, tilebuf1, sizeof(tilebuf1));
+    rlk_wg_nf_chunk(&wg, 2, 1, &tm);
+    for (int y = 0; y < MAP; y++) {
+        for (int x = 0; x < MAP; x++) {
+            const rlk_tile_t *t = rlk_tilemap_get(&tm, x, y);
+            /* variant = trunc(field[0]*255): skip the ambiguous quantization
+               step around 0.5, then biome must follow the derived value. */
+            if (t->variant == 127)
+                continue;
+            assert(t->biome == (t->variant > 127 ? 0 : 1));
+        }
+    }
+}
+
+static void
+test_rlk_wg_nf_rand_basic(void) {
+    rlk_wg_nf_t wg = wg_min();
+    rlk_wg_nf_init(&wg);
+    float v = rlk_wg_nf_rand(&wg, 10, 20, 0);
+    assert(v >= 0.0f && v < 1.0f);
+}
+
+static void
+test_rlk_wg_nf_rand_deterministic(void) {
+    rlk_wg_nf_t wg = wg_min();
+    rlk_wg_nf_init(&wg);
+    assert(rlk_wg_nf_rand(&wg, 10, 20, 0) == rlk_wg_nf_rand(&wg, 10, 20, 0));
+}
+
+static void
+test_rlk_wg_nf_rand_different_salt(void) {
+    rlk_wg_nf_t wg = wg_min();
+    rlk_wg_nf_init(&wg);
+    assert(rlk_wg_nf_rand(&wg, 10, 20, 0) != rlk_wg_nf_rand(&wg, 10, 20, 1));
+}
+
+static void
+test_zone_classification_2d(void) {
+    rlk_wg_nf_t wg = wg_quad(0.01f);
+    rlk_wg_nf_init(&wg);
+
+    rlk_tilemap_t tm;
+    rlk_tilemap_init(&tm, MAP, MAP, tilebuf1, sizeof(tilebuf1));
+    rlk_wg_nf_chunk(&wg, 0, 0, &tm);
+
+    int zone_count[4] = {0};
+    for (int y = 0; y < MAP; y++) {
+        for (int x = 0; x < MAP; x++) {
+            const rlk_tile_t *t = rlk_tilemap_get(&tm, x, y);
+            assert(t->biome < 4);
+            zone_count[t->biome]++;
+        }
+    }
+    for (int i = 0; i < 4; i++)
+        assert(zone_count[i] > 0);
+}
+
+/* rlk_wg_nf_add_stage appends stages and rejects overflow. */
+static void
+test_rlk_wg_nf_add_stage(void) {
+    rlk_wg_nf_t wg = wg_min();
+    float c = 0.5f;
+
+    assert(rlk_wg_nf_add_stage(&wg, stage_const_field0, &c) == RLK_OK);
+    assert(wg.nstages == 1);
+    assert(wg.stages[0].fn == stage_const_field0);
+    assert(wg.stages[0].data == &c);
+
+    /* Fill remaining slots. */
+    for (int i = 1; i < RLK_WG_NF_MAX_STAGES; i++)
+        assert(rlk_wg_nf_add_stage(&wg, stage_const_field0, &c) == RLK_OK);
+    assert(wg.nstages == RLK_WG_NF_MAX_STAGES);
+
+    /* Table full. */
+    assert(rlk_wg_nf_add_stage(&wg, stage_const_field0, &c) == RLK_E_INVALID);
+    assert(wg.nstages == RLK_WG_NF_MAX_STAGES);
+}
+
+int
+main(void) {
+    test_rlk_wg_nf_init_defaults();
+    test_chunk_generation_minimal();
+    test_chunk_generation_deterministic();
+    test_chunk_fill_equivalence();
+    test_chunk_different_seed();
+    test_classify_depth_edge();
+    test_single_zone_edge_zero();
+    test_zone3_classification();
+    test_rlk_wg_nf_write_const();
+    test_chunk_ridge_field();
+    test_axis_jitter();
+    test_stages_derive();
+    test_derived_slot_axis();
+    test_rlk_wg_nf_rand_basic();
+    test_rlk_wg_nf_rand_deterministic();
+    test_rlk_wg_nf_rand_different_salt();
+    test_zone_classification_2d();
+    test_rlk_wg_nf_add_stage();
+    return 0;
+}

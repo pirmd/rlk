@@ -2,11 +2,7 @@
 
 LIB = librlk.a
 
-SRC = dummy.c
-
--include config.mk
-CC     ?= cc
-CFLAGS ?= -O0 -g -std=c99 -Wall -Wextra
+SRC = wg_nf.c wg_nf_modulator.c
 
 include Makefile.inc
 
@@ -24,8 +20,6 @@ OBJ = ${SRC:.c=.o}
 
 $(LIB): $(OBJ)
 	ar rcs $@ $?
-
-${OBJ}: $(RLK_HDR)
 
 lint:
 	$(CC) -Werror -fsyntax-only $(CFLAGS) $(CFLAGS_LINT) $(SRC) $(HDR)

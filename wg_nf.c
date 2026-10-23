@@ -1,0 +1,186 @@
+#include "wg_nf.h"
+#include <assert.h>
+#include <math.h>
+
+#include "hash.h"
+
+/* Coordinate naming: x,y chunk-local; wx,wy world tile; ox,oy rect origin
+ * (wx == ox + x); wxf,wyf float world position (wxf == (float)wx). */
+
+/* --- SETUP --------------------------------------------------------------- */
+
+/* Safety checks only: prevent crashes (buffer overflow, NULL deref, div by zero).
+   Logic errors (hi <= lo, freq <= 0, etc.) are the user's responsibility. */
+static void
+assert_wg(const rlk_wg_nf_t *wg) {
+    assert(wg);
+    assert(wg->nsampled >= 1 && wg->nsampled <= RLK_WG_NF_MAX_FIELDS);
+    assert(wg->nderived >= 0 && wg->nsampled + wg->nderived <= RLK_WG_NF_MAX_FIELDS);
+    assert(wg->nstages >= 0 && wg->nstages <= RLK_WG_NF_MAX_STAGES);
+    for (int i = 0; i < wg->nstages; i++)
+        assert(wg->stages[i].fn);
+    assert(wg->naxes >= 1 && wg->naxes <= RLK_WG_NF_MAX_AXES);
+    assert(wg->nzones >= 1 && wg->nzones <= RLK_WG_NF_MAX_ZONES);
+    assert(wg->depth_scale > 0.0f && wg->transition_width > 0.0f);
+
+    const int nslots = wg->nsampled + wg->nderived;
+    for (int a = 0; a < wg->naxes; a++) {
+        const rlk_wg_nf_axis_t *ax = &wg->axes[a];
+        assert(ax->field < nslots);
+        assert(ax->jitter_amp == 0.0f || ax->jitter_field < nslots);
+    }
+
+    for (int i = 0; i < wg->nzones; i++)
+        assert(wg->zones[i].write);
+}
+
+rlk_err_t
+rlk_wg_nf_add_stage(rlk_wg_nf_t *wg, rlk_wg_nf_stage_fn fn, const void *data) {
+    assert(wg && fn);
+    if (wg->nstages >= RLK_WG_NF_MAX_STAGES)
+        return RLK_E_INVALID;
+    wg->stages[wg->nstages].fn = fn;
+    wg->stages[wg->nstages].data = data;
+    wg->nstages++;
+    return RLK_OK;
+}
+
+/* Resolve zero defaults (octaves->3, gain->0.5), validate, and seed noise. */
+void
+rlk_wg_nf_init(rlk_wg_nf_t *wg) {
+    assert(wg);
+
+    /* Resolve zero defaults. */
+    for (int i = 0; i < wg->nsampled; i++) {
+        rlk_wg_nf_field_t *f = &wg->fields[i];
+        if (f->octaves == 0)
+            f->octaves = 3;
+        if (f->gain == 0.0f)
+            f->gain = 0.5f;
+    }
+
+    /* Safety checks. */
+    assert_wg(wg);
+
+    /* Seed noise generators: world seed + index + field seed. */
+    for (int i = 0; i < wg->nsampled; i++) {
+        uint64_t s = rlk_hash_sub(wg->seed, 0xF1E1D000ULL + (uint64_t)i);
+        rlk_noise_seed(&wg->noise[i], rlk_hash_sub(s, wg->fields[i].seed));
+    }
+}
+
+/* --- FIELDS -------------------------------------------------------------- */
+
+/* Sample field f at float world position (x, y). */
+static inline float
+field_sample(const rlk_noise_t *n, const rlk_wg_nf_field_t *f, float x, float y) {
+    assert(f->freq > 0.0f && f->gain > 0.0f);
+    float v = rlk_noise_fbm(n, x, y, f->octaves, f->freq, f->gain);
+    if (f->kind == RLK_WG_NF_RIDGE)
+        v = 1.0f - fabsf(2.0f * v - 1.0f);
+    return v;
+}
+
+/* --- CLASSIFY ------------------------------------------------------------ */
+
+/* Signed distance to zone bounds: > 0 inside, < 0 outside. */
+static inline float
+zone_margin(const rlk_wg_nf_zone_t *z, const float v[RLK_WG_NF_MAX_AXES], int naxes) {
+    float m = fminf(v[0] - z->lo[0], z->hi[0] - v[0]);
+    for (int a = 1; a < naxes; a++)
+        m = fminf(m, fminf(v[a] - z->lo[a], z->hi[a] - v[a]));
+    return m;
+}
+
+/* Classify tile into zone/zone2 with depth/edge. */
+static inline void
+classify(const rlk_wg_nf_t *wg, rlk_wg_nf_ctx_t *ctx) {
+    assert(wg && ctx && wg->nzones > 0);
+    const int naxes = wg->naxes;
+    float v[RLK_WG_NF_MAX_AXES];
+
+    for (int a = 0; a < naxes; a++) {
+        const rlk_wg_nf_axis_t *ax = &wg->axes[a];
+        v[a] = ctx->field[ax->field];
+        if (ax->jitter_amp > 0.0f)
+            v[a] += (ctx->field[ax->jitter_field] - 0.5f) * 2.0f * ax->jitter_amp;
+    }
+
+    int best = -1, second = -1;
+    float mb = -INFINITY, ms = -INFINITY;
+
+    for (int i = 0; i < wg->nzones; i++) {
+        float m = zone_margin(&wg->zones[i], v, naxes);
+        if (m > mb) {
+            second = best;
+            ms = mb;
+            best = i;
+            mb = m;
+        } else if (m > ms) {
+            second = i;
+            ms = m;
+        }
+    }
+
+    ctx->zone = (uint8_t)best;
+    ctx->zone2 = second >= 0 ? (uint8_t)second : ctx->zone;
+    ctx->depth = rlk_clampf(mb / wg->depth_scale, 0.0f, 1.0f);
+    ctx->edge = second >= 0
+        ? rlk_clampf(1.0f - (mb - ms) / wg->transition_width, 0.0f, 1.0f)
+        : 0.0f;
+}
+
+/* --- PER-TILE PIPELINE --------------------------------------------------- */
+
+/* Evaluate one tile: fields -> stages -> classify. Fills ctx.
+   A tile outside every zone box gets the nearest zone (depth = 0). */
+static void
+eval(const rlk_wg_nf_t *wg, int wx, int wy, int x, int y,
+     rlk_wg_nf_ctx_t *ctx) {
+    assert(wg && ctx);
+
+    *ctx = (rlk_wg_nf_ctx_t){
+        .wg = wg,
+        .wx = wx,
+        .wy = wy,
+        .x  = x,
+        .y  = y,
+    };
+
+    /* FIELDS */
+    const float wxf = (float)wx, wyf = (float)wy;
+    for (int i = 0; i < wg->nsampled; i++)
+        ctx->field[i] = field_sample(&wg->noise[i], &wg->fields[i], wxf, wyf);
+
+    /* STAGES */
+    for (int i = 0; i < wg->nstages; i++)
+        wg->stages[i].fn(ctx, wg->stages[i].data);
+
+    /* CLASSIFY */
+    classify(wg, ctx);
+}
+
+/* --- DRIVER -------------------------------------------------------------- */
+
+/* Fill tilemap tm with tiles for the world-space rect starting at (ox, oy).
+ * Rect dimensions are tm->width x tm->height tiles. */
+void
+rlk_wg_nf_fill(const rlk_wg_nf_t *wg, int ox, int oy, rlk_tilemap_t *tm) {
+    assert(wg && tm);
+    assert(tm->width > 0 && tm->height > 0);
+
+    for (int y = 0; y < tm->height; y++) {
+        for (int x = 0; x < tm->width; x++) {
+            rlk_wg_nf_ctx_t ctx;
+            eval(wg, ox + x, oy + y, x, y, &ctx);
+
+            /* WRITE */
+            const rlk_wg_nf_zone_t *z = &wg->zones[ctx.zone];
+            rlk_tile_t *tile = rlk_tilemap_get(tm, x, y);
+            assert(tile);
+            /* Reset tile, set biome to zone id, then the zone writer fills type/flags/variant. */
+            *tile = (rlk_tile_t){.biome = ctx.zone};
+            z->write(&ctx, z->data, tile);
+        }
+    }
+}

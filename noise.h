@@ -1,0 +1,128 @@
+#ifndef RLK_NOISE_H
+#define RLK_NOISE_H
+
+#include <assert.h>
+#include <stdint.h>
+
+#include "fmath.h"
+#include "hash.h"
+
+/* FBM octave offsets to decorrelate layers */
+#define RLK_NOISE_FBM_OCTAVE_OFFSET_X 37.2173f
+#define RLK_NOISE_FBM_OCTAVE_OFFSET_Y 91.7231f
+
+/* Value noise state. Seed fully determines output. */
+typedef struct {
+    uint64_t seed;
+} rlk_noise_t;
+
+static inline void
+rlk_noise_seed(rlk_noise_t *n, uint64_t seed) {
+    assert(n);
+    n->seed = seed;
+}
+
+/* Hash lattice point (ix,iy) with seed into [0,1). */
+static inline float
+rlk_noise_lattice(const rlk_noise_t *n, int ix, int iy) {
+    assert(n);
+    uint64_t z = rlk_hash_combine2(n->seed, ix, iy);
+    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+    z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+    z = z ^ (z >> 31);
+    return (float)(z >> 40) * (1.0f / 16777216.0f);
+}
+
+/* 2D gradient vectors for Perlin noise (8 directions) */
+static const float RLK_NOISE_PERLIN_GRADIENTS[8][2] = {
+    { 1.0f,  1.0f}, {-1.0f,  1.0f}, { 1.0f, -1.0f}, {-1.0f, -1.0f},
+    { 1.0f,  0.0f}, {-1.0f,  0.0f}, { 0.0f,  1.0f}, { 0.0f, -1.0f}
+};
+
+/* Perlin noise fade function: 6t^5 - 15t^4 + 10t^3 */
+static inline float
+rlk_noise_perlin_fade(float t) {
+    return t * t * t * (t * (t * 6.0f - 15.0f) + 10.0f);
+}
+
+/* Perlin noise gradient dot product */
+static inline float
+rlk_noise_perlin_grad(uint64_t hash, float x, float y) {
+    int g = (int)(hash & 7);
+    return x * RLK_NOISE_PERLIN_GRADIENTS[g][0] +
+           y * RLK_NOISE_PERLIN_GRADIENTS[g][1];
+}
+
+/* Bilinear Perlin noise at (x,y) in [-1,1]. */
+static inline float
+rlk_noise_perlin(const rlk_noise_t *n, float x, float y) {
+    assert(n);
+    assert(x == x && y == y);
+    int x0 = (int)floorf(x);
+    int y0 = (int)floorf(y);
+    float fx = x - (float)x0;
+    float fy = y - (float)y0;
+
+    float u = rlk_noise_perlin_fade(fx);
+    float v = rlk_noise_perlin_fade(fy);
+
+    uint64_t h00 = rlk_hash_combine2(n->seed, x0,     y0);
+    uint64_t h10 = rlk_hash_combine2(n->seed, x0 + 1, y0);
+    uint64_t h01 = rlk_hash_combine2(n->seed, x0,     y0 + 1);
+    uint64_t h11 = rlk_hash_combine2(n->seed, x0 + 1, y0 + 1);
+
+    float g00 = rlk_noise_perlin_grad(h00, fx,     fy);
+    float g10 = rlk_noise_perlin_grad(h10, fx - 1, fy);
+    float g01 = rlk_noise_perlin_grad(h01, fx,     fy - 1);
+    float g11 = rlk_noise_perlin_grad(h11, fx - 1, fy - 1);
+
+    float a = rlk_lerp(g00, g10, u);
+    float b = rlk_lerp(g01, g11, u);
+    return rlk_lerp(a, b, v);
+}
+
+/* Value noise at (x,y) in [0,1). */
+static inline float
+rlk_noise_value(const rlk_noise_t *n, float x, float y) {
+    assert(n);
+    assert(x == x && y == y);
+    int x0 = (int)floorf(x);
+    int y0 = (int)floorf(y);
+    float fx = x - (float)x0;
+    float fy = y - (float)y0;
+
+    float v00 = rlk_noise_lattice(n, x0,     y0);
+    float v10 = rlk_noise_lattice(n, x0 + 1, y0);
+    float v01 = rlk_noise_lattice(n, x0,     y0 + 1);
+    float v11 = rlk_noise_lattice(n, x0 + 1, y0 + 1);
+
+    float sx = rlk_smoothstep(fx);
+    float sy = rlk_smoothstep(fy);
+    float a = rlk_lerp(v00, v10, sx);
+    float b = rlk_lerp(v01, v11, sx);
+    return rlk_lerp(a, b, sy);
+}
+
+/* Fractal Brownian Motion. Sum of `octaves` noise layers. Output in ~[0,1]. */
+static inline float
+rlk_noise_fbm(const rlk_noise_t *n, float x, float y,
+              int octaves, float freq, float gain) {
+    assert(n);
+    assert(octaves > 0);
+    assert(gain > 0.0f && gain < 1.0f);
+    float amp  = 1.0f;
+    float sum  = 0.0f;
+    float norm = 0.0f;
+    float f    = freq;
+    for (int o = 0; o < octaves; o++) {
+        float ox = (float)o * RLK_NOISE_FBM_OCTAVE_OFFSET_X;
+        float oy = (float)o * RLK_NOISE_FBM_OCTAVE_OFFSET_Y;
+        sum  += amp * rlk_noise_value(n, x * f + ox, y * f + oy);
+        norm += amp;
+        amp  *= gain;
+        f    *= 2.0f;
+    }
+    return sum / norm;
+}
+
+#endif /* RLK_NOISE_H */

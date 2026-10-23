@@ -17,7 +17,7 @@ fixture_setup(void) {
 
 static void
 fixture_teardown(void) {
-	/* Nothing to do - buffer is on stack */
+	/* Nothing to do - buffer is static */
 	(void)g_tm;
 }
 
@@ -28,22 +28,13 @@ test_rlk_tilemap_init_valid(void) {
 	fixture_setup();
 	assert(g_tm.width == FIXTURE_W);
 	assert(g_tm.height == FIXTURE_H);
-
-	/* Verify all tiles are cleared (zero-initialized) */
-	for (int y = 0; y < FIXTURE_H; y++) {
-		for (int x = 0; x < FIXTURE_W; x++) {
-			const rlk_tile_t *cell = rlk_tilemap_get(&g_tm, x, y);
-			assert(cell != NULL);
-			assert(cell->type == 0);
-			assert(cell->flags == 0);
-		}
-	}
+	assert(g_tm.tiles == (rlk_tile_t *)g_buf);
 	fixture_teardown();
 }
 
 static void
 test_rlk_tilemap_init_buffer_alignment(void) {
-	/* Buffer must be large enough */
+	/* uint8_t buffer works: rlk_tile_t has no alignment requirement */
 	uint8_t aligned_buf[2 * 2 * sizeof(rlk_tile_t)];
 	rlk_tilemap_t tm;
 	rlk_tilemap_init(&tm, 2, 2, aligned_buf, sizeof(aligned_buf));
@@ -66,6 +57,8 @@ static void
 test_rlk_tilemap_get_invalid(void) {
 	fixture_setup();
 	assert(rlk_tilemap_get(&g_tm, -1, 0) == NULL);
+	assert(rlk_tilemap_get(&g_tm, 0, -1) == NULL);
+	assert(rlk_tilemap_get(&g_tm, FIXTURE_W, 0) == NULL);
 	assert(rlk_tilemap_get(&g_tm, 0, FIXTURE_H) == NULL);
 	fixture_teardown();
 }
@@ -84,14 +77,13 @@ test_rlk_tilemap_get_const(void) {
 
 static void
 test_rlk_tilemap_init_buffer_exact_size(void) {
-	/* Buffer exactly the required size for 2x2 tiles */
-	const int w = 2, h = 2;
-	/* 2*2*8 = 32 bytes, need 33 bytes to be exact, but align to uint64_t */
-	uint64_t buf[4]; /* 4*8 = 32 bytes >= 2*2*8 = 16 bytes */
+	/* Buffer of exactly width*height tiles */
+	rlk_tile_t buf[2 * 2];
 	rlk_tilemap_t tm;
-	rlk_tilemap_init(&tm, w, h, buf, sizeof(buf));
-	assert(tm.width == w);
-	assert(tm.height == h);
+	rlk_tilemap_init(&tm, 2, 2, buf, sizeof(buf));
+	assert(tm.width == 2);
+	assert(tm.height == 2);
+	assert(tm.tiles == buf);
 }
 
 /* Main ----------------------------------------------------------------------- */

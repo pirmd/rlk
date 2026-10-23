@@ -9,12 +9,22 @@ Build:
   make test             # Run unit tests
   make clean            # Remove build artifacts
 
+Note: the Makefiles use BSD make. On Linux, use `bmake` or `pmake`
+instead of GNU make.
+
 Configuration:
   Copy config.mk.example to config.mk to customize CFLAGS or library paths.
 
 Headers:
+  rlk.h                # Umbrella header (includes all of the below)
   err.h                # Error handling
+  hash.h               # Seed/coordinate hashing
+  fmath.h              # Math helpers
+  noise.h              # Noise generation (value, perlin, fbm)
+  rng.h                # Deterministic PRNG (splitmix64)
   tilemap.h            # 2D grid with occupancy
+  wg_nf.h              # Noise-field world generation
+  wg_nf_modulator.h    # Voronoi modulation stage for wg_nf
 
 License:
   MIT. See LICENSE.
