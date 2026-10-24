@@ -75,23 +75,53 @@ test_rlk_smoothstep_quadratic(void) {
 	assert(v > 0.15f && v < 0.16f);
 }
 
-/* rlk_dist2f tests ------------------------------------------------------------ */
+/* rlk_dist_euclideanf tests -------------------------------------------------- */
 
 static void
-test_rlk_dist2f_origin(void) {
-	assert(rlk_dist2f(0.0f, 0.0f) == 0.0f);
+test_rlk_dist_euclideanf_origin(void) {
+	assert(rlk_dist_euclideanf(0.0f, 0.0f, 0.0f, 0.0f) == 0.0f);
 }
 
 static void
-test_rlk_dist2f_axes(void) {
-	assert(rlk_dist2f(3.0f, 0.0f) > 2.9999f && rlk_dist2f(3.0f, 0.0f) < 3.0001f);
-	assert(rlk_dist2f(0.0f, 4.0f) > 3.9999f && rlk_dist2f(0.0f, 4.0f) < 4.0001f);
+test_rlk_dist_euclideanf_axes(void) {
+	assert(rlk_dist_euclideanf(0.0f, 0.0f, 3.0f, 0.0f) > 2.9999f && rlk_dist_euclideanf(0.0f, 0.0f, 3.0f, 0.0f) < 3.0001f);
+	assert(rlk_dist_euclideanf(0.0f, 0.0f, 0.0f, 4.0f) > 3.9999f && rlk_dist_euclideanf(0.0f, 0.0f, 0.0f, 4.0f) < 4.0001f);
 }
 
 static void
-test_rlk_dist2f_diagonal(void) {
+test_rlk_dist_euclideanf_diagonal(void) {
 	/* sqrt(3^2 + 4^2) = 5 */
-	assert(rlk_dist2f(3.0f, 4.0f) > 4.9999f && rlk_dist2f(3.0f, 4.0f) < 5.0001f);
+	assert(rlk_dist_euclideanf(0.0f, 0.0f, 3.0f, 4.0f) > 4.9999f && rlk_dist_euclideanf(0.0f, 0.0f, 3.0f, 4.0f) < 5.0001f);
+}
+
+static void
+test_rlk_dist_euclideanf_offset(void) {
+	/* distance between (1,1) and (4,5) = sqrt(3^2 + 4^2) = 5 */
+	assert(rlk_dist_euclideanf(1.0f, 1.0f, 4.0f, 5.0f) > 4.9999f && rlk_dist_euclideanf(1.0f, 1.0f, 4.0f, 5.0f) < 5.0001f);
+}
+
+/* rlk_dist_manhattan tests --------------------------------------------------- */
+
+static void
+test_rlk_dist_manhattan_same(void) {
+	assert(rlk_dist_manhattan(3, 4, 3, 4) == 0);
+}
+
+static void
+test_rlk_dist_manhattan_axes(void) {
+	assert(rlk_dist_manhattan(0, 0, 5, 0) == 5);
+	assert(rlk_dist_manhattan(0, 0, 0, 7) == 7);
+}
+
+static void
+test_rlk_dist_manhattan_diagonal(void) {
+	assert(rlk_dist_manhattan(0, 0, 3, 4) == 7);
+}
+
+static void
+test_rlk_dist_manhattan_negative(void) {
+	assert(rlk_dist_manhattan(5, 5, 2, 1) == 7);
+	assert(rlk_dist_manhattan(-3, -4, 3, 4) == 14);
 }
 
 /* Main ----------------------------------------------------------------------- */
@@ -111,9 +141,15 @@ main(void) {
 	test_rlk_smoothstep_midpoint();
 	test_rlk_smoothstep_quadratic();
 
-	test_rlk_dist2f_origin();
-	test_rlk_dist2f_axes();
-	test_rlk_dist2f_diagonal();
+	test_rlk_dist_euclideanf_origin();
+	test_rlk_dist_euclideanf_axes();
+	test_rlk_dist_euclideanf_diagonal();
+	test_rlk_dist_euclideanf_offset();
+
+	test_rlk_dist_manhattan_same();
+	test_rlk_dist_manhattan_axes();
+	test_rlk_dist_manhattan_diagonal();
+	test_rlk_dist_manhattan_negative();
 
 	return 0;
 }

@@ -24,10 +24,20 @@ rlk_smoothstep(float t) {
     return t * t * (3.0f - 2.0f * t);
 }
 
-/* 2D Euclidean distance. */
+/* Euclidean distance between two 2D points. */
 static inline float
-rlk_dist2f(float x, float y) {
-    return sqrtf(x * x + y * y);
+rlk_dist_euclideanf(float x1, float y1, float x2, float y2) {
+    float dx = x2 - x1;
+    float dy = y2 - y1;
+    return sqrtf(dx * dx + dy * dy);
+}
+
+/* Manhattan distance between two integer points. */
+static inline int
+rlk_dist_manhattan(int x1, int y1, int x2, int y2) {
+    int dx = x2 - x1;
+    int dy = y2 - y1;
+    return (dx < 0 ? -dx : dx) + (dy < 0 ? -dy : dy);
 }
 
 #endif /* RLK_FMATH_H */
