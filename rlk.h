@@ -17,7 +17,11 @@
 #include "rng.h"
 #include "wg_nf.h"
 #include "wg_nf_modulator.h"
+#include "wg_nf_grid.h"
+#include "wg_nf_flow.h"
 #include "wg_ca.h"
 #include "wg_bsp.h"
+#include "wg_grid.h"
+#include "wg_flow.h"
 
 #endif /* RLK_H */
