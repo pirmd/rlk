@@ -2,7 +2,7 @@
 
 LIB = librlk.a
 
-SRC = wg_nf.c wg_nf_modulator.c wg_ca.c
+SRC = wg_nf.c wg_nf_modulator.c wg_ca.c wg_bsp.c
 
 include Makefile.inc
 

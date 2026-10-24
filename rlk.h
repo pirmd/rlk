@@ -18,5 +18,6 @@
 #include "wg_nf.h"
 #include "wg_nf_modulator.h"
 #include "wg_ca.h"
+#include "wg_bsp.h"
 
 #endif /* RLK_H */

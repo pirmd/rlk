@@ -25,6 +25,11 @@ Headers:
   tilemap.h            # 2D grid with occupancy
   wg_nf.h              # Noise-field world generation
   wg_nf_modulator.h    # Voronoi modulation stage for wg_nf
+  wg_ca.h              # Cellular Automata (caves, organic structures)
+  wg_bsp.h             # Binary Space Partitioning (rooms + corridors)
+
+Demos:
+  demo/demo_tilemap_viewer.c  # Interactive terrain viewer (PXL)
 
 License:
   MIT. See LICENSE.

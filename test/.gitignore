@@ -7,3 +7,4 @@ test_rng
 test_wg_nf
 test_wg_nf_modulator
 test_wg_ca
+test_wg_bsp
