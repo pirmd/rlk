@@ -15,6 +15,8 @@
 #include "wg_nf.h"
 #include "wg_nf_grid.h"
 #include "wg_nf_flow.h"
+#include "wg_nf_rivers.h"
+#include "wg_nf_relief.h"
 #include "wg_nf_poi.h"
 
 /* Coordinate naming: wx,wy world tile (tilemap coords); x,y view-local;
@@ -29,10 +31,10 @@
 #define CAM_SPEED  24.0f  /* tiles per second */
 
 #define SIDEBAR_W_RATIO   25  /* sidebar takes 25% of window width */
-#define MINIMAP_H_RATIO   37  /* minimap takes 37% of sidebar height */
-#define VIEW_MODE_BTN_H   24  /* view mode button height (font 6x10 + padding) */
-#define MAP_INFO_H_RATIO  16  /* map info takes 16% of sidebar height */
-#define TILE_INFO_H_RATIO 26  /* tile info takes 26% of sidebar height (legend same height, at bottom) */
+#define MINIMAP_H_RATIO   34  /* minimap takes 34% of sidebar height */
+#define BTN_H             22  /* button height (font 6x10 + padding) */
+#define MAP_INFO_H_RATIO  14  /* map info takes 14% of sidebar height */
+#define TILE_INFO_H_RATIO 28  /* tile info takes 28% of sidebar height (legend same height, at bottom) */
 
 /* Color (0xAARRGGBB) */
 #define FG_COLOR        0xFFFFFFFFU
@@ -45,35 +47,38 @@ enum {
     TILE_VOID = 0,
     TILE_GRASS,
     TILE_WATER,
-    TILE_RIVER,   /* river: high flow accumulation */
+    TILE_RIVER,   /* river: wg_nf_rivers mask > 0.5 */
     TILE_LAKE,    /* lake: filled depression */
     TILE_ROCK,
     TILE_SAND,
     TILE_TREE,
-    TILE_SNOW,    /* snow: high elevation peaks */
+    TILE_SNOW,    /* snow: high elevation or cold temperature */
+    TILE_MARSH,   /* marsh: floodplain near river mouths */
     TILE_COUNT
 };
 
-/* Palette for tile types */
-static const uint32_t TILE_COLORS[TILE_COUNT] = {
-    0xFF000000U, /* VOID */
-    0xFF4CAF50U, /* GRASS */
-    0xFF2196F3U, /* WATER (ocean) */
-    0xFF64B5F6U, /* RIVER (lighter blue) */
-    0xFF1A237EU, /* LAKE (dark blue) */
-    0xFF795548U, /* ROCK */
-    0xFFFFC107U, /* SAND */
-    0xFF2E7D32U, /* TREE */
-    0xFFFAFAFAU, /* SNOW (white) */
+/* Palette: 4 shades per tile type, light (0) to dark (3).
+   Water (sea) is darker than River at the same variant: the sea is deep,
+   rivers are shallow. Lakes sit in between. */
+static const uint32_t TILE_PALETTE[TILE_COUNT][4] = {
+    { 0xFF000000U, 0xFF000000U, 0xFF000000U, 0xFF000000U }, /* VOID */
+    { 0xFFA5D6A7U, 0xFF81C784U, 0xFF66BB6AU, 0xFF4CAF50U }, /* GRASS: light -> green */
+    { 0xFF4FC3F7U, 0xFF29B6F6U, 0xFF039BE5U, 0xFF01579BU }, /* WATER (sea): shallow -> abyss */
+    { 0xFFB3E5FCU, 0xFF81D4FAU, 0xFF4FC3F7U, 0xFF29B6F6U }, /* RIVER: always lighter than sea */
+    { 0xFF3949ABU, 0xFF283593U, 0xFF1A237EU, 0xFF0D1442U }, /* LAKE: indigo, deep but not abyss */
+    { 0xFFA1887FU, 0xFF8D6E63U, 0xFF795548U, 0xFF5D4037U }, /* ROCK: light -> dark brown */
+    { 0xFFFFE0B2U, 0xFFFFCC80U, 0xFFFFB74DU, 0xFFF9A825U }, /* SAND: pale -> golden */
+    { 0xFF43A047U, 0xFF388E3CU, 0xFF2E7D32U, 0xFF1B5E20U }, /* TREE: medium -> dark green */
+    { 0xFFFFFFFFU, 0xFFFAFAFAU, 0xFFF5F5F5U, 0xFFEEEEEEU }, /* SNOW: white -> light grey */
+    { 0xFF9CCC65U, 0xFF8BC34AU, 0xFF7BA05BU, 0xFF689F38U }, /* MARSH: light -> dark olive */
 };
 
 /* Human-readable names for tile types */
 static const char *const TILE_NAMES[TILE_COUNT] = {
-    "Void", "Grass", "Water", "River", "Lake", "Rock", "Sand", "Tree", "Snow"
+    "Void", "Grass", "Water", "River", "Lake", "Rock", "Sand", "Tree", "Snow", "Marsh"
 };
 
-/* Distinct color per biome id: multiply by an odd constant so consecutive
-   ids spread over the three channels instead of staying on the gray axis. */
+/* Distinct color per biome id */
 static uint32_t
 get_biome_color(uint8_t id) {
     uint32_t h = (uint32_t)id * 0x9E3779B9U + 0x2545F491U;
@@ -88,35 +93,74 @@ get_biome_color(uint8_t id) {
 #define TM_W 128
 #define TM_H 96
 
-#define DISPLAY_TILE      0
-#define DISPLAY_BIOME     1
-#define DISPLAY_ELEVATION 2
-#define DISPLAY_FLOW      3
-#define DISPLAY_POI       4
-#define DISPLAY_COUNT     5
+/* Base display modes (mutually exclusive, radio buttons) */
+enum {
+    BASE_TILE = 0,
+    BASE_BIOME,
+    BASE_ELEV,
+    BASE_RELIEF,
+    BASE_COUNT
+};
 
-/* --- TERRAIN GENERATION (wg_nf) ------------------------------------------ */
+/* Overlay flags (cumulative, toggle buttons) */
+#define OVL_RIVER  0x01U  /* show wg_nf_rivers network */
+#define OVL_POI    0x02U  /* show POI markers */
+
+/* --- TERRAIN GENERATION (wg_nf + wg_nf_relief + wg_nf_rivers) ------------- */
 
 #define SEED 42ULL
 
-/* Elevation thresholds (noise output is ~[0,1]) */
-#define ELEV_DEEP     0.35f
-#define ELEV_SHALLOW  0.42f
-#define ELEV_BEACH    0.46f
-#define ELEV_LOWLAND  0.72f
+/* Elevation thresholds (relief stage output ~[0,1]).
+   Beach is a thin slice (0.03, like demo_worldgen) so coasts read naturally. */
+#define ELEV_DEEP     0.33f
+#define ELEV_SHALLOW  0.36f
+#define ELEV_BEACH    0.39f
+#define ELEV_LOWLAND  0.78f
 #define ELEV_MOUNTAIN 0.88f
 
-/* Coarse grid for hydrology (wg_grid + wg_flow) */
-#define GRID_W       32
-#define GRID_H       24
-#define GRID_CELL    4          /* tiles per cell: 128/32=4, 96/24=4 */
-#define SEA_LEVEL    0.35f      /* ocean level on the elevation grid */
-#define RIVER_ACC_MIN 80.0f     /* min accumulation to be a river tile */
+/* Coarse grid for hydrology: 2x the map size so rivers have a real catchment.
+   64x48 cells of 4 tiles = 256x192 tiles, centred on the 128x96 map. */
+#define GRID_W       64
+#define GRID_H       48
+#define GRID_CELL    4
+#define GRID_OX      (-(GRID_W * GRID_CELL / 2 - TM_W / 2))   /* -64 */
+#define GRID_OY      (-(GRID_H * GRID_CELL / 2 - TM_H / 2))   /* -48 */
+#define SEA_LEVEL    0.33f      /* ocean level */
 #define LAKE_MIN_DEPTH 0.02f    /* min filled depth to be a lake tile */
+#define RIVER_ACC_MIN  40u      /* drainage area (cells) at which a river starts */
 
-/* Field slots: 0..2 sampled noise, 3..5 derived from grid/flow stages */
-enum { F_ELEV = 0, F_TEMP, F_DETAIL, F_ELEV_GRID, F_ACC, F_LAKE, F_NFIELDS };
-#define F_NDERIVED 3  /* F_ELEV_GRID, F_ACC, F_LAKE */
+/* Sampled field slots (noise fields) */
+enum {
+    F_CONT = 0,   /* continents (low freq) */
+    F_HILLS,      /* rolling relief */
+    F_RIDGE,      /* mountain crests (RIDGE kind) */
+    F_WARP_X,     /* domain warp X */
+    F_WARP_Y,     /* domain warp Y */
+    F_FJORD,      /* fjord noise field */
+    F_TEMP,       /* temperature (cooled by lapse) */
+    F_DETAIL,     /* local detail */
+    F_WIG_X,      /* river meander X (fine displacement) */
+    F_WIG_Y,      /* river meander Y */
+    F_CREEK,      /* creek noise field (level-line headwater streams) */
+    F_NSAMPLED
+};
+
+/* Derived field slots (stage-written) */
+enum {
+    D_ELEV = 0,       /* final elevation (wg_nf_relief) -> field[F_NSAMPLED + 0] */
+    D_RIVER_MASK,    /* river mask [0,1] (wg_nf_rivers) */
+    D_RIVER_CARVE,   /* valley carve depth (wg_nf_rivers) */
+    D_ACC,           /* flow accumulation (wg_nf_flow) */
+    D_LAKE,          /* lake depth (wg_nf_flow) */
+    F_NDERIVED
+};
+
+/* Absolute field indices */
+#define F_ELEV        (F_NSAMPLED + D_ELEV)
+#define F_RIVER_MASK  (F_NSAMPLED + D_RIVER_MASK)
+#define F_RIVER_CARVE (F_NSAMPLED + D_RIVER_CARVE)
+#define F_ACC         (F_NSAMPLED + D_ACC)
+#define F_LAKE        (F_NSAMPLED + D_LAKE)
 
 /* Zone (biome) indices */
 enum {
@@ -130,14 +174,12 @@ enum {
     Z_COUNT
 };
 
-/* Human-readable names for biomes */
 static const char *const BIOME_NAMES[Z_COUNT] = {
     "Deep", "Shallow", "Beach", "Grassland", "Forest", "Mountain", "Snow"
 };
 
 /* --- POI (Points of Interest) -------------------------------------------- */
 
-/* POI kinds we detect in this demo (subset of rlk_wg_poi_kind_t) */
 enum {
     POI_CAVE = 0,
     POI_DUNGEON,
@@ -146,7 +188,6 @@ enum {
     POI_KIND_COUNT
 };
 
-/* Marker color per POI kind (0xAARRGGBB) */
 static const uint32_t POI_COLORS[POI_KIND_COUNT] = {
     0xFF8B4513U, /* CAVE: saddle brown */
     0xFF8B0000U, /* DUNGEON: dark red */
@@ -158,7 +199,6 @@ static const char *const POI_NAMES[POI_KIND_COUNT] = {
     "Cave", "Dungeon", "Village", "Tower"
 };
 
-/* Map rlk_wg_poi_kind_t -> local POI kind index, or -1 if not tracked. */
 static int
 poi_kind_index(rlk_wg_poi_kind_t kind) {
     switch (kind) {
@@ -172,12 +212,22 @@ poi_kind_index(rlk_wg_poi_kind_t kind) {
 
 /* --- STRUCTS ------------------------------------------------------------- */
 
-/* World/model state: the tilemap, its backing buffer, the wg_nf generator,
-   and the coarse hydrology grid (elevation + flow). */
+typedef struct world_s world_t;
+
+/* Capture wrapper: intercepts zone writer calls to store derived fields
+   into per-tile buffers for the Relief and Flow display modes. */
 typedef struct {
+    world_t *w;
+    void (*write)(const rlk_wg_nf_ctx_t *, const void *, rlk_tile_t *);
+    const void *real_data;
+} capture_t;
+
+/* World/model state */
+struct world_s {
     rlk_tilemap_t tm;
     uint8_t buffer[TM_W * TM_H * sizeof(rlk_tile_t)];
     rlk_wg_nf_t wg;
+
     /* Coarse elevation grid + flow (hydrology) */
     rlk_wg_grid_t elev_grid;
     float elev_buf[GRID_W * GRID_H];
@@ -187,60 +237,75 @@ typedef struct {
     uint32_t flow_acc[GRID_W * GRID_H];
     int      flow_order[GRID_W * GRID_H];
     uint64_t flow_scratch[GRID_W * GRID_H];
-    rlk_noise_t elev_noise;
-    /* wg_nf stages: must outlive wg (stored here, not on stack) */
-    rlk_wg_nf_grid_t grid_stage;
+    rlk_wg_grid_t lake_grid;       /* lake depths, filtered by outlet accumulation */
+    float lake_buf[GRID_W * GRID_H];
+    rlk_noise_t relief_noise[F_NSAMPLED];
+
+    /* wg_nf stage configs (must outlive wg) */
     rlk_wg_nf_flow_t flow_stage;
-    /* POI detection: list + 4 detector configs (persistent) */
+    rlk_wg_nf_rivers_t rivers_stage;
+    rlk_wg_nf_relief_t relief_stage;
+
+    /* POI detection */
     rlk_wg_poi_list_t pois;
     rlk_wg_nf_poi_t poi_cave_cfg;
     rlk_wg_nf_poi_t poi_dungeon_cfg;
     rlk_wg_nf_poi_t poi_village_cfg;
     rlk_wg_nf_poi_t poi_tower_cfg;
-    uint64_t seed;
-} world_t;
 
-/* Camera: position in world tile coords (float for smooth scrolling). */
+    /* Per-tile captured derived fields (for Relief/Flow display modes) */
+    float final_elev[TM_W * TM_H];
+    float river_mask_buf[TM_W * TM_H];
+    float river_carve_buf[TM_W * TM_H];
+
+    /* Capture wrappers (one per zone) */
+    capture_t cap[Z_COUNT];
+
+    uint64_t seed;
+};
+
+/* Camera */
 typedef struct {
     float wx, wy;
 } camera_t;
 
-/* View state: camera, selection, display mode. */
+/* View state */
 typedef struct {
     camera_t cam;
-    int selected_wx, selected_wy;  /* -1 if none */
-    int display_mode;              /* DISPLAY_TILE, _BIOME, _ELEVATION, _FLOW, _POI */
+    int selected_wx, selected_wy;
+    int base_mode;       /* BASE_TILE, BASE_BIOME, BASE_ELEV, BASE_RELIEF */
+    uint8_t overlays;    /* OVL_RIVER | OVL_POI */
 } view_t;
 
-/* UI resources + per-frame input snapshot. */
+/* UI resources + per-frame input snapshot */
 typedef struct {
     const pxl_font_t **fonts;
     size_t font_count;
-    /* Input snapshot (filled by handle_input each frame) */
     int mx, my;
     bool mouse_left_down;
     bool mouse_left_clicked;
 } ui_t;
 
-/* Per-frame layout: pixel rects for each panel. */
+/* Per-frame layout */
 typedef struct {
     pxl_rect_t root;
-    pxl_rect_t map;        /* main column (left) for tilemap */
-    pxl_rect_t minimap;    /* minimap area */
-    pxl_rect_t view_mode;  /* view mode selector area */
-    pxl_rect_t map_info;   /* map info area */
-    pxl_rect_t legend;     /* legend area */
-    pxl_rect_t tile_info;  /* tile info area */
+    pxl_rect_t map;
+    pxl_rect_t minimap;
+    pxl_rect_t base_mode;   /* top button bar: Tile/Biome/Elev/Relief */
+    pxl_rect_t overlay_mode; /* bottom button bar: River/POI */
+    pxl_rect_t map_info;
+    pxl_rect_t legend;
+    pxl_rect_t tile_info;
 } layout_t;
 
-/* Minimap view: precomputed scale and offsets shared by render and input. */
+/* Minimap view */
 typedef struct {
     float scale;
     int off_x, off_y;
-    int pix_w, pix_h;  /* rendered minimap size in pixels */
+    int pix_w, pix_h;
 } minimap_t;
 
-/* Viewer state: aggregates everything the tilemap viewer needs. */
+/* Viewer state */
 typedef struct {
     world_t world;
     view_t view;
@@ -258,56 +323,170 @@ pt_in_rect(int x, int y, pxl_rect_t r) {
 
 /* --- TERRAIN WRITERS ----------------------------------------------------- */
 
-/* Elevation grid function: FBM noise for the coarse hydrology grid. */
+/* Widen the river mask near the coast: up to 2x at the shoreline.
+   Uses the final elevation to estimate distance from the sea.
+   shore = 0 at waterline, 1 at ELEV_BEACH (landward edge of beach). */
+static inline float
+estuary_mask(const rlk_wg_nf_ctx_t *ctx, float mask) {
+    if (mask <= 0.0f) return 0.0f;
+    float elev = ctx->field[F_ELEV];
+    float shore = (elev - SEA_LEVEL) / (ELEV_BEACH - SEA_LEVEL);
+    shore = shore < 0.0f ? 0.0f : (shore > 1.0f ? 1.0f : shore);
+    /* Widen: 1x inland, 2x at the shoreline */
+    return mask * (1.0f + (1.0f - shore));
+}
+
+/* Context for relief_elev_fn: reads field configs from wg, mirrors the wg_nf_relief stage. */
+typedef struct {
+    const rlk_wg_nf_t *wg;       /* field configs (freq, octaves, gain, kind) */
+    const rlk_noise_t *noise;    /* relief_noise[F_NSAMPLED] */
+    float warp;
+    float hills_amp;
+    float mountain_lo, mountain_hi, mountain_amp;
+} relief_elev_ctx_t;
+
+/* Sample a wg_nf field at (x,y), reading parameters from wg->fields[idx]. */
+static inline float
+relief_sample_field(const rlk_wg_nf_t *wg, const rlk_noise_t *noise,
+                    int idx, float x, float y) {
+    const rlk_wg_nf_field_t *f = &wg->fields[idx];
+    float v = rlk_noise_fbm(&noise[idx], x, y, f->octaves, f->freq, f->gain);
+    if (f->kind == RLK_WG_NF_RIDGE)
+        v = 1.0f - fabsf(2.0f * v - 1.0f);
+    return v;
+}
+
+/* Elevation grid function: reproduces the wg_nf_relief stage's BASE elevation
+   (cont + hills + mountains, before river/fjord carving), so the flow grid
+   sees the same terrain that is displayed. Rivers follow the displayed relief.
+   Field parameters are read from wg->fields[] to stay in sync with the stage. */
 static float
-elev_fn(float px, float py, const void *user) {
-    const rlk_noise_t *n = (const rlk_noise_t *)user;
-    /* Ridged noise for mountain-like relief */
-    float v = rlk_noise_fbm(n, px, py, 5, 0.025f, 0.5f);
-    /* Sharpen: push toward extremes for more ocean and more peaks */
-    return v * v * (3.0f - 2.0f * v);  /* smoothstep */
+relief_elev_fn(float px, float py, const void *user) {
+    const relief_elev_ctx_t *ctx = (const relief_elev_ctx_t *)user;
+    const rlk_wg_nf_t *wg = ctx->wg;
+
+    /* Continent at original position */
+    float cont = relief_sample_field(wg, ctx->noise, F_CONT, px, py);
+
+    /* Domain warp */
+    float vx = relief_sample_field(wg, ctx->noise, F_WARP_X, px, py);
+    float vy = relief_sample_field(wg, ctx->noise, F_WARP_Y, px, py);
+    float qx = px + (vx - 0.5f) * 2.0f * ctx->warp;
+    float qy = py + (vy - 0.5f) * 2.0f * ctx->warp;
+
+    /* Base elevation: cont + hills + mountains */
+    float elev = cont;
+
+    float hills = relief_sample_field(wg, ctx->noise, F_HILLS, qx, qy);
+    elev += ctx->hills_amp * (hills - 0.5f);
+
+    /* Mountains: RIDGE kind, only where cont is high enough (smoothstep gate) */
+    float ridge = relief_sample_field(wg, ctx->noise, F_RIDGE, qx, qy);
+    float mt = (cont - ctx->mountain_lo) / (ctx->mountain_hi - ctx->mountain_lo);
+    mt = mt < 0.0f ? 0.0f : (mt > 1.0f ? 1.0f : mt);
+    mt = mt * mt * (3.0f - 2.0f * mt);
+    elev += ctx->mountain_amp * mt * ridge;
+
+    return elev;
+}
+
+/* Capture writer: stores derived fields then dispatches to the real writer. */
+static void
+capture_write(const rlk_wg_nf_ctx_t *ctx, const void *data, rlk_tile_t *out) {
+    const capture_t *cap = (const capture_t *)data;
+    const int idx = ctx->y * TM_W + ctx->x;
+    cap->w->final_elev[idx] = ctx->field[F_ELEV];
+    cap->w->river_mask_buf[idx] = ctx->field[F_RIVER_MASK];
+    cap->w->river_carve_buf[idx] = ctx->field[F_RIVER_CARVE];
+    cap->write(ctx, cap->real_data, out);
 }
 
 static void
 write_deep(const rlk_wg_nf_ctx_t *ctx, const void *data, rlk_tile_t *out) {
     (void)data;
     out->type = TILE_WATER;
-    out->variant = (uint8_t)(ctx->depth * 3.0f); /* darker toward abyss */
+    /* Sediment plume: lighter water where a river meets the sea */
+    if (ctx->field[F_RIVER_MASK] > 0.0f) {
+        out->variant = 1;
+    } else {
+        out->variant = (uint8_t)(ctx->depth * 3.0f);
+    }
 }
 
 static void
 write_shallow(const rlk_wg_nf_ctx_t *ctx, const void *data, rlk_tile_t *out) {
-    (void)ctx; (void)data;
+    (void)data;
     out->type = TILE_WATER;
-    out->variant = 3; /* lightest water shade */
+    /* Sediment plume near river mouths: lightest water shade */
+    if (ctx->field[F_RIVER_MASK] > 0.0f) {
+        out->variant = 0;
+    } else {
+        out->variant = 1;  /* shallow: medium-light blue */
+    }
 }
 
 static void
 write_beach(const rlk_wg_nf_ctx_t *ctx, const void *data, rlk_tile_t *out) {
     (void)data;
+    float mask = estuary_mask(ctx, ctx->field[F_RIVER_MASK]);
+
+    if (mask > 0.0f) {
+        /* Estuary: gradient from water (at shoreline) to marsh (inland).
+           ctx->depth = 0 at waterline, 1 at landward edge of beach. */
+        float eff = mask * (1.0f - 0.5f * ctx->depth);
+        if (eff > 0.45f) {
+            out->type = TILE_WATER;
+            out->variant = 0;
+            out->flags = 0x02;
+        } else {
+            out->type = TILE_MARSH;
+            out->variant = (uint8_t)(ctx->field[F_DETAIL] * 3.0f);
+            out->flags = 0x02;
+        }
+        return;
+    }
     out->type = TILE_SAND;
-    out->variant = (uint8_t)(ctx->field[F_DETAIL] * 3.0f);
+    /* Wet sand near the waterline (depth=0, darker), dry sand inland (depth=1, lighter) */
+    out->variant = (uint8_t)((1.0f - ctx->depth) * 3.0f);
 }
 
 static void
 write_grass(const rlk_wg_nf_ctx_t *ctx, const void *data, rlk_tile_t *out) {
     (void)data;
-    /* Lake: filled depression */
-    if (ctx->field[F_LAKE] >= LAKE_MIN_DEPTH) {
+    /* Lake: filled depression. At the shore with a river, show a channel. */
+    float lake = ctx->field[F_LAKE];
+    if (lake >= LAKE_MIN_DEPTH) {
+        float mask = estuary_mask(ctx, ctx->field[F_RIVER_MASK]);
+        if (mask > 0.3f && lake < LAKE_MIN_DEPTH * 2.0f) {
+            out->type = TILE_RIVER;
+            out->variant = (uint8_t)(mask * 3.0f);
+            out->flags = 0x02;
+            return;
+        }
         out->type = TILE_LAKE;
         out->variant = 0;
         out->flags = 0x02;
         return;
     }
-    /* River: high flow accumulation */
-    if (ctx->field[F_ACC] >= RIVER_ACC_MIN) {
+    /* River (widened near coast by estuary_mask) */
+    float mask = estuary_mask(ctx, ctx->field[F_RIVER_MASK]);
+    if (mask > 0.5f) {
         out->type = TILE_RIVER;
-        out->variant = 1;
+        out->variant = (uint8_t)(mask * 3.0f);
+        out->flags = 0x02;
+        return;
+    }
+    /* Marsh: floodplain near the coast (river edge or valley, low elevation) */
+    float carve = ctx->field[F_RIVER_CARVE];
+    if ((mask > 0.0f || carve > 0.0f) && ctx->field[F_ELEV] < ELEV_BEACH + 0.08f) {
+        out->type = TILE_MARSH;
+        out->variant = (uint8_t)(ctx->field[F_DETAIL] * 3.0f);
         out->flags = 0x02;
         return;
     }
     out->type = TILE_GRASS;
-    out->variant = (uint8_t)(ctx->field[F_DETAIL] * 3.0f);
+    /* Variant: mix detail noise with depth (darker green in the biome centre) */
+    out->variant = (uint8_t)((ctx->field[F_DETAIL] * 0.6f + ctx->depth * 0.4f) * 3.0f);
     /* Rocky outcrops near mountain borders */
     if (ctx->zone2 == Z_MOUNTAIN && ctx->edge > 0.6f &&
         rlk_wg_nf_rand(ctx->wg, ctx->wx, ctx->wy, 2) < 0.3f) {
@@ -319,23 +498,33 @@ write_grass(const rlk_wg_nf_ctx_t *ctx, const void *data, rlk_tile_t *out) {
 static void
 write_forest(const rlk_wg_nf_ctx_t *ctx, const void *data, rlk_tile_t *out) {
     (void)data;
-    /* Lake: filled depression */
+    /* Lake */
     if (ctx->field[F_LAKE] >= LAKE_MIN_DEPTH) {
         out->type = TILE_LAKE;
         out->variant = 0;
         out->flags = 0x02;
         return;
     }
-    /* River: high flow accumulation */
-    if (ctx->field[F_ACC] >= RIVER_ACC_MIN) {
+    /* River (widened near coast) */
+    float mask = estuary_mask(ctx, ctx->field[F_RIVER_MASK]);
+    if (mask > 0.5f) {
         out->type = TILE_RIVER;
-        out->variant = 1;
+        out->variant = (uint8_t)(mask * 3.0f);
         out->flags = 0x02;
         return;
     }
-    /* Tree density: 30% at edge, 80% deep, modulated by detail noise */
+    /* Marsh: floodplain near the coast */
+    float carve = ctx->field[F_RIVER_CARVE];
+    if ((mask > 0.0f || carve > 0.0f) && ctx->field[F_ELEV] < ELEV_BEACH + 0.08f) {
+        out->type = TILE_MARSH;
+        out->variant = (uint8_t)(ctx->field[F_DETAIL] * 3.0f);
+        out->flags = 0x02;
+        return;
+    }
+    /* Tree density */
     float density = (0.3f + ctx->depth * 0.5f) * (0.5f + ctx->field[F_DETAIL]);
-    out->variant = (uint8_t)(ctx->field[F_DETAIL] * 3.0f);
+    /* Variant: mix detail noise with depth (darker in the forest centre) */
+    out->variant = (uint8_t)((ctx->field[F_DETAIL] * 0.5f + ctx->depth * 0.5f) * 3.0f);
     if (rlk_wg_nf_rand(ctx->wg, ctx->wx, ctx->wy, 1) < density) {
         out->type = TILE_TREE;
         out->flags = 0x01;
@@ -347,25 +536,48 @@ write_forest(const rlk_wg_nf_ctx_t *ctx, const void *data, rlk_tile_t *out) {
 static void
 write_mountain(const rlk_wg_nf_ctx_t *ctx, const void *data, rlk_tile_t *out) {
     (void)data;
-    /* Snow on the highest peaks (from coarse elevation grid) */
-    if (ctx->field[F_ELEV_GRID] > 0.75f) {
+    /* Lake */
+    if (ctx->field[F_LAKE] >= LAKE_MIN_DEPTH) {
+        out->type = TILE_LAKE;
+        out->variant = 0;
+        out->flags = 0x02;
+        return;
+    }
+    /* River cuts through mountain valleys */
+    float mask = estuary_mask(ctx, ctx->field[F_RIVER_MASK]);
+    if (mask > 0.5f) {
+        out->type = TILE_RIVER;
+        out->variant = (uint8_t)(mask * 3.0f);
+        out->flags = 0x02;
+        return;
+    }
+    /* Snow only on extreme peaks (like demo_worldgen: snow line at 0.98) */
+    if (ctx->field[F_ELEV] > 0.95f) {
         out->type = TILE_SNOW;
         out->flags = 0x01;
-        out->variant = 3;
+        out->variant = 0;  /* pure white */
         return;
     }
     out->type = TILE_ROCK;
     out->flags = 0x01;
-    out->variant = (uint8_t)(ctx->field[F_DETAIL] * 3.0f);
+    /* Variant: depth-based (darker rock in the mountain core) */
+    out->variant = (uint8_t)(ctx->depth * 3.0f);
 }
 
 static void
 write_snow(const rlk_wg_nf_ctx_t *ctx, const void *data, rlk_tile_t *out) {
     (void)data;
+    /* River cuts through snow */
+    float mask = estuary_mask(ctx, ctx->field[F_RIVER_MASK]);
+    if (mask > 0.5f) {
+        out->type = TILE_RIVER;
+        out->variant = (uint8_t)(mask * 3.0f);
+        out->flags = 0x02;
+        return;
+    }
     out->type = TILE_SNOW;
     out->flags = 0x01;
-    out->variant = 3; /* snow: lightest shade */
-    (void)ctx;
+    out->variant = 0;  /* pure white */
 }
 
 /* --- WORLD GENERATION ---------------------------------------------------- */
@@ -377,10 +589,42 @@ world_generate(world_t *w, uint64_t seed) {
 
     rlk_tilemap_init(&w->tm, TM_W, TM_H, w->buffer, sizeof(w->buffer));
 
-    /* --- Coarse elevation grid (wg_grid) --- */
-    rlk_noise_seed(&w->elev_noise, seed ^ 0xE1E7A7E0ULL);
-    rlk_wg_grid_init(&w->elev_grid, GRID_W, GRID_H, GRID_CELL, 0, 0, w->elev_buf);
-    rlk_wg_grid_fill(&w->elev_grid, elev_fn, &w->elev_noise);
+    /* --- wg_nf field config (before grid fill: relief_noise seeding needs field seeds) --- */
+    rlk_wg_nf_t *wg = &w->wg;
+    wg->seed = seed;
+    wg->nstages = 0;
+    wg->nsampled = F_NSAMPLED;
+    wg->nderived = F_NDERIVED;
+    wg->fields[F_CONT]   = (rlk_wg_nf_field_t){ .kind = RLK_WG_NF_FBM,   .seed = 1, .octaves = 3, .freq = 0.012f, .gain = 0.5f };
+    wg->fields[F_HILLS]  = (rlk_wg_nf_field_t){ .kind = RLK_WG_NF_FBM,   .seed = 2, .octaves = 4, .freq = 0.050f, .gain = 0.5f };
+    wg->fields[F_RIDGE]  = (rlk_wg_nf_field_t){ .kind = RLK_WG_NF_RIDGE, .seed = 3, .octaves = 4, .freq = 0.030f, .gain = 0.5f };
+    wg->fields[F_WARP_X] = (rlk_wg_nf_field_t){ .kind = RLK_WG_NF_FBM,   .seed = 4, .octaves = 2, .freq = 0.025f, .gain = 0.5f };
+    wg->fields[F_WARP_Y] = (rlk_wg_nf_field_t){ .kind = RLK_WG_NF_FBM,   .seed = 5, .octaves = 2, .freq = 0.025f, .gain = 0.5f };
+    wg->fields[F_FJORD]  = (rlk_wg_nf_field_t){ .kind = RLK_WG_NF_FBM,   .seed = 6, .octaves = 2, .freq = 0.040f, .gain = 0.5f };
+    wg->fields[F_TEMP]   = (rlk_wg_nf_field_t){ .kind = RLK_WG_NF_FBM,   .seed = 7, .octaves = 3, .freq = 0.018f, .gain = 0.5f };
+    wg->fields[F_DETAIL] = (rlk_wg_nf_field_t){ .kind = RLK_WG_NF_FBM,   .seed = 8, .octaves = 2, .freq = 0.080f, .gain = 0.5f };
+    wg->fields[F_WIG_X]  = (rlk_wg_nf_field_t){ .kind = RLK_WG_NF_FBM,   .seed = 9, .octaves = 2, .freq = 0.100f, .gain = 0.5f };
+    wg->fields[F_WIG_Y]  = (rlk_wg_nf_field_t){ .kind = RLK_WG_NF_FBM,   .seed = 10, .octaves = 2, .freq = 0.120f, .gain = 0.5f };
+    wg->fields[F_CREEK]  = (rlk_wg_nf_field_t){ .kind = RLK_WG_NF_FBM,   .seed = 11, .octaves = 2, .freq = 0.025f, .gain = 0.5f };
+
+    /* --- Coarse elevation grid: seed noise like wg_nf, fill with relief terrain ---
+       The flow grid must see the SAME terrain the relief stage displays,
+       otherwise rivers follow a different landscape than what is shown. */
+    for (int i = 0; i < F_NSAMPLED; i++) {
+        uint64_t s = rlk_hash_sub(seed, 0xF1E1D000ULL + (uint64_t)i);
+        rlk_noise_seed(&w->relief_noise[i], rlk_hash_sub(s, wg->fields[i].seed));
+    }
+    relief_elev_ctx_t elev_ctx = {
+        .wg = wg,
+        .noise = w->relief_noise,
+        .warp = 8.0f,
+        .hills_amp = 0.30f,
+        .mountain_lo = 0.60f,
+        .mountain_hi = 0.80f,
+        .mountain_amp = 0.45f,
+    };
+    rlk_wg_grid_init(&w->elev_grid, GRID_W, GRID_H, GRID_CELL, GRID_OX, GRID_OY, w->elev_buf);
+    rlk_wg_grid_fill(&w->elev_grid, relief_elev_fn, &elev_ctx);
 
     /* --- Flow: depression filling + D8 drainage + accumulation (wg_flow) --- */
     rlk_wg_flow_init(&w->flow, GRID_W, GRID_H,
@@ -388,40 +632,105 @@ world_generate(world_t *w, uint64_t seed) {
     rlk_err_t ferr = rlk_wg_flow_build(&w->flow, &w->elev_grid, SEA_LEVEL, w->flow_scratch);
     assert(ferr == RLK_OK);
 
-    /* --- wg_nf: terrain generation with hydrology stages --- */
-    rlk_wg_nf_t *wg = &w->wg;
-    wg->seed = seed;
-    wg->nstages = 0;  /* reset: stages are re-registered below */
+    /* --- Lake grid: filled depression depths, filtered by outlet accumulation ---
+       Lakes whose outflow drains fewer than RIVER_ACC_MIN cells are dropped:
+       they would sit with no visible outlet. */
+    rlk_wg_grid_init(&w->lake_grid, GRID_W, GRID_H, GRID_CELL, GRID_OX, GRID_OY, w->lake_buf);
+    for (int j = 0; j < GRID_H; j++)
+        for (int i = 0; i < GRID_W; i++)
+            w->lake_buf[(size_t)j * GRID_W + i] =
+                rlk_wg_flow_lake_depth(&w->flow, &w->elev_grid, SEA_LEVEL, i, j);
+    /* Filter: drop lake cells whose outlet accumulation < RIVER_ACC_MIN */
+    for (int c = 0; c < GRID_W * GRID_H; c++) {
+        if (w->lake_buf[c] <= 0.0f) continue;
+        int cur = c;
+        for (;;) {
+            if (w->flow.dir[cur] == RLK_WG_FLOW_OUTLET) break;
+            int dx, dy;
+            rlk_wg_flow_step(w->flow.dir[cur], &dx, &dy);
+            const int nx = (cur % GRID_W) + dx, ny = (cur / GRID_W) + dy;
+            if (nx < 0 || nx >= GRID_W || ny < 0 || ny >= GRID_H) break;
+            const int nc = ny * GRID_W + nx;
+            if (w->lake_buf[nc] <= 0.0f) break;
+            cur = nc;
+        }
+        if (w->flow.acc[cur] < RIVER_ACC_MIN) w->lake_buf[c] = 0.0f;
+    }
 
-    /* Sampled fields: elevation (continents), temperature, local detail */
-    wg->nsampled = 3;
-    wg->nderived = F_NDERIVED;
-    wg->fields[F_ELEV]   = (rlk_wg_nf_field_t){ .kind = RLK_WG_NF_FBM, .seed = 1, .octaves = 4, .freq = 0.015f, .gain = 0.5f };
-    wg->fields[F_TEMP]   = (rlk_wg_nf_field_t){ .kind = RLK_WG_NF_FBM, .seed = 2, .octaves = 3, .freq = 0.020f, .gain = 0.5f };
-    wg->fields[F_DETAIL] = (rlk_wg_nf_field_t){ .kind = RLK_WG_NF_FBM, .seed = 3, .octaves = 2, .freq = 0.080f, .gain = 0.5f };
+    /* --- wg_nf stages: flow + rivers + relief + POI --- */
 
-    /* Stage 1: inject coarse elevation grid into derived field F_ELEV_GRID */
-    w->grid_stage = (rlk_wg_nf_grid_t){
-        .grid = &w->elev_grid,
-        .slot = 0,  /* -> field[nsampled + 0] = field[F_ELEV_GRID] */
-        .scale = 1.0f,
-        .offset = 0.0f,
-    };
-    rlk_wg_nf_grid_add(wg, &w->grid_stage);
-
-    /* Stage 2: inject flow accumulation + lake depth into derived fields */
+    /* Stage 1: wg_nf_flow — inject accumulation + lake depth */
     w->flow_stage = (rlk_wg_nf_flow_t){
         .flow = &w->flow,
         .elev = &w->elev_grid,
         .sea = SEA_LEVEL,
-        .slot_acc  = 1,  /* -> field[nsampled + 1] = field[F_ACC] */
+        .slot_acc  = D_ACC,
         .slot_dir  = RLK_WG_NF_FLOW_NONE,
-        .slot_lake = 2,  /* -> field[nsampled + 2] = field[F_LAKE] */
+        .slot_lake = D_LAKE,
         .acc_scale = 1.0f,
     };
     rlk_wg_nf_flow_add(wg, &w->flow_stage);
 
-    /* Stage 3-6: POI detectors (cave, dungeon, village, tower) */
+    /* Stage 2: wg_nf_rivers — project drainage into per-tile river masks.
+       Narrow rivers (max ~4 tiles wide), valleys 2x river width.
+       Meanders from F_WIG_X/Y, creeks from F_CREEK, lakes from the filtered grid. */
+    w->rivers_stage = (rlk_wg_nf_rivers_t){
+        .flow = &w->flow,
+        .elev = &w->elev_grid,
+        .sea = SEA_LEVEL,
+        .acc_min = RIVER_ACC_MIN,
+        .width_min = 0.6f,
+        .width_max = 2.0f,
+        .valley_mult = 2.0f,
+        .carve = 0.03f,
+        .slot_mask = D_RIVER_MASK,
+        .slot_carve = D_RIVER_CARVE,
+        .lake_depth = &w->lake_grid,
+        .lake_min_depth = LAKE_MIN_DEPTH,
+        .f_wig_x = F_WIG_X,
+        .f_wig_y = F_WIG_Y,
+        .wig_tiles = 3.0f,
+        .f_creek = F_CREEK,
+        .creek_width = 1.0f,
+        .creek_carve = 0.02f,
+    };
+    rlk_wg_nf_rivers_add(wg, &w->rivers_stage);
+
+    /* Stage 3: wg_nf_relief — standardised elevation (domain warp, fjords, lapse) */
+    w->relief_stage = (rlk_wg_nf_relief_t){
+        .f_cont = F_CONT,
+        .f_hills = F_HILLS,
+        .f_ridge = F_RIDGE,
+        .f_warp_x = F_WARP_X,
+        .f_warp_y = F_WARP_Y,
+        .f_fjord = F_FJORD,
+        .f_temp = F_TEMP,
+        .f_river = RLK_WG_NF_RELIEF_NONE,  /* rivers come from wg_nf_rivers */
+        .slot_elev = D_ELEV,
+        .slot_river = RLK_WG_NF_RELIEF_NONE,
+        .river_carve_field = D_RIVER_CARVE,  /* read carve from wg_nf_rivers */
+        .sea = SEA_LEVEL,
+        .warp = 8.0f,
+        .hills_amp = 0.30f,
+        .mountain_lo = 0.60f,
+        .mountain_hi = 0.80f,
+        .mountain_amp = 0.45f,
+        .lapse = 0.25f,
+        .river_width_tiles = 2.0f,
+        .river_carve = 0.03f,
+        .relief_span = 0.40f,
+        .fjord_dir = { 0.8f, 0.6f },
+        .fjord_stretch = 0.25f,
+        .fjord_width = 0.12f,
+        .fjord_depth = 0.50f,
+        .fjord_steep = 3.0f,
+        .fjord_reach = 0.15f,
+        .fjord_cold0 = 0.45f,
+        .fjord_cold1 = 0.65f,
+    };
+    rlk_wg_nf_relief_add(wg, &w->relief_stage);
+
+    /* Stage 4-7: POI detectors */
     rlk_wg_poi_list_init(&w->pois);
 
     /* Cave: on hills/mountains, high detail noise */
@@ -434,13 +743,13 @@ world_generate(world_t *w, uint64_t seed) {
         .density = 0.003f,
         .size = 24,
         .grid = &w->elev_grid,
-        .grid_min = 0.50f,
+        .grid_min = 0.40f,
         .grid_max = 0.85f,
         .min_separation = 24,
     };
     rlk_wg_nf_poi_add(wg, &w->poi_cave_cfg);
 
-    /* Dungeon: near rivers, moderate detail */
+    /* Dungeon: near rivers */
     w->poi_dungeon_cfg = (rlk_wg_nf_poi_t){
         .list = &w->pois,
         .kind = RLK_WG_POI_DUNGEON,
@@ -451,28 +760,28 @@ world_generate(world_t *w, uint64_t seed) {
         .size = 32,
         .flow = &w->flow,
         .flow_grid = &w->elev_grid,
-        .min_acc = 40.0f,
+        .min_acc = 30.0f,
         .min_separation = 32,
     };
     rlk_wg_nf_poi_add(wg, &w->poi_dungeon_cfg);
 
-    /* Village: in lowland plains */
+    /* Village: warm lowland plains only (temperature + altitude constraints) */
     w->poi_village_cfg = (rlk_wg_nf_poi_t){
         .list = &w->pois,
         .kind = RLK_WG_POI_VILLAGE,
         .salt = 0xA11CEULL,
-        .field = F_ELEV,
-        .threshold = 0.48f,
-        .density = 0.004f,
+        .field = F_TEMP,
+        .threshold = 0.45f,
+        .density = 0.006f,
         .size = 16,
         .grid = &w->elev_grid,
         .grid_min = 0.35f,
-        .grid_max = 0.55f,
+        .grid_max = 0.50f,
         .min_separation = 16,
     };
     rlk_wg_nf_poi_add(wg, &w->poi_village_cfg);
 
-    /* Tower: on peaks */
+    /* Tower: on hills and peaks */
     w->poi_tower_cfg = (rlk_wg_nf_poi_t){
         .list = &w->pois,
         .kind = RLK_WG_POI_TOWER,
@@ -482,26 +791,36 @@ world_generate(world_t *w, uint64_t seed) {
         .density = 0.002f,
         .size = 8,
         .grid = &w->elev_grid,
-        .grid_min = 0.80f,
+        .grid_min = 0.70f,
         .grid_max = 1.0f,
         .min_separation = 8,
     };
     rlk_wg_nf_poi_add(wg, &w->poi_tower_cfg);
 
-    /* Axes: elevation (0) + temperature (1), both with detail-based jitter */
+    /* Axes: elevation (relief output) + temperature (cooled by lapse) */
     wg->naxes = 2;
-    wg->axes[0] = (rlk_wg_nf_axis_t){ .field = F_ELEV,   .jitter_field = F_DETAIL, .jitter_amp = 0.03f };
-    wg->axes[1] = (rlk_wg_nf_axis_t){ .field = F_TEMP,   .jitter_field = F_DETAIL, .jitter_amp = 0.03f };
+    wg->axes[0] = (rlk_wg_nf_axis_t){ .field = F_ELEV,  .jitter_field = F_DETAIL, .jitter_amp = 0.03f };
+    wg->axes[1] = (rlk_wg_nf_axis_t){ .field = F_TEMP,  .jitter_field = F_DETAIL, .jitter_amp = 0.03f };
 
-    /* Zones: elevation slices, temperature splits lowland into grass/forest */
+    /* Zones: elevation slices on axis 0, temperature splits on axis 1 */
     wg->nzones = Z_COUNT;
-    wg->zones[Z_DEEP]     = (rlk_wg_nf_zone_t){ .lo = {0.0f, 0.0f},  .hi = {ELEV_DEEP,     1.0f},  .write = write_deep };
-    wg->zones[Z_SHALLOW]  = (rlk_wg_nf_zone_t){ .lo = {ELEV_DEEP, 0.0f},  .hi = {ELEV_SHALLOW,  1.0f},  .write = write_shallow };
-    wg->zones[Z_BEACH]    = (rlk_wg_nf_zone_t){ .lo = {ELEV_SHALLOW, 0.0f}, .hi = {ELEV_BEACH,  1.0f},  .write = write_beach };
-    wg->zones[Z_GRASS]    = (rlk_wg_nf_zone_t){ .lo = {ELEV_BEACH, 0.45f}, .hi = {ELEV_LOWLAND, 1.0f},  .write = write_grass };
-    wg->zones[Z_FOREST]   = (rlk_wg_nf_zone_t){ .lo = {ELEV_BEACH, 0.0f},  .hi = {ELEV_LOWLAND, 0.45f}, .write = write_forest };
-    wg->zones[Z_MOUNTAIN] = (rlk_wg_nf_zone_t){ .lo = {ELEV_LOWLAND, 0.0f}, .hi = {ELEV_MOUNTAIN, 1.0f}, .write = write_mountain };
-    wg->zones[Z_SNOW]     = (rlk_wg_nf_zone_t){ .lo = {ELEV_MOUNTAIN, 0.0f}, .hi = {1.0f,        1.0f},  .write = write_snow };
+
+    /* Setup capture wrappers: each zone writes through capture_write */
+    w->cap[Z_DEEP]     = (capture_t){ .w = w, .write = write_deep,     .real_data = NULL };
+    w->cap[Z_SHALLOW]  = (capture_t){ .w = w, .write = write_shallow,  .real_data = NULL };
+    w->cap[Z_BEACH]    = (capture_t){ .w = w, .write = write_beach,    .real_data = NULL };
+    w->cap[Z_GRASS]    = (capture_t){ .w = w, .write = write_grass,    .real_data = NULL };
+    w->cap[Z_FOREST]   = (capture_t){ .w = w, .write = write_forest,   .real_data = NULL };
+    w->cap[Z_MOUNTAIN] = (capture_t){ .w = w, .write = write_mountain, .real_data = NULL };
+    w->cap[Z_SNOW]     = (capture_t){ .w = w, .write = write_snow,     .real_data = NULL };
+
+    wg->zones[Z_DEEP]     = (rlk_wg_nf_zone_t){ .lo = {0.0f, 0.0f},  .hi = {ELEV_DEEP,     1.0f},  .write = capture_write, .data = &w->cap[Z_DEEP] };
+    wg->zones[Z_SHALLOW]  = (rlk_wg_nf_zone_t){ .lo = {ELEV_DEEP, 0.0f},  .hi = {ELEV_SHALLOW,  1.0f},  .write = capture_write, .data = &w->cap[Z_SHALLOW] };
+    wg->zones[Z_BEACH]    = (rlk_wg_nf_zone_t){ .lo = {ELEV_SHALLOW, 0.0f}, .hi = {ELEV_BEACH,  1.0f},  .write = capture_write, .data = &w->cap[Z_BEACH] };
+    wg->zones[Z_GRASS]    = (rlk_wg_nf_zone_t){ .lo = {ELEV_BEACH, 0.45f}, .hi = {ELEV_LOWLAND, 1.0f},  .write = capture_write, .data = &w->cap[Z_GRASS] };
+    wg->zones[Z_FOREST]   = (rlk_wg_nf_zone_t){ .lo = {ELEV_BEACH, 0.0f},  .hi = {ELEV_LOWLAND, 0.45f}, .write = capture_write, .data = &w->cap[Z_FOREST] };
+    wg->zones[Z_MOUNTAIN] = (rlk_wg_nf_zone_t){ .lo = {ELEV_LOWLAND, 0.0f}, .hi = {ELEV_MOUNTAIN, 1.0f}, .write = capture_write, .data = &w->cap[Z_MOUNTAIN] };
+    wg->zones[Z_SNOW]     = (rlk_wg_nf_zone_t){ .lo = {ELEV_MOUNTAIN, 0.0f}, .hi = {1.0f,        1.0f},  .write = capture_write, .data = &w->cap[Z_SNOW] };
 
     wg->depth_scale = 0.15f;
     wg->transition_width = 0.10f;
@@ -518,13 +837,9 @@ compute_layout(int win_w, int win_h) {
     l.root.w = win_w;
     l.root.h = win_h;
 
-    /* Split into main column (left) and sidebar (right) */
     l.map = l.root;
     pxl_rect_t sidebar = pxl_split_rect(&l.map, l.root.w * SIDEBAR_W_RATIO / 100, PXL_SIDE_RIGHT);
 
-    /* Snap map to TILE_PX multiples so the tile grid stays pixel-aligned.
-       Horizontal leftover goes to the sidebar; vertical leftover is centered
-       (BG_COLOR fills the top/bottom bands). */
     int leftover_w = l.map.w % TILE_PX;
     if (leftover_w > 0) {
         l.map.w -= leftover_w;
@@ -537,12 +852,13 @@ compute_layout(int win_w, int win_h) {
         l.map.h -= leftover_h;
     }
 
-    /* Split sidebar: top = minimap, map info, tile info; bottom = legend, view_mode */
     l.minimap   = pxl_split_rect(&sidebar, sidebar.h * MINIMAP_H_RATIO / 100, PXL_SIDE_TOP);
     l.map_info  = pxl_split_rect(&sidebar, sidebar.h * MAP_INFO_H_RATIO / 100, PXL_SIDE_TOP);
     l.tile_info = pxl_split_rect(&sidebar, sidebar.h * TILE_INFO_H_RATIO / 100, PXL_SIDE_TOP);
     l.legend    = pxl_split_rect(&sidebar, l.tile_info.h, PXL_SIDE_BOTTOM);
-    l.view_mode = pxl_split_rect(&sidebar, VIEW_MODE_BTN_H, PXL_SIDE_BOTTOM);
+    /* Two button bars at the bottom: overlays on bottom, base modes above */
+    l.overlay_mode = pxl_split_rect(&sidebar, BTN_H, PXL_SIDE_BOTTOM);
+    l.base_mode    = pxl_split_rect(&sidebar, BTN_H, PXL_SIDE_BOTTOM);
 
     return l;
 }
@@ -554,7 +870,6 @@ minimap_view_compute(const pxl_rect_t *area, int map_w, int map_h) {
     assert(area && map_w > 0 && map_h > 0);
 
     minimap_t mm = {0};
-    /* Uniform scale (min of both) to preserve the map aspect ratio */
     float scale_x = (float)area->w / (float)map_w;
     float scale_y = (float)area->h / (float)map_h;
     mm.scale = scale_x < scale_y ? scale_x : scale_y;
@@ -565,8 +880,6 @@ minimap_view_compute(const pxl_rect_t *area, int map_w, int map_h) {
     return mm;
 }
 
-/* Convert minimap pixel coords to world tile coords (clamped to map bounds).
-   Returns true if (mx, my) is within the minimap area. */
 static bool
 minimap_view_to_tile(const minimap_t *mm, const pxl_rect_t *area,
                      int map_w, int map_h,
@@ -605,7 +918,6 @@ ui_draw_text(const ui_t *ui, pxl_canvas_t *cnv, const char *txt, pxl_align_t ali
     pxl_draw_text(cnv, &w, txt);
 }
 
-/* Immediate-mode button: draws label + outline if active, returns true if clicked. */
 static bool
 ui_button(const ui_t *ui, pxl_canvas_t *cnv, const char *label, bool active) {
     ui_draw_text(ui, cnv, label, PXL_ALIGN_H_CENTER | PXL_ALIGN_V_CENTER);
@@ -645,16 +957,14 @@ camera_clamp(camera_t *cam, int map_w, int map_h, int view_w, int view_h) {
 static uint32_t
 get_elevation_color(float e) {
     if (e < SEA_LEVEL) {
-        /* Underwater: darker blue with depth */
         float t = e / SEA_LEVEL;
         uint8_t b = (uint8_t)(0x80 + t * 0x60);
         return 0xFF000000U | ((uint32_t)b);
     }
-    e = (e - SEA_LEVEL) / (1.0f - SEA_LEVEL);  /* normalize to [0,1] above sea */
+    e = (e - SEA_LEVEL) / (1.0f - SEA_LEVEL);
     if (e < 0.0f) e = 0.0f;
     if (e > 1.0f) e = 1.0f;
 
-    /* Gradient stops: green(0) -> yellow(0.3) -> brown(0.6) -> gray(0.8) -> white(1) */
     float r, g, b;
     if (e < 0.3f) {
         float t = e / 0.3f;
@@ -681,31 +991,22 @@ sample_elevation(const world_t *w, int wx, int wy) {
     return rlk_wg_grid_sample(&w->elev_grid, (float)wx + 0.5f, (float)wy + 0.5f);
 }
 
-/* Flow color: gray land, blue rivers (intensity ~ acc), dark blue lakes/ocean. */
+/* Get the base color for a tile according to base_mode. */
 static uint32_t
-get_flow_color(const world_t *w, int wx, int wy) {
-    float e = sample_elevation(w, wx, wy);
-    if (e < SEA_LEVEL)
-        return 0xFF0A1A3AU;  /* deep ocean */
-
-    /* Lake: filled depression */
-    int ci, cj;
-    if (rlk_wg_grid_cell_of(&w->elev_grid, wx, wy, &ci, &cj)) {
-        float depth = rlk_wg_flow_lake_depth(&w->flow, &w->elev_grid, SEA_LEVEL, ci, cj);
-        if (depth >= LAKE_MIN_DEPTH)
-            return 0xFF1A237EU;  /* lake: dark blue */
-
-        uint32_t acc = w->flow.acc[(size_t)cj * (size_t)w->flow.w + (size_t)ci];
-        if (acc >= RIVER_ACC_MIN) {
-            /* River: brighter blue with higher accumulation */
-            float t = (float)acc / ((float)GRID_W * (float)GRID_H);
-            if (t > 1.0f) t = 1.0f;
-            uint8_t b = (uint8_t)(0x80 + t * 0x60);
-            uint8_t g = (uint8_t)(0x40 + t * 0x40);
-            return 0xFF000000U | ((uint32_t)b << 0) | ((uint32_t)g << 8);
-        }
+get_base_color(const world_t *w, int base_mode, int twx, int twy) {
+    if (base_mode == BASE_ELEV) {
+        return get_elevation_color(sample_elevation(w, twx, twy));
     }
-    return 0xFF303030U;  /* land: dark gray */
+    if (base_mode == BASE_RELIEF) {
+        if (twx >= 0 && twx < TM_W && twy >= 0 && twy < TM_H)
+            return get_elevation_color(w->final_elev[twy * TM_W + twx]);
+        return BG_COLOR;
+    }
+    const rlk_tile_t *tile = rlk_tilemap_get(&w->tm, twx, twy);
+    if (!tile) return BG_COLOR;
+    return (base_mode == BASE_BIOME)
+        ? get_biome_color(tile->biome)
+        : TILE_PALETTE[tile->type % TILE_COUNT][tile->variant & 3];
 }
 
 static void
@@ -714,57 +1015,67 @@ render_tilemap(pxl_canvas_t *cnv, const viewer_t *a) {
 
     const world_t *w = &a->world;
     const view_t *v = &a->view;
+    const bool ovl_river = (v->overlays & OVL_RIVER) != 0;
+    const bool ovl_poi   = (v->overlays & OVL_POI) != 0;
 
     pxl_rect_t view = pxl_canvas_view(cnv);
-    int wx = (int)v->cam.wx;  /* world tile at camera top-left (integer part) */
+    int wx = (int)v->cam.wx;
     int wy = (int)v->cam.wy;
-    /* Fractional part shifts the drawing origin; canvas scissor clips edges */
     int dx = -(int)((v->cam.wx - (float)wx) * (float)TILE_PX);
     int dy = -(int)((v->cam.wy - (float)wy) * (float)TILE_PX);
-    /* +2 to cover the partially visible tiles at the edges */
     int vw = view.w / TILE_PX + 2;
     int vh = view.h / TILE_PX + 2;
 
-    for (int y = 0; y < vh; y++) {       /* view-local row */
-        for (int x = 0; x < vw; x++) {   /* view-local col */
-            int twx = wx + x, twy = wy + y;  /* world tile coords */
-
+    for (int y = 0; y < vh; y++) {
+        for (int x = 0; x < vw; x++) {
+            int twx = wx + x, twy = wy + y;
             int px = dx + x * TILE_PX;
             int py = dy + y * TILE_PX;
 
-            uint32_t color;
-            if (v->display_mode == DISPLAY_ELEVATION) {
-                color = get_elevation_color(sample_elevation(w, twx, twy));
-            } else if (v->display_mode == DISPLAY_FLOW) {
-                color = get_flow_color(w, twx, twy);
-            } else {
-                const rlk_tile_t *tile = rlk_tilemap_get(&w->tm, twx, twy);
-                if (!tile) continue;
-                color = (v->display_mode == DISPLAY_BIOME)
-                    ? get_biome_color(tile->biome)
-                    : TILE_COLORS[tile->type % TILE_COUNT];
+            /* Base layer */
+            uint32_t color = get_base_color(w, v->base_mode, twx, twy);
+
+            /* River overlay: highlight rivers + floodplains */
+            if (ovl_river && twx >= 0 && twx < TM_W && twy >= 0 && twy < TM_H) {
+                const int idx = twy * TM_W + twx;
+                const float mask = w->river_mask_buf[idx];
+                const float carve = w->river_carve_buf[idx];
+                if (mask > 0.0f) {
+                    /* River: blue gradient */
+                    uint8_t b = (uint8_t)(0x60 + mask * 0x80);
+                    uint8_t g = (uint8_t)(0x30 + mask * 0x40);
+                    color = 0xFF000000U | ((uint32_t)b) | ((uint32_t)g << 8);
+                } else if (carve > 0.0f) {
+                    /* Floodplain: subtle olive tint blended with the base terrain.
+                       Shows the eroded valley around the river without hiding it. */
+                    float t = carve / 0.03f;
+                    if (t > 1.0f) t = 1.0f;
+                    t *= 0.35f;  /* max 35% blend */
+                    uint32_t br = (color >> 16) & 0xFF;
+                    uint32_t bg = (color >> 8) & 0xFF;
+                    uint32_t bb = color & 0xFF;
+                    uint32_t r = (uint32_t)((float)br * (1.0f - t) + 0x6Bu * t);
+                    uint32_t g = (uint32_t)((float)bg * (1.0f - t) + 0x8Eu * t);
+                    uint32_t b = (uint32_t)((float)bb * (1.0f - t) + 0x23u * t);
+                    color = 0xFF000000U | (r << 16) | (g << 8) | b;
+                }
+                /* Non-river tiles keep their base color (no dimming) */
             }
-            /* Dim base tiles in POI mode so markers stand out */
-            if (v->display_mode == DISPLAY_POI) {
-                color = 0xFF000000U
-                    | (((color >> 16) & 0xFF) * 35 / 100 << 16)
-                    | (((color >>  8) & 0xFF) * 35 / 100 <<  8)
-                    | (((color >>  0) & 0xFF) * 35 / 100 <<  0);
-            }
+
             pxl_canvas_set_color(cnv, color);
             pxl_fill_rect(cnv, px, py, TILE_PX, TILE_PX);
         }
     }
 
     /* POI markers overlay */
-    if (v->display_mode == DISPLAY_POI) {
-        int half = TILE_PX / 4;  /* marker half-size: 4px in a 16px tile */
+    if (ovl_poi) {
+        int half = TILE_PX / 4;
         for (int i = 0; i < w->pois.count; i++) {
             const rlk_wg_poi_t *poi = &w->pois.items[i];
             int ki = poi_kind_index(poi->kind);
             if (ki < 0) continue;
 
-            int sx = poi->wx - wx;  /* view-local coords */
+            int sx = poi->wx - wx;
             int sy = poi->wy - wy;
             if (sx < 0 || sx >= vw || sy < 0 || sy >= vh) continue;
 
@@ -772,15 +1083,14 @@ render_tilemap(pxl_canvas_t *cnv, const viewer_t *a) {
             int cy = dy + sy * TILE_PX + TILE_PX / 2;
             pxl_canvas_set_color(cnv, POI_COLORS[ki]);
             pxl_fill_rect(cnv, cx - half, cy - half, half * 2, half * 2);
-            /* White outline */
             pxl_canvas_set_color(cnv, HIGHLIGHT_COLOR);
             pxl_draw_rect(cnv, cx - half, cy - half, half * 2, half * 2);
         }
     }
 
-    /* Outline the selected tile (outside the tile loops) */
+    /* Selected tile outline */
     if (v->selected_wx >= 0 && v->selected_wy >= 0) {
-        int x = v->selected_wx - wx;  /* view-local coords of selection */
+        int x = v->selected_wx - wx;
         int y = v->selected_wy - wy;
         if (x >= 0 && x < vw && y >= 0 && y < vh) {
             pxl_canvas_set_color(cnv, SELECT_COLOR);
@@ -796,6 +1106,8 @@ render_minimap(pxl_canvas_t *cnv, const viewer_t *a) {
     const world_t *w = &a->world;
     const view_t *v = &a->view;
     const minimap_t *mm = &a->mm;
+    const bool ovl_river = (v->overlays & OVL_RIVER) != 0;
+    const bool ovl_poi   = (v->overlays & OVL_POI) != 0;
 
     pxl_rect_t view = pxl_canvas_view(cnv);
     int mm_w = view.w;
@@ -811,31 +1123,39 @@ render_minimap(pxl_canvas_t *cnv, const viewer_t *a) {
             if (px + pw > mm_w) pw = mm_w - px;
             if (py + ph > mm_h) ph = mm_h - py;
 
-            uint32_t color;
-            if (v->display_mode == DISPLAY_ELEVATION) {
-                color = get_elevation_color(sample_elevation(w, wx, wy));
-            } else if (v->display_mode == DISPLAY_FLOW) {
-                color = get_flow_color(w, wx, wy);
-            } else {
-                const rlk_tile_t *tile = rlk_tilemap_get(&w->tm, wx, wy);
-                color = (v->display_mode == DISPLAY_BIOME)
-                    ? get_biome_color(tile->biome)
-                    : TILE_COLORS[tile->type % TILE_COUNT];
+            uint32_t color = get_base_color(w, v->base_mode, wx, wy);
+
+            if (ovl_river) {
+                const int idx = wy * TM_W + wx;
+                const float mask = w->river_mask_buf[idx];
+                const float carve = w->river_carve_buf[idx];
+                if (mask > 0.0f) {
+                    uint8_t b = (uint8_t)(0x60 + mask * 0x80);
+                    uint8_t g = (uint8_t)(0x30 + mask * 0x40);
+                    color = 0xFF000000U | ((uint32_t)b) | ((uint32_t)g << 8);
+                } else if (carve > 0.0f) {
+                    /* Floodplain: olive tint blended with base terrain */
+                    float t = carve / 0.03f;
+                    if (t > 1.0f) t = 1.0f;
+                    t *= 0.35f;
+                    uint32_t br = (color >> 16) & 0xFF;
+                    uint32_t bg = (color >> 8) & 0xFF;
+                    uint32_t bb = color & 0xFF;
+                    uint32_t r = (uint32_t)((float)br * (1.0f - t) + 0x6Bu * t);
+                    uint32_t g = (uint32_t)((float)bg * (1.0f - t) + 0x8Eu * t);
+                    uint32_t b = (uint32_t)((float)bb * (1.0f - t) + 0x23u * t);
+                    color = 0xFF000000U | (r << 16) | (g << 8) | b;
+                }
+                /* Non-river tiles keep their base color (no dimming) */
             }
-            /* Dim base tiles in POI mode */
-            if (v->display_mode == DISPLAY_POI) {
-                color = 0xFF000000U
-                    | (((color >> 16) & 0xFF) * 35 / 100 << 16)
-                    | (((color >>  8) & 0xFF) * 35 / 100 <<  8)
-                    | (((color >>  0) & 0xFF) * 35 / 100 <<  0);
-            }
+
             pxl_canvas_set_color(cnv, color);
             pxl_fill_rect(cnv, px, py, pw, ph);
         }
     }
 
     /* POI markers on minimap */
-    if (v->display_mode == DISPLAY_POI) {
+    if (ovl_poi) {
         int msz = (int)mm->scale + 1;
         if (msz < 2) msz = 2;
         for (int i = 0; i < w->pois.count; i++) {
@@ -872,22 +1192,32 @@ render_minimap(pxl_canvas_t *cnv, const viewer_t *a) {
     }
 }
 
+/* Base mode buttons (radio: one active at a time) */
 static void
-render_view_mode(const ui_t *ui, pxl_canvas_t *cnv_tile, pxl_canvas_t *cnv_biome,
-                 pxl_canvas_t *cnv_elev, pxl_canvas_t *cnv_flow,
-                 pxl_canvas_t *cnv_poi, view_t *v) {
-    assert(ui && cnv_tile && cnv_biome && cnv_elev && cnv_flow && cnv_poi && v);
+render_base_buttons(const ui_t *ui, pxl_canvas_t *cnv_tile, pxl_canvas_t *cnv_biome,
+                    pxl_canvas_t *cnv_elev, pxl_canvas_t *cnv_relief, view_t *v) {
+    assert(ui && cnv_tile && cnv_biome && cnv_elev && cnv_relief && v);
 
-    if (ui_button(ui, cnv_tile,  "Tile",  v->display_mode == DISPLAY_TILE))
-        v->display_mode = DISPLAY_TILE;
-    if (ui_button(ui, cnv_biome, "Biome", v->display_mode == DISPLAY_BIOME))
-        v->display_mode = DISPLAY_BIOME;
-    if (ui_button(ui, cnv_elev,  "Elev",  v->display_mode == DISPLAY_ELEVATION))
-        v->display_mode = DISPLAY_ELEVATION;
-    if (ui_button(ui, cnv_flow,  "Flow",  v->display_mode == DISPLAY_FLOW))
-        v->display_mode = DISPLAY_FLOW;
-    if (ui_button(ui, cnv_poi,   "POI",   v->display_mode == DISPLAY_POI))
-        v->display_mode = DISPLAY_POI;
+    if (ui_button(ui, cnv_tile,   "Tile",   v->base_mode == BASE_TILE))
+        v->base_mode = BASE_TILE;
+    if (ui_button(ui, cnv_biome,  "Biome",  v->base_mode == BASE_BIOME))
+        v->base_mode = BASE_BIOME;
+    if (ui_button(ui, cnv_elev,   "Elev",   v->base_mode == BASE_ELEV))
+        v->base_mode = BASE_ELEV;
+    if (ui_button(ui, cnv_relief, "Relief", v->base_mode == BASE_RELIEF))
+        v->base_mode = BASE_RELIEF;
+}
+
+/* Overlay buttons (toggle: cumulative) */
+static void
+render_overlay_buttons(const ui_t *ui, pxl_canvas_t *cnv_river, pxl_canvas_t *cnv_poi,
+                       view_t *v) {
+    assert(ui && cnv_river && cnv_poi && v);
+
+    if (ui_button(ui, cnv_river, "River", (v->overlays & OVL_RIVER) != 0))
+        v->overlays ^= OVL_RIVER;
+    if (ui_button(ui, cnv_poi,   "POI",   (v->overlays & OVL_POI) != 0))
+        v->overlays ^= OVL_POI;
 }
 
 static void
@@ -933,6 +1263,12 @@ render_tile_info(pxl_canvas_t *cnv, const ui_t *ui, const viewer_t *a) {
         lake = rlk_wg_flow_lake_depth(&w->flow, &w->elev_grid, SEA_LEVEL, ci, cj);
     }
 
+    /* Captured derived fields */
+    const int idx = v->selected_wy * TM_W + v->selected_wx;
+    const float fe = w->final_elev[idx];
+    const float rm = w->river_mask_buf[idx];
+    const float rc = w->river_carve_buf[idx];
+
     /* Find nearest POI within 16 tiles */
     const rlk_wg_poi_t *near_poi = NULL;
     int near_dist = 9999;
@@ -948,7 +1284,7 @@ render_tile_info(pxl_canvas_t *cnv, const ui_t *ui, const viewer_t *a) {
     }
 
     char poi_line[128] = "";
-    if (near_poi && near_dist <= 256) {  /* within 16 tiles */
+    if (near_poi && near_dist <= 256) {
         int ki = poi_kind_index(near_poi->kind);
         const char *pname = (ki >= 0) ? POI_NAMES[ki] : "?";
         int dist = (int)sqrtf((float)near_dist);
@@ -962,7 +1298,7 @@ render_tile_info(pxl_canvas_t *cnv, const ui_t *ui, const viewer_t *a) {
                  "\nPOI: %s d=%d [%s]", pname, dist, flags_str);
     }
 
-    char nfo[384];
+    char nfo[512];
     snprintf(nfo, sizeof(nfo),
         "     TILE\n\n"
         "Position: (%d,%d)\n"
@@ -970,12 +1306,15 @@ render_tile_info(pxl_canvas_t *cnv, const ui_t *ui, const viewer_t *a) {
         "Biome   : %s (%d)\n"
         "Variant : %d  Flags: 0x%02X\n"
         "Elev    : %.3f  Acc: %u\n"
-        "Lake    : %.3f%s",
+        "Lake    : %.3f\n"
+        "Final   : %.3f\n"
+        "River   : %.2f  Carve: %.3f%s",
         v->selected_wx, v->selected_wy,
         TILE_NAMES[tile->type % TILE_COUNT], tile->type,
         BIOME_NAMES[tile->biome % Z_COUNT], tile->biome,
         tile->variant, tile->flags,
-        elev, acc, lake, poi_line);
+        elev, acc, lake,
+        fe, rm, rc, poi_line);
 
     pxl_rect_t r = pxl_canvas_view(cnv);
     pxl_canvas_set_color(cnv, FG_COLOR);
@@ -991,7 +1330,6 @@ render_legend(pxl_canvas_t *cnv, const ui_t *ui, const viewer_t *a) {
     const view_t *v = &a->view;
     pxl_rect_t view = pxl_canvas_view(cnv);
 
-    /* Frame */
     pxl_canvas_set_color(cnv, FG_COLOR);
     pxl_draw_rect(cnv, view.x, view.y, view.w, view.h);
 
@@ -1003,27 +1341,38 @@ render_legend(pxl_canvas_t *cnv, const ui_t *ui, const viewer_t *a) {
     const int gap    = 4;
     const int pad    = 4;
     int col_w = view.w / 2;
-    /* Entries area: full height with 4px padding, vertically centered */
     int area_y = view.y + 4;
     int area_h = view.h - 8;
 
-    if (v->display_mode == DISPLAY_BIOME) {
-        /* 7 biomes over 2 columns: ceil(7/2)=4 left, 3 right */
+    const bool ovl_river = (v->overlays & OVL_RIVER) != 0;
+    const bool ovl_poi   = (v->overlays & OVL_POI) != 0;
+
+    /* Count total entries to vertically center */
+    int n_base;
+    if (v->base_mode == BASE_BIOME)       n_base = Z_COUNT;
+    else if (v->base_mode == BASE_ELEV || v->base_mode == BASE_RELIEF) n_base = 6;
+    else                                  n_base = TILE_COUNT - 1;  /* Tile: skip VOID */
+    int n_river = ovl_river ? 3 : 0;
+    int n_poi   = ovl_poi   ? POI_KIND_COUNT : 0;
+    int n_total = n_base + n_river + n_poi;
+    if (n_total == 0) n_total = 1;
+
+    int y = area_y + (area_h - n_total * line_h) / 2;
+
+    /* --- Base mode legend --- */
+    if (v->base_mode == BASE_BIOME) {
         int per_col = (Z_COUNT + 1) / 2;
-        int total_h = per_col * line_h;
-        int y0 = area_y + (area_h - total_h) / 2;
         for (int i = 0; i < Z_COUNT; i++) {
-            int col = i / per_col;
-            int row = i % per_col;
+            int col = i / per_col, row = i % per_col;
             int x = view.x + col * col_w + pad;
-            int y = y0 + row * line_h;
+            int yy = y + row * line_h;
             pxl_canvas_set_color(cnv, get_biome_color((uint8_t)i));
-            pxl_fill_rect(cnv, x, y + 3, swatch, swatch);
-            pxl_writer_set_cursor(&w, x + swatch + gap, y);
+            pxl_fill_rect(cnv, x, yy + 3, swatch, swatch);
+            pxl_writer_set_cursor(&w, x + swatch + gap, yy);
             pxl_draw_text(cnv, &w, BIOME_NAMES[i]);
         }
-    } else if (v->display_mode == DISPLAY_ELEVATION) {
-        /* Elevation gradient bar: 6 stops */
+        y += per_col * line_h;
+    } else if (v->base_mode == BASE_ELEV || v->base_mode == BASE_RELIEF) {
         static const struct { float e; uint32_t c; const char *lbl; } stops[] = {
             { 0.00f, 0xFF000080U, "Deep"  },
             { 0.35f, 0xFF00A0E0U, "Sea"   },
@@ -1032,65 +1381,57 @@ render_legend(pxl_canvas_t *cnv, const ui_t *ui, const viewer_t *a) {
             { 0.85f, 0xFF808080U, "Peak"  },
             { 1.00f, 0xFFFAFAFAU, "Snow"  },
         };
-        int n = 6;
-        int total_h = n * line_h;
-        int y0 = area_y + (area_h - total_h) / 2;
-        for (int i = 0; i < n; i++) {
-            int y = y0 + i * line_h;
+        for (int i = 0; i < 6; i++) {
             pxl_canvas_set_color(cnv, stops[i].c);
             pxl_fill_rect(cnv, view.x + pad, y + 3, swatch, swatch);
             pxl_writer_set_cursor(&w, view.x + pad + swatch + gap, y);
             pxl_draw_text(cnv, &w, stops[i].lbl);
+            y += line_h;
         }
-    } else if (v->display_mode == DISPLAY_FLOW) {
-        /* Flow legend: land, river, lake, ocean */
+    } else {
+        /* Tile types (skip VOID): 2 columns */
+        int count = TILE_COUNT - 1;
+        int per_col = (count + 1) / 2;
+        for (int i = 0; i < count; i++) {
+            int idx = i + 1;
+            int col = i / per_col, row = i % per_col;
+            int x = view.x + col * col_w + pad;
+            int yy = y + row * line_h;
+            pxl_canvas_set_color(cnv, TILE_PALETTE[idx][1]);
+            pxl_fill_rect(cnv, x, yy + 3, swatch, swatch);
+            pxl_writer_set_cursor(&w, x + swatch + gap, yy);
+            pxl_draw_text(cnv, &w, TILE_NAMES[idx]);
+        }
+        y += per_col * line_h;
+    }
+
+    /* --- River overlay legend --- */
+    if (ovl_river) {
         static const struct { uint32_t c; const char *lbl; } items[] = {
-            { 0xFF303030U, "Land"  },
-            { 0xFF4060C0U, "River" },
-            { 0xFF1A237EU, "Lake"  },
-            { 0xFF0A1A3AU, "Ocean" },
+            { 0xFF303030U, "Land"      },
+            { 0xFF6B8E23U, "Floodplain" },
+            { 0xFF4060C0U, "River"     },
         };
-        int n = 4;
-        int total_h = n * line_h;
-        int y0 = area_y + (area_h - total_h) / 2;
-        for (int i = 0; i < n; i++) {
-            int y = y0 + i * line_h;
+        for (int i = 0; i < 3; i++) {
             pxl_canvas_set_color(cnv, items[i].c);
             pxl_fill_rect(cnv, view.x + pad, y + 3, swatch, swatch);
             pxl_writer_set_cursor(&w, view.x + pad + swatch + gap, y);
             pxl_draw_text(cnv, &w, items[i].lbl);
+            y += line_h;
         }
-    } else if (v->display_mode == DISPLAY_POI) {
-        /* POI legend: 4 kinds over 2 columns */
+    }
+
+    /* --- POI overlay legend --- */
+    if (ovl_poi) {
         int per_col = (POI_KIND_COUNT + 1) / 2;
-        int total_h = per_col * line_h;
-        int y0 = area_y + (area_h - total_h) / 2;
         for (int i = 0; i < POI_KIND_COUNT; i++) {
-            int col = i / per_col;
-            int row = i % per_col;
+            int col = i / per_col, row = i % per_col;
             int x = view.x + col * col_w + pad;
-            int y = y0 + row * line_h;
+            int yy = y + row * line_h;
             pxl_canvas_set_color(cnv, POI_COLORS[i]);
-            pxl_fill_rect(cnv, x, y + 3, swatch, swatch);
-            pxl_writer_set_cursor(&w, x + swatch + gap, y);
+            pxl_fill_rect(cnv, x, yy + 3, swatch, swatch);
+            pxl_writer_set_cursor(&w, x + swatch + gap, yy);
             pxl_draw_text(cnv, &w, POI_NAMES[i]);
-        }
-    } else {
-        /* Tile types (skip VOID): 8 types over 2 columns */
-        int count = TILE_COUNT - 1;  /* skip VOID */
-        int per_col = (count + 1) / 2;
-        int total_h = per_col * line_h;
-        int y0 = area_y + (area_h - total_h) / 2;
-        for (int i = 0; i < count; i++) {
-            int idx = i + 1;  /* start at GRASS (skip VOID) */
-            int col = i / per_col;
-            int row = i % per_col;
-            int x = view.x + col * col_w + pad;
-            int y = y0 + row * line_h;
-            pxl_canvas_set_color(cnv, TILE_COLORS[idx]);
-            pxl_fill_rect(cnv, x, y + 3, swatch, swatch);
-            pxl_writer_set_cursor(&w, x + swatch + gap, y);
-            pxl_draw_text(cnv, &w, TILE_NAMES[idx]);
         }
     }
 }
@@ -1101,7 +1442,6 @@ static void
 handle_input(pxl_app_t *pxl, viewer_t *a) {
     assert(pxl && a);
 
-    /* Snapshot input into ui_t for the render phase */
     a->ui.mx = pxl->curr.mouse_x;
     a->ui.my = pxl->curr.mouse_y;
     a->ui.mouse_left_down = pxl_app_is_active(pxl, PXL_MOUSE_LEFT);
@@ -1150,7 +1490,6 @@ handle_input(pxl_app_t *pxl, viewer_t *a) {
         }
     }
 
-    /* Keep the camera inside the tilemap */
     camera_clamp(&a->view.cam, a->world.tm.width, a->world.tm.height,
                  a->layout.map.w, a->layout.map.h);
 }
@@ -1166,35 +1505,45 @@ render_frame(pxl_buf_t *pb, viewer_t *a) {
     pxl_canvas_set_color(&cnv, BG_COLOR);
     pxl_canvas_clear(&cnv);
 
-    /* Frame around view_mode buttons */
+    /* Frames around button bars */
     pxl_canvas_set_color(&cnv, FG_COLOR);
-    pxl_draw_rect(&cnv, a->layout.view_mode.x, a->layout.view_mode.y,
-                  a->layout.view_mode.w, a->layout.view_mode.h);
+    pxl_draw_rect(&cnv, a->layout.base_mode.x, a->layout.base_mode.y,
+                  a->layout.base_mode.w, a->layout.base_mode.h);
+    pxl_draw_rect(&cnv, a->layout.overlay_mode.x, a->layout.overlay_mode.y,
+                  a->layout.overlay_mode.w, a->layout.overlay_mode.h);
 
-    /* Split view_mode into 5 equal columns */
-    pxl_rect_t vm = a->layout.view_mode;
-    int vm_w = vm.w / 5;
-    pxl_rect_t vm_tile  = { vm.x,                vm.y, vm_w,                    vm.h };
-    pxl_rect_t vm_biome = { vm.x + vm_w,         vm.y, vm_w,                    vm.h };
-    pxl_rect_t vm_elev  = { vm.x + vm_w * 2,     vm.y, vm_w,                    vm.h };
-    pxl_rect_t vm_flow  = { vm.x + vm_w * 3,     vm.y, vm_w,                    vm.h };
-    pxl_rect_t vm_poi   = { vm.x + vm_w * 4,     vm.y, vm.w - vm_w * 4,         vm.h };
+    /* Split base_mode bar into 4 equal columns */
+    pxl_rect_t bm = a->layout.base_mode;
+    int bm_w = bm.w / 4;
+    pxl_rect_t bm_tile   = { bm.x,                bm.y, bm_w,              bm.h };
+    pxl_rect_t bm_biome  = { bm.x + bm_w,         bm.y, bm_w,              bm.h };
+    pxl_rect_t bm_elev   = { bm.x + bm_w * 2,     bm.y, bm_w,              bm.h };
+    pxl_rect_t bm_relief = { bm.x + bm_w * 3,     bm.y, bm.w - bm_w * 3,   bm.h };
 
-    pxl_canvas_t cnv_map, cnv_minimap, cnv_vm_tile, cnv_vm_biome, cnv_vm_elev, cnv_vm_flow, cnv_vm_poi, cnv_map_info, cnv_legend, cnv_tile_info;
+    /* Split overlay_mode bar into 2 equal columns */
+    pxl_rect_t om = a->layout.overlay_mode;
+    int om_w = om.w / 2;
+    pxl_rect_t om_river = { om.x,            om.y, om_w,            om.h };
+    pxl_rect_t om_poi   = { om.x + om_w,      om.y, om.w - om_w,     om.h };
+
+    pxl_canvas_t cnv_map, cnv_minimap, cnv_bm_tile, cnv_bm_biome, cnv_bm_elev, cnv_bm_relief,
+                 cnv_om_river, cnv_om_poi, cnv_map_info, cnv_legend, cnv_tile_info;
     pxl_canvas_init_view(&cnv_map, pb, a->layout.map);
     pxl_canvas_init_view(&cnv_minimap, pb, a->layout.minimap);
-    pxl_canvas_init_view(&cnv_vm_tile, pb, vm_tile);
-    pxl_canvas_init_view(&cnv_vm_biome, pb, vm_biome);
-    pxl_canvas_init_view(&cnv_vm_elev, pb, vm_elev);
-    pxl_canvas_init_view(&cnv_vm_flow, pb, vm_flow);
-    pxl_canvas_init_view(&cnv_vm_poi, pb, vm_poi);
+    pxl_canvas_init_view(&cnv_bm_tile, pb, bm_tile);
+    pxl_canvas_init_view(&cnv_bm_biome, pb, bm_biome);
+    pxl_canvas_init_view(&cnv_bm_elev, pb, bm_elev);
+    pxl_canvas_init_view(&cnv_bm_relief, pb, bm_relief);
+    pxl_canvas_init_view(&cnv_om_river, pb, om_river);
+    pxl_canvas_init_view(&cnv_om_poi, pb, om_poi);
     pxl_canvas_init_view(&cnv_map_info, pb, a->layout.map_info);
     pxl_canvas_init_view(&cnv_legend, pb, a->layout.legend);
     pxl_canvas_init_view(&cnv_tile_info, pb, a->layout.tile_info);
 
     render_tilemap(&cnv_map, a);
     render_minimap(&cnv_minimap, a);
-    render_view_mode(&a->ui, &cnv_vm_tile, &cnv_vm_biome, &cnv_vm_elev, &cnv_vm_flow, &cnv_vm_poi, &a->view);
+    render_base_buttons(&a->ui, &cnv_bm_tile, &cnv_bm_biome, &cnv_bm_elev, &cnv_bm_relief, &a->view);
+    render_overlay_buttons(&a->ui, &cnv_om_river, &cnv_om_poi, &a->view);
     render_map_info(&cnv_map_info, &a->ui, a);
     render_legend(&cnv_legend, &a->ui, a);
     render_tile_info(&cnv_tile_info, &a->ui, a);
@@ -1222,7 +1571,8 @@ main(void) {
     a.view.cam.wy = 0.0f;
     a.view.selected_wx = -1;
     a.view.selected_wy = -1;
-    a.view.display_mode = DISPLAY_POI;
+    a.view.base_mode = BASE_TILE;
+    a.view.overlays = OVL_RIVER | OVL_POI;  /* show rivers + POI by default */
 
     while (pxl_app_advance_wait(&app)) {
         if (pxl_app_was_triggered(&app, PXL_KEYB_ESCAPE))

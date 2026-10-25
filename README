@@ -25,6 +25,11 @@ Headers:
   tilemap.h            # 2D grid with occupancy
   wg_nf.h              # Noise-field world generation
   wg_nf_modulator.h    # Voronoi modulation stage for wg_nf
+  wg_nf_grid.h         # Sample a coarse grid into wg_nf fields
+  wg_nf_flow.h         # Read flow data into wg_nf fields
+  wg_nf_rivers.h       # Project wg_flow drainage into per-tile river masks
+  wg_nf_relief.h       # Standardised elevation (domain warp, fjords, lapse)
+  wg_nf_poi.h          # Detect Points of Interest during wg_nf fill
   wg_ca.h              # Cellular Automata (caves, organic structures)
   wg_bsp.h             # Binary Space Partitioning (rooms + corridors)
 

@@ -1,6 +1,6 @@
 # rlk - Unit tests
 
-TST  = test_tilemap test_fmath test_hash test_noise test_rng test_err test_wg_nf test_wg_nf_modulator test_wg_nf_grid test_wg_nf_flow test_wg_ca test_wg_bsp test_wg_grid test_wg_flow test_wg_poi test_wg_nf_poi
+TST  = test_tilemap test_fmath test_hash test_noise test_rng test_err test_wg_nf test_wg_nf_modulator test_wg_nf_grid test_wg_nf_flow test_wg_nf_rivers test_wg_nf_relief test_wg_ca test_wg_bsp test_wg_grid test_wg_flow test_wg_poi test_wg_nf_poi
 
 RLK_DIR=..
 

@@ -16,6 +16,12 @@ CFLAGS  += -I.
 
 LDFLAGS += $(RLK_LDLIBS)
 LDFLAGS += $(PXL_LDLIBS)
+#
+# --- PXL demos (graphical) -----------------------------------------------
+SRC_PXL = demo_tilemap_viewer
+DEMO_PXL = $(SRC_PXL)
+
+DEMO = $(DEMO_PXL) $(DEMO_TXT)
 
 all: $(DEMO)
 

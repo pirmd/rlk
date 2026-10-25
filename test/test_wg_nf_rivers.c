@@ -1,0 +1,369 @@
+#include <assert.h>
+#include <stdint.h>
+#include <math.h>
+
+#include "wg_nf_rivers.h"
+
+#define MAP 16
+
+static rlk_tile_t tilebuf[MAP * MAP];
+
+/* Writer: derived[0]=mask -> variant (0..255), derived[1]=carve -> flags */
+static void
+write_rivers(const rlk_wg_nf_ctx_t *ctx, const void *data, rlk_tile_t *out) {
+    (void)data;
+    const rlk_wg_nf_t *wg = ctx->wg;
+    out->biome = (uint8_t)ctx->zone;
+    out->variant = (uint8_t)(rlk_clampf(ctx->field[wg->nsampled + 0], 0.0f, 1.0f) * 255.0f);
+    out->flags = (uint8_t)(rlk_clampf(ctx->field[wg->nsampled + 1], 0.0f, 1.0f) * 255.0f);
+}
+
+/* Minimal wg_nf: 1 sampled field, 2 derived fields, 1 full-coverage zone. */
+static rlk_wg_nf_t
+wg_min(void) {
+    rlk_wg_nf_t wg = {0};
+    wg.seed = 42ULL;
+    wg.depth_scale = 0.20f;
+    wg.transition_width = 0.20f;
+    wg.nsampled = 1;
+    wg.nderived = 2;
+    wg.fields[0] = (rlk_wg_nf_field_t){ .freq = 0.01f };
+    wg.naxes = 1;
+    wg.axes[0] = (rlk_wg_nf_axis_t){ .field = 0 };
+    wg.nzones = 1;
+    wg.zones[0] = (rlk_wg_nf_zone_t){ .lo = {0.0f}, .hi = {1.0f},
+                                        .write = write_rivers };
+    return wg;
+}
+
+/* wg_nf with 4 sampled fields for wiggle/creek tests.
+   field 0 = axis, 1-2 = wiggle, 3 = creek */
+static rlk_wg_nf_t
+wg_wiggle(void) {
+    rlk_wg_nf_t wg = {0};
+    wg.seed = 42ULL;
+    wg.depth_scale = 0.20f;
+    wg.transition_width = 0.20f;
+    wg.nsampled = 4;
+    wg.nderived = 2;
+    wg.fields[0] = (rlk_wg_nf_field_t){ .freq = 0.01f };
+    wg.fields[1] = (rlk_wg_nf_field_t){ .freq = 0.10f, .seed = 100 };
+    wg.fields[2] = (rlk_wg_nf_field_t){ .freq = 0.12f, .seed = 101 };
+    wg.fields[3] = (rlk_wg_nf_field_t){ .freq = 0.050f, .seed = 102 };
+    wg.naxes = 1;
+    wg.axes[0] = (rlk_wg_nf_axis_t){ .field = 0 };
+    wg.nzones = 1;
+    wg.zones[0] = (rlk_wg_nf_zone_t){ .lo = {0.0f}, .hi = {1.0f},
+                                        .write = write_rivers };
+    return wg;
+}
+
+/* Flow fixture: 4x4 cells of 4 tiles, slope eastward (elev = i).
+   All cells drain east; acc increases eastward. */
+#define FW 4
+#define FH 4
+#define FCELL 4
+
+static float elev_buf[FW * FH];
+static rlk_wg_grid_t elev;
+static uint16_t fill_buf[FW * FH];
+static uint8_t dir_buf[FW * FH];
+static uint32_t acc_buf[FW * FH];
+static int order_buf[FW * FH];
+static uint64_t scratch[FW * FH];
+static rlk_wg_flow_t flow;
+
+static void
+flow_setup(void) {
+    rlk_wg_grid_init(&elev, FW, FH, FCELL, 0, 0, elev_buf);
+    for (int j = 0; j < FH; j++)
+        for (int i = 0; i < FW; i++)
+            elev.v[(size_t)j * FW + (size_t)i] = (float)i + 0.5f;
+
+    rlk_wg_flow_init(&flow, FW, FH, fill_buf, dir_buf, acc_buf, order_buf);
+    assert(rlk_wg_flow_build(&flow, &elev, -1.0f, scratch) == RLK_OK);
+}
+
+/* init: zero defaults resolved */
+static void
+test_rivers_init_defaults(void) {
+    rlk_wg_nf_rivers_t r = {0};
+    r.flow = &flow;
+    r.elev = &elev;
+    r.sea = 0.0f;
+    r.slot_mask = 0;
+    rlk_wg_nf_rivers_init(&r);
+    assert(r.acc_min == 1);
+    assert(r.width_min == 1.0f);
+    assert(r.width_max == 1.0f);
+    assert(r.valley_mult == 1.0f);
+}
+
+/* Basic: stage writes mask and carve into derived fields.
+   East-sloping grid: rivers flow east, acc increases eastward.
+   Tiles near the eastern edge should have higher mask (more accumulation). */
+static void
+test_rivers_stage_basic(void) {
+    flow_setup();
+
+    rlk_wg_nf_t wg = wg_min();
+    rlk_wg_nf_rivers_t r = {0};
+    r.flow = &flow;
+    r.elev = &elev;
+    r.sea = 0.0f;
+    r.acc_min = 1;
+    r.width_min = 2.0f;
+    r.width_max = 4.0f;
+    r.valley_mult = 3.0f;
+    r.carve = 0.05f;
+    r.slot_mask = 0;
+    r.slot_carve = 1;
+
+    assert(rlk_wg_nf_rivers_add(&wg, &r) == RLK_OK);
+    rlk_wg_nf_init(&wg);
+
+    rlk_tilemap_t tm;
+    rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
+    rlk_wg_nf_fill(&wg, 0, 0, &tm);
+
+    /* Western edge (tile 2,2 -> cell 0,0): acc=1 (only itself drains through it),
+       but it's an outlet (grid edge) so no river segment. mask should be low. */
+    const rlk_tile_t *tw = rlk_tilemap_get(&tm, 2, 2);
+    assert(tw);
+
+    /* Eastern interior (tile 10,6 -> cell 2,1): acc should be higher,
+       closer to a river segment. mask should be > 0. */
+    const rlk_tile_t *te = rlk_tilemap_get(&tm, 10, 6);
+    assert(te);
+    /* At least some tile should have a non-zero mask (river detected) */
+    int has_river = 0;
+    for (int y = 0; y < MAP && !has_river; y++)
+        for (int x = 0; x < MAP && !has_river; x++) {
+            const rlk_tile_t *t = rlk_tilemap_get(&tm, x, y);
+            if (t && t->variant > 0)
+                has_river = 1;
+        }
+    assert(has_river);
+}
+
+/* NONE slots: disabled outputs are not written. */
+static void
+test_rivers_stage_none_slots(void) {
+    flow_setup();
+
+    rlk_wg_nf_t wg = wg_min();
+    rlk_wg_nf_rivers_t r = {0};
+    r.flow = &flow;
+    r.elev = &elev;
+    r.sea = 0.0f;
+    r.acc_min = 1;
+    r.slot_mask = 0;
+    r.slot_carve = RLK_WG_NF_RIVERS_NONE;
+
+    assert(rlk_wg_nf_rivers_add(&wg, &r) == RLK_OK);
+    rlk_wg_nf_init(&wg);
+
+    rlk_tilemap_t tm;
+    rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
+    rlk_wg_nf_fill(&wg, 0, 0, &tm);
+
+    /* Should not crash; mask written, carve untouched. */
+    const rlk_tile_t *t = rlk_tilemap_get(&tm, 2, 2);
+    assert(t);
+}
+
+/* acc_min too high: no river cells qualify, mask stays 0 everywhere. */
+static void
+test_rivers_stage_high_acc_min(void) {
+    flow_setup();
+
+    rlk_wg_nf_t wg = wg_min();
+    rlk_wg_nf_rivers_t r = {0};
+    r.flow = &flow;
+    r.elev = &elev;
+    r.sea = 0.0f;
+    r.acc_min = 1000;  /* higher than total cells (16) */
+    r.width_min = 2.0f;
+    r.width_max = 4.0f;
+    r.valley_mult = 3.0f;
+    r.slot_mask = 0;
+    r.slot_carve = 1;
+
+    assert(rlk_wg_nf_rivers_add(&wg, &r) == RLK_OK);
+    rlk_wg_nf_init(&wg);
+
+    rlk_tilemap_t tm;
+    rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
+    rlk_wg_nf_fill(&wg, 0, 0, &tm);
+
+    /* All masks should be 0 */
+    for (int y = 0; y < MAP; y++)
+        for (int x = 0; x < MAP; x++) {
+            const rlk_tile_t *t = rlk_tilemap_get(&tm, x, y);
+            assert(t);
+            assert(t->variant == 0);
+            assert(t->flags == 0);
+        }
+}
+
+/* Power-user: init then add_stage manually. */
+static void
+test_rivers_init_then_add_stage(void) {
+    flow_setup();
+
+    rlk_wg_nf_t wg = wg_min();
+    rlk_wg_nf_rivers_t r = {0};
+    r.flow = &flow;
+    r.elev = &elev;
+    r.sea = 0.0f;
+    r.acc_min = 1;
+    r.slot_mask = 0;
+    r.slot_carve = 1;
+
+    rlk_wg_nf_rivers_init(&r);
+    assert(rlk_wg_nf_add_stage(&wg, rlk_wg_nf_rivers_stage, &r) == RLK_OK);
+    assert(wg.nstages == 1);
+
+    rlk_wg_nf_init(&wg);
+
+    rlk_tilemap_t tm;
+    rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
+    rlk_wg_nf_fill(&wg, 0, 0, &tm);
+}
+
+/* Sea level above all elevations: all cells underwater, no rivers. */
+static void
+test_rivers_stage_all_underwater(void) {
+    flow_setup();
+
+    rlk_wg_nf_t wg = wg_min();
+    rlk_wg_nf_rivers_t r = {0};
+    r.flow = &flow;
+    r.elev = &elev;
+    r.sea = 100.0f;  /* everything underwater */
+    r.acc_min = 1;
+    r.width_min = 2.0f;
+    r.width_max = 4.0f;
+    r.valley_mult = 3.0f;
+    r.slot_mask = 0;
+    r.slot_carve = 1;
+
+    assert(rlk_wg_nf_rivers_add(&wg, &r) == RLK_OK);
+    rlk_wg_nf_init(&wg);
+
+    rlk_tilemap_t tm;
+    rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
+    rlk_wg_nf_fill(&wg, 0, 0, &tm);
+
+    /* All masks should be 0 (underwater cells are skipped) */
+    for (int y = 0; y < MAP; y++)
+        for (int x = 0; x < MAP; x++) {
+            const rlk_tile_t *t = rlk_tilemap_get(&tm, x, y);
+            assert(t);
+            assert(t->variant == 0);
+        }
+}
+
+/* init: wig_tiles=0 disables wiggle fields, creek_width=0 disables creek */
+static void
+test_rivers_init_wiggle_creek_defaults(void) {
+    rlk_wg_nf_rivers_t r = {0};
+    r.flow = &flow;
+    r.elev = &elev;
+    r.sea = 0.0f;
+    r.slot_mask = 0;
+    /* wig_tiles = 0 (default) -> f_wig_x/y should be NONE */
+    /* creek_width = 0 (default) -> f_creek should be NONE */
+    rlk_wg_nf_rivers_init(&r);
+    assert(r.f_wig_x == RLK_WG_NF_RIVERS_NONE);
+    assert(r.f_wig_y == RLK_WG_NF_RIVERS_NONE);
+    assert(r.f_creek == RLK_WG_NF_RIVERS_NONE);
+}
+
+/* Wiggle: with wiggle fields active, rivers are still detected (mask > 0 somewhere) */
+static void
+test_rivers_stage_wiggle(void) {
+    flow_setup();
+
+    rlk_wg_nf_t wg = wg_wiggle();
+    rlk_wg_nf_rivers_t r = {0};
+    r.flow = &flow;
+    r.elev = &elev;
+    r.sea = 0.0f;
+    r.acc_min = 1;
+    r.width_min = 2.0f;
+    r.width_max = 4.0f;
+    r.valley_mult = 3.0f;
+    r.slot_mask = 0;
+    r.slot_carve = 1;
+    r.f_wig_x = 1;
+    r.f_wig_y = 2;
+    r.wig_tiles = 3.0f;
+    assert(rlk_wg_nf_rivers_add(&wg, &r) == RLK_OK);
+    rlk_wg_nf_init(&wg);
+
+    rlk_tilemap_t tm;
+    rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
+    rlk_wg_nf_fill(&wg, 0, 0, &tm);
+
+    /* At least one tile should have a non-zero mask (river detected) */
+    int has_river = 0;
+    for (int y = 0; y < MAP && !has_river; y++)
+        for (int x = 0; x < MAP && !has_river; x++) {
+            const rlk_tile_t *t = rlk_tilemap_get(&tm, x, y);
+            if (t && t->variant > 0)
+                has_river = 1;
+        }
+    assert(has_river);
+}
+
+/* Creeks: with acc_min very high (no drainage rivers), creeks still produce mask > 0 */
+static void
+test_rivers_stage_creeks(void) {
+    flow_setup();
+
+    rlk_wg_nf_t wg = wg_wiggle();
+    rlk_wg_nf_rivers_t r = {0};
+    r.flow = &flow;
+    r.elev = &elev;
+    r.sea = 0.0f;
+    r.acc_min = 1000;  /* no drainage rivers */
+    r.width_min = 2.0f;
+    r.width_max = 4.0f;
+    r.valley_mult = 3.0f;
+    r.slot_mask = 0;
+    r.slot_carve = 1;
+    r.f_creek = 3;
+    r.creek_width = 3.0f;  /* wide creeks for reliable detection */
+    r.creek_carve = 0.02f;
+    assert(rlk_wg_nf_rivers_add(&wg, &r) == RLK_OK);
+    rlk_wg_nf_init(&wg);
+
+    rlk_tilemap_t tm;
+    rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
+    rlk_wg_nf_fill(&wg, 0, 0, &tm);
+
+    /* Creeks should produce at least one tile with mask > 0 */
+    int has_creek = 0;
+    for (int y = 0; y < MAP && !has_creek; y++)
+        for (int x = 0; x < MAP && !has_creek; x++) {
+            const rlk_tile_t *t = rlk_tilemap_get(&tm, x, y);
+            if (t && t->variant > 0)
+                has_creek = 1;
+        }
+    assert(has_creek);
+}
+
+int
+main(void) {
+    test_rivers_init_defaults();
+    test_rivers_stage_basic();
+    test_rivers_stage_none_slots();
+    test_rivers_stage_high_acc_min();
+    test_rivers_init_then_add_stage();
+    test_rivers_stage_all_underwater();
+    test_rivers_init_wiggle_creek_defaults();
+    test_rivers_stage_wiggle();
+    test_rivers_stage_creeks();
+    return 0;
+}
