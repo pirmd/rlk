@@ -12,3 +12,5 @@ test_wg_ca
 test_wg_bsp
 test_wg_grid
 test_wg_flow
+test_wg_poi
+test_wg_nf_poi

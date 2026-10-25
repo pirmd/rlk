@@ -23,5 +23,7 @@
 #include "wg_bsp.h"
 #include "wg_grid.h"
 #include "wg_flow.h"
+#include "wg_poi.h"
+#include "wg_nf_poi.h"
 
 #endif /* RLK_H */

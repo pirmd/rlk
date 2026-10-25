@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 
 #include "pxl.h"
 #include "font_6x10.h"
@@ -14,6 +15,7 @@
 #include "wg_nf.h"
 #include "wg_nf_grid.h"
 #include "wg_nf_flow.h"
+#include "wg_nf_poi.h"
 
 /* Coordinate naming: wx,wy world tile (tilemap coords); x,y view-local;
  * mx,my mouse pixel; px,py screen pixel; dx,dy pixel offset. */
@@ -90,7 +92,8 @@ get_biome_color(uint8_t id) {
 #define DISPLAY_BIOME     1
 #define DISPLAY_ELEVATION 2
 #define DISPLAY_FLOW      3
-#define DISPLAY_COUNT     4
+#define DISPLAY_POI       4
+#define DISPLAY_COUNT     5
 
 /* --- TERRAIN GENERATION (wg_nf) ------------------------------------------ */
 
@@ -132,6 +135,41 @@ static const char *const BIOME_NAMES[Z_COUNT] = {
     "Deep", "Shallow", "Beach", "Grassland", "Forest", "Mountain", "Snow"
 };
 
+/* --- POI (Points of Interest) -------------------------------------------- */
+
+/* POI kinds we detect in this demo (subset of rlk_wg_poi_kind_t) */
+enum {
+    POI_CAVE = 0,
+    POI_DUNGEON,
+    POI_VILLAGE,
+    POI_TOWER,
+    POI_KIND_COUNT
+};
+
+/* Marker color per POI kind (0xAARRGGBB) */
+static const uint32_t POI_COLORS[POI_KIND_COUNT] = {
+    0xFF8B4513U, /* CAVE: saddle brown */
+    0xFF8B0000U, /* DUNGEON: dark red */
+    0xFFFFA500U, /* VILLAGE: orange */
+    0xFF9932CCU, /* TOWER: dark orchid */
+};
+
+static const char *const POI_NAMES[POI_KIND_COUNT] = {
+    "Cave", "Dungeon", "Village", "Tower"
+};
+
+/* Map rlk_wg_poi_kind_t -> local POI kind index, or -1 if not tracked. */
+static int
+poi_kind_index(rlk_wg_poi_kind_t kind) {
+    switch (kind) {
+    case RLK_WG_POI_CAVE:    return POI_CAVE;
+    case RLK_WG_POI_DUNGEON: return POI_DUNGEON;
+    case RLK_WG_POI_VILLAGE: return POI_VILLAGE;
+    case RLK_WG_POI_TOWER:   return POI_TOWER;
+    default:                 return -1;
+    }
+}
+
 /* --- STRUCTS ------------------------------------------------------------- */
 
 /* World/model state: the tilemap, its backing buffer, the wg_nf generator,
@@ -153,6 +191,12 @@ typedef struct {
     /* wg_nf stages: must outlive wg (stored here, not on stack) */
     rlk_wg_nf_grid_t grid_stage;
     rlk_wg_nf_flow_t flow_stage;
+    /* POI detection: list + 4 detector configs (persistent) */
+    rlk_wg_poi_list_t pois;
+    rlk_wg_nf_poi_t poi_cave_cfg;
+    rlk_wg_nf_poi_t poi_dungeon_cfg;
+    rlk_wg_nf_poi_t poi_village_cfg;
+    rlk_wg_nf_poi_t poi_tower_cfg;
     uint64_t seed;
 } world_t;
 
@@ -165,7 +209,7 @@ typedef struct {
 typedef struct {
     camera_t cam;
     int selected_wx, selected_wy;  /* -1 if none */
-    int display_mode;              /* DISPLAY_TILE or DISPLAY_BIOME */
+    int display_mode;              /* DISPLAY_TILE, _BIOME, _ELEVATION, _FLOW, _POI */
 } view_t;
 
 /* UI resources + per-frame input snapshot. */
@@ -376,6 +420,73 @@ world_generate(world_t *w, uint64_t seed) {
         .acc_scale = 1.0f,
     };
     rlk_wg_nf_flow_add(wg, &w->flow_stage);
+
+    /* Stage 3-6: POI detectors (cave, dungeon, village, tower) */
+    rlk_wg_poi_list_init(&w->pois);
+
+    /* Cave: on hills/mountains, high detail noise */
+    w->poi_cave_cfg = (rlk_wg_nf_poi_t){
+        .list = &w->pois,
+        .kind = RLK_WG_POI_CAVE,
+        .salt = 0xCAFEULL,
+        .field = F_DETAIL,
+        .threshold = 0.70f,
+        .density = 0.003f,
+        .size = 24,
+        .grid = &w->elev_grid,
+        .grid_min = 0.50f,
+        .grid_max = 0.85f,
+        .min_separation = 24,
+    };
+    rlk_wg_nf_poi_add(wg, &w->poi_cave_cfg);
+
+    /* Dungeon: near rivers, moderate detail */
+    w->poi_dungeon_cfg = (rlk_wg_nf_poi_t){
+        .list = &w->pois,
+        .kind = RLK_WG_POI_DUNGEON,
+        .salt = 0xD0D0ULL,
+        .field = F_DETAIL,
+        .threshold = 0.50f,
+        .density = 0.002f,
+        .size = 32,
+        .flow = &w->flow,
+        .flow_grid = &w->elev_grid,
+        .min_acc = 40.0f,
+        .min_separation = 32,
+    };
+    rlk_wg_nf_poi_add(wg, &w->poi_dungeon_cfg);
+
+    /* Village: in lowland plains */
+    w->poi_village_cfg = (rlk_wg_nf_poi_t){
+        .list = &w->pois,
+        .kind = RLK_WG_POI_VILLAGE,
+        .salt = 0xA11CEULL,
+        .field = F_ELEV,
+        .threshold = 0.48f,
+        .density = 0.004f,
+        .size = 16,
+        .grid = &w->elev_grid,
+        .grid_min = 0.35f,
+        .grid_max = 0.55f,
+        .min_separation = 16,
+    };
+    rlk_wg_nf_poi_add(wg, &w->poi_village_cfg);
+
+    /* Tower: on peaks */
+    w->poi_tower_cfg = (rlk_wg_nf_poi_t){
+        .list = &w->pois,
+        .kind = RLK_WG_POI_TOWER,
+        .salt = 0x70E1ULL,
+        .field = F_DETAIL,
+        .threshold = 0.60f,
+        .density = 0.002f,
+        .size = 8,
+        .grid = &w->elev_grid,
+        .grid_min = 0.80f,
+        .grid_max = 1.0f,
+        .min_separation = 8,
+    };
+    rlk_wg_nf_poi_add(wg, &w->poi_tower_cfg);
 
     /* Axes: elevation (0) + temperature (1), both with detail-based jitter */
     wg->naxes = 2;
@@ -633,8 +744,37 @@ render_tilemap(pxl_canvas_t *cnv, const viewer_t *a) {
                     ? get_biome_color(tile->biome)
                     : TILE_COLORS[tile->type % TILE_COUNT];
             }
+            /* Dim base tiles in POI mode so markers stand out */
+            if (v->display_mode == DISPLAY_POI) {
+                color = 0xFF000000U
+                    | (((color >> 16) & 0xFF) * 35 / 100 << 16)
+                    | (((color >>  8) & 0xFF) * 35 / 100 <<  8)
+                    | (((color >>  0) & 0xFF) * 35 / 100 <<  0);
+            }
             pxl_canvas_set_color(cnv, color);
             pxl_fill_rect(cnv, px, py, TILE_PX, TILE_PX);
+        }
+    }
+
+    /* POI markers overlay */
+    if (v->display_mode == DISPLAY_POI) {
+        int half = TILE_PX / 4;  /* marker half-size: 4px in a 16px tile */
+        for (int i = 0; i < w->pois.count; i++) {
+            const rlk_wg_poi_t *poi = &w->pois.items[i];
+            int ki = poi_kind_index(poi->kind);
+            if (ki < 0) continue;
+
+            int sx = poi->wx - wx;  /* view-local coords */
+            int sy = poi->wy - wy;
+            if (sx < 0 || sx >= vw || sy < 0 || sy >= vh) continue;
+
+            int cx = dx + sx * TILE_PX + TILE_PX / 2;
+            int cy = dy + sy * TILE_PX + TILE_PX / 2;
+            pxl_canvas_set_color(cnv, POI_COLORS[ki]);
+            pxl_fill_rect(cnv, cx - half, cy - half, half * 2, half * 2);
+            /* White outline */
+            pxl_canvas_set_color(cnv, HIGHLIGHT_COLOR);
+            pxl_draw_rect(cnv, cx - half, cy - half, half * 2, half * 2);
         }
     }
 
@@ -682,8 +822,31 @@ render_minimap(pxl_canvas_t *cnv, const viewer_t *a) {
                     ? get_biome_color(tile->biome)
                     : TILE_COLORS[tile->type % TILE_COUNT];
             }
+            /* Dim base tiles in POI mode */
+            if (v->display_mode == DISPLAY_POI) {
+                color = 0xFF000000U
+                    | (((color >> 16) & 0xFF) * 35 / 100 << 16)
+                    | (((color >>  8) & 0xFF) * 35 / 100 <<  8)
+                    | (((color >>  0) & 0xFF) * 35 / 100 <<  0);
+            }
             pxl_canvas_set_color(cnv, color);
             pxl_fill_rect(cnv, px, py, pw, ph);
+        }
+    }
+
+    /* POI markers on minimap */
+    if (v->display_mode == DISPLAY_POI) {
+        int msz = (int)mm->scale + 1;
+        if (msz < 2) msz = 2;
+        for (int i = 0; i < w->pois.count; i++) {
+            const rlk_wg_poi_t *poi = &w->pois.items[i];
+            int ki = poi_kind_index(poi->kind);
+            if (ki < 0) continue;
+            pxl_canvas_set_color(cnv, POI_COLORS[ki]);
+            pxl_fill_rect(cnv,
+                          mm->off_x + (int)((float)poi->wx * mm->scale),
+                          mm->off_y + (int)((float)poi->wy * mm->scale),
+                          msz, msz);
         }
     }
 
@@ -711,8 +874,9 @@ render_minimap(pxl_canvas_t *cnv, const viewer_t *a) {
 
 static void
 render_view_mode(const ui_t *ui, pxl_canvas_t *cnv_tile, pxl_canvas_t *cnv_biome,
-                 pxl_canvas_t *cnv_elev, pxl_canvas_t *cnv_flow, view_t *v) {
-    assert(ui && cnv_tile && cnv_biome && cnv_elev && cnv_flow && v);
+                 pxl_canvas_t *cnv_elev, pxl_canvas_t *cnv_flow,
+                 pxl_canvas_t *cnv_poi, view_t *v) {
+    assert(ui && cnv_tile && cnv_biome && cnv_elev && cnv_flow && cnv_poi && v);
 
     if (ui_button(ui, cnv_tile,  "Tile",  v->display_mode == DISPLAY_TILE))
         v->display_mode = DISPLAY_TILE;
@@ -722,6 +886,8 @@ render_view_mode(const ui_t *ui, pxl_canvas_t *cnv_tile, pxl_canvas_t *cnv_biome
         v->display_mode = DISPLAY_ELEVATION;
     if (ui_button(ui, cnv_flow,  "Flow",  v->display_mode == DISPLAY_FLOW))
         v->display_mode = DISPLAY_FLOW;
+    if (ui_button(ui, cnv_poi,   "POI",   v->display_mode == DISPLAY_POI))
+        v->display_mode = DISPLAY_POI;
 }
 
 static void
@@ -733,8 +899,10 @@ render_map_info(pxl_canvas_t *cnv, const ui_t *ui, const viewer_t *a) {
         "     MAP\n\n"
         "Size : %d x %d\n"
         "Tiles: %d\n"
+        "POIs : %d\n"
         "Seed : %llu (R: renew)",
         TM_W, TM_H, TM_W * TM_H,
+        a->world.pois.count,
         (unsigned long long)a->world.seed);
 
     pxl_rect_t r = pxl_canvas_view(cnv);
@@ -765,7 +933,36 @@ render_tile_info(pxl_canvas_t *cnv, const ui_t *ui, const viewer_t *a) {
         lake = rlk_wg_flow_lake_depth(&w->flow, &w->elev_grid, SEA_LEVEL, ci, cj);
     }
 
-    char nfo[255];
+    /* Find nearest POI within 16 tiles */
+    const rlk_wg_poi_t *near_poi = NULL;
+    int near_dist = 9999;
+    for (int i = 0; i < w->pois.count; i++) {
+        const rlk_wg_poi_t *p = &w->pois.items[i];
+        int ddx = p->wx - v->selected_wx;
+        int ddy = p->wy - v->selected_wy;
+        int d = ddx * ddx + ddy * ddy;
+        if (d < near_dist) {
+            near_dist = d;
+            near_poi = p;
+        }
+    }
+
+    char poi_line[128] = "";
+    if (near_poi && near_dist <= 256) {  /* within 16 tiles */
+        int ki = poi_kind_index(near_poi->kind);
+        const char *pname = (ki >= 0) ? POI_NAMES[ki] : "?";
+        int dist = (int)sqrtf((float)near_dist);
+        char flags_str[32] = "";
+        if (near_poi->flags & RLK_WG_POI_NEAR_RIVER) strcat(flags_str, "R");
+        if (near_poi->flags & RLK_WG_POI_ON_HILL)    strcat(flags_str, "H");
+        if (near_poi->flags & RLK_WG_POI_IN_FOREST)  strcat(flags_str, "F");
+        if (near_poi->flags & RLK_WG_POI_COASTAL)    strcat(flags_str, "C");
+        if (flags_str[0] == '\0') strcpy(flags_str, "-");
+        snprintf(poi_line, sizeof(poi_line),
+                 "\nPOI: %s d=%d [%s]", pname, dist, flags_str);
+    }
+
+    char nfo[384];
     snprintf(nfo, sizeof(nfo),
         "     TILE\n\n"
         "Position: (%d,%d)\n"
@@ -773,12 +970,12 @@ render_tile_info(pxl_canvas_t *cnv, const ui_t *ui, const viewer_t *a) {
         "Biome   : %s (%d)\n"
         "Variant : %d  Flags: 0x%02X\n"
         "Elev    : %.3f  Acc: %u\n"
-        "Lake    : %.3f",
+        "Lake    : %.3f%s",
         v->selected_wx, v->selected_wy,
         TILE_NAMES[tile->type % TILE_COUNT], tile->type,
         BIOME_NAMES[tile->biome % Z_COUNT], tile->biome,
         tile->variant, tile->flags,
-        elev, acc, lake);
+        elev, acc, lake, poi_line);
 
     pxl_rect_t r = pxl_canvas_view(cnv);
     pxl_canvas_set_color(cnv, FG_COLOR);
@@ -862,6 +1059,21 @@ render_legend(pxl_canvas_t *cnv, const ui_t *ui, const viewer_t *a) {
             pxl_fill_rect(cnv, view.x + pad, y + 3, swatch, swatch);
             pxl_writer_set_cursor(&w, view.x + pad + swatch + gap, y);
             pxl_draw_text(cnv, &w, items[i].lbl);
+        }
+    } else if (v->display_mode == DISPLAY_POI) {
+        /* POI legend: 4 kinds over 2 columns */
+        int per_col = (POI_KIND_COUNT + 1) / 2;
+        int total_h = per_col * line_h;
+        int y0 = area_y + (area_h - total_h) / 2;
+        for (int i = 0; i < POI_KIND_COUNT; i++) {
+            int col = i / per_col;
+            int row = i % per_col;
+            int x = view.x + col * col_w + pad;
+            int y = y0 + row * line_h;
+            pxl_canvas_set_color(cnv, POI_COLORS[i]);
+            pxl_fill_rect(cnv, x, y + 3, swatch, swatch);
+            pxl_writer_set_cursor(&w, x + swatch + gap, y);
+            pxl_draw_text(cnv, &w, POI_NAMES[i]);
         }
     } else {
         /* Tile types (skip VOID): 8 types over 2 columns */
@@ -959,28 +1171,30 @@ render_frame(pxl_buf_t *pb, viewer_t *a) {
     pxl_draw_rect(&cnv, a->layout.view_mode.x, a->layout.view_mode.y,
                   a->layout.view_mode.w, a->layout.view_mode.h);
 
-    /* Split view_mode into 4 equal columns */
+    /* Split view_mode into 5 equal columns */
     pxl_rect_t vm = a->layout.view_mode;
-    int vm_w = vm.w / 4;
-    pxl_rect_t vm_tile  = { vm.x,            vm.y, vm_w,                  vm.h };
-    pxl_rect_t vm_biome = { vm.x + vm_w,     vm.y, vm_w,                  vm.h };
-    pxl_rect_t vm_elev  = { vm.x + vm_w * 2, vm.y, vm_w,                  vm.h };
-    pxl_rect_t vm_flow  = { vm.x + vm_w * 3, vm.y, vm.w - vm_w * 3,       vm.h };
+    int vm_w = vm.w / 5;
+    pxl_rect_t vm_tile  = { vm.x,                vm.y, vm_w,                    vm.h };
+    pxl_rect_t vm_biome = { vm.x + vm_w,         vm.y, vm_w,                    vm.h };
+    pxl_rect_t vm_elev  = { vm.x + vm_w * 2,     vm.y, vm_w,                    vm.h };
+    pxl_rect_t vm_flow  = { vm.x + vm_w * 3,     vm.y, vm_w,                    vm.h };
+    pxl_rect_t vm_poi   = { vm.x + vm_w * 4,     vm.y, vm.w - vm_w * 4,         vm.h };
 
-    pxl_canvas_t cnv_map, cnv_minimap, cnv_vm_tile, cnv_vm_biome, cnv_vm_elev, cnv_vm_flow, cnv_map_info, cnv_legend, cnv_tile_info;
+    pxl_canvas_t cnv_map, cnv_minimap, cnv_vm_tile, cnv_vm_biome, cnv_vm_elev, cnv_vm_flow, cnv_vm_poi, cnv_map_info, cnv_legend, cnv_tile_info;
     pxl_canvas_init_view(&cnv_map, pb, a->layout.map);
     pxl_canvas_init_view(&cnv_minimap, pb, a->layout.minimap);
     pxl_canvas_init_view(&cnv_vm_tile, pb, vm_tile);
     pxl_canvas_init_view(&cnv_vm_biome, pb, vm_biome);
     pxl_canvas_init_view(&cnv_vm_elev, pb, vm_elev);
     pxl_canvas_init_view(&cnv_vm_flow, pb, vm_flow);
+    pxl_canvas_init_view(&cnv_vm_poi, pb, vm_poi);
     pxl_canvas_init_view(&cnv_map_info, pb, a->layout.map_info);
     pxl_canvas_init_view(&cnv_legend, pb, a->layout.legend);
     pxl_canvas_init_view(&cnv_tile_info, pb, a->layout.tile_info);
 
     render_tilemap(&cnv_map, a);
     render_minimap(&cnv_minimap, a);
-    render_view_mode(&a->ui, &cnv_vm_tile, &cnv_vm_biome, &cnv_vm_elev, &cnv_vm_flow, &a->view);
+    render_view_mode(&a->ui, &cnv_vm_tile, &cnv_vm_biome, &cnv_vm_elev, &cnv_vm_flow, &cnv_vm_poi, &a->view);
     render_map_info(&cnv_map_info, &a->ui, a);
     render_legend(&cnv_legend, &a->ui, a);
     render_tile_info(&cnv_tile_info, &a->ui, a);
@@ -1008,7 +1222,7 @@ main(void) {
     a.view.cam.wy = 0.0f;
     a.view.selected_wx = -1;
     a.view.selected_wy = -1;
-    a.view.display_mode = DISPLAY_TILE;
+    a.view.display_mode = DISPLAY_POI;
 
     while (pxl_app_advance_wait(&app)) {
         if (pxl_app_was_triggered(&app, PXL_KEYB_ESCAPE))
