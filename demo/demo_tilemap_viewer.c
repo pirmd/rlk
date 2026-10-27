@@ -85,7 +85,8 @@ get_biome_color(uint8_t id) {
     uint8_t r = (uint8_t)(h >> 16);
     uint8_t g = (uint8_t)(h >> 8);
     uint8_t b = (uint8_t)h;
-    return 0xFF000000U | ((r & 0xF0) << 16) | ((g & 0xF0) << 8) | (b & 0xF0);
+    return 0xFF000000U | ((unsigned)(r & 0xF0) << 16) |
+           ((unsigned)(g & 0xF0) << 8) | (unsigned)(b & 0xF0);
 }
 
 /* --- TILEMAP CONFIG ------------------------------------------------------ */
@@ -638,7 +639,7 @@ world_generate(world_t *w, uint64_t seed) {
     rlk_wg_grid_init(&w->lake_grid, GRID_W, GRID_H, GRID_CELL, GRID_OX, GRID_OY, w->lake_buf);
     for (int j = 0; j < GRID_H; j++)
         for (int i = 0; i < GRID_W; i++)
-            w->lake_buf[(size_t)j * GRID_W + i] =
+            w->lake_buf[(size_t)(j * GRID_W + i)] =
                 rlk_wg_flow_lake_depth(&w->flow, &w->elev_grid, SEA_LEVEL, i, j);
     /* Filter: drop lake cells whose outlet accumulation < RIVER_ACC_MIN */
     for (int c = 0; c < GRID_W * GRID_H; c++) {

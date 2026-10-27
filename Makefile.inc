@@ -1,3 +1,5 @@
+# Requires bmake (NetBSD make). Native on OpenBSD, `apt install bmake` on Linux.
+
 RLK_DIR ?= .
 
 # User configuration: config.mk owns CC/CFLAGS when present. The explicit
@@ -10,8 +12,16 @@ CC     = cc
 CFLAGS = -O0 -g -std=c99 -Wall -Wextra
 .endif
 
-RLK_CFLAGS = -I$(RLK_DIR)
+# Determinism contract: no -ffast-math, no implicit FMA.
+RLK_CFLAGS = -I$(RLK_DIR) -ffp-contract=off
 RLK_LDLIBS = -L$(RLK_DIR) -lrlk -lm
+
+# Shared lint flags: root lib, tests and demos all use the same set
+CFLAGS_LINT  = -Wall -Wextra
+CFLAGS_LINT += -Wpedantic -Wshadow -Wvla
+CFLAGS_LINT += -Wwrite-strings -Wold-style-definition
+CFLAGS_LINT += -Wno-unused-function
+CFLAGS_LINT += -Wconversion
 
 RLK_HDR = $(RLK_DIR)/err.h $(RLK_DIR)/hash.h $(RLK_DIR)/fmath.h \
 	$(RLK_DIR)/noise.h $(RLK_DIR)/rng.h $(RLK_DIR)/tilemap.h \

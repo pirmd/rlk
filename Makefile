@@ -8,22 +8,19 @@ include Makefile.inc
 
 CFLAGS += $(RLK_CFLAGS)
 
-CFLAGS_LINT  = -Wall -Wextra
-CFLAGS_LINT += -Wpedantic -Wshadow -Wvla
-CFLAGS_LINT += -Wwrite-strings -Wold-style-definition
-CFLAGS_LINT += -Wno-unused-function
-CFLAGS_LINT += -Wconversion
-
 all: $(LIB)
 
 OBJ = ${SRC:.c=.o}
+
+$(OBJ): $(RLK_HDR)
 
 $(LIB): $(OBJ)
 	ar rcs $@ $?
 
 lint:
-	$(CC) -Werror -fsyntax-only $(CFLAGS) $(CFLAGS_LINT) $(SRC) $(HDR)
-	$(CC) -Werror -fsyntax-only $(CFLAGS) $(CFLAGS_LINT) test/*.c
+	$(CC) -Werror -fsyntax-only $(CFLAGS) $(CFLAGS_LINT) $(SRC) $(RLK_HDR)
+	$(MAKE) -C test lint
+	$(MAKE) -C demo lint
 
 test: $(LIB)
 	$(MAKE) -C test test

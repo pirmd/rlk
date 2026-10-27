@@ -25,7 +25,10 @@ $(t): $(t).c $(RLK_DIR)/librlk.a
 
 ${TST}: $(RLK_HDR)
 
+lint:
+	$(CC) -Werror -fsyntax-only $(CFLAGS) $(CFLAGS_LINT) *.c
+
 clean:
 	@rm -f $(TST)
 
-.PHONY: all test clean
+.PHONY: all test lint clean
