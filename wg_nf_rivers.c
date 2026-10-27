@@ -3,8 +3,6 @@
 #include <assert.h>
 #include <math.h>
 
-#include "noise.h"
-
 /* Water half-width for a cell draining `acc` cells: ~ sqrt(acc / acc_min) * width_min, capped. */
 static inline float
 river_width(const rlk_wg_nf_rivers_t *r, uint32_t acc) {
@@ -12,23 +10,12 @@ river_width(const rlk_wg_nf_rivers_t *r, uint32_t acc) {
     return w < r->width_max ? w : r->width_max;
 }
 
-/* Re-sample a wg_nf field at an arbitrary float position (for creeks). */
-static inline float
-sample_creek_field(const rlk_wg_nf_t *wg, int idx, float x, float y) {
-    assert(wg && idx >= 0 && idx < wg->nsampled);
-    const rlk_noise_t *n = &wg->noise[idx];
-    const rlk_wg_nf_field_t *f = &wg->fields[idx];
-    float v = rlk_noise_fbm(n, x, y, f->octaves, f->freq, f->gain);
-    if (f->kind == RLK_WG_NF_RIDGE)
-        v = 1.0f - fabsf(2.0f * v - 1.0f);
-    return v;
-}
-
 void
 rlk_wg_nf_rivers_init(rlk_wg_nf_rivers_t *r) {
     assert(r);
     assert(r->flow && r->elev);
-    assert(r->flow->w == r->elev->w && r->flow->h == r->elev->h);
+    assert(r->flow->built);  /* rlk_wg_flow_build() must have been called */
+    assert(r->flow->w == r->elev->lattice.w && r->flow->h == r->elev->lattice.h);
     if (r->acc_min == 0)
         r->acc_min = 1;
     if (r->width_min <= 0.0f)
@@ -54,7 +41,7 @@ rlk_wg_nf_rivers_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
 
     const int w = r->flow->w;
     const int h = r->flow->h;
-    const float cell = (float)r->elev->cell;
+    const float cell = (float)r->elev->lattice.cellsize;
 
     /* Tile centre in world coords, displaced by optional meanders */
     float px = (float)ctx->wx + 0.5f;
@@ -65,8 +52,8 @@ rlk_wg_nf_rivers_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
     }
 
     /* Grid coords of the tile centre */
-    const float gx = (px - (float)r->elev->ox) / cell;
-    const float gy = (py - (float)r->elev->oy) / cell;
+    const float gx = (px - (float)r->elev->lattice.origin_x) / cell;
+    const float gy = (py - (float)r->elev->lattice.origin_y) / cell;
 
     float mask = 0.0f;
     float carve = 0.0f;
@@ -105,8 +92,8 @@ rlk_wg_nf_rivers_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
                     continue;
                 const size_t nc = (size_t)nj * (size_t)w + (size_t)ni;
 
-                const float ax = (float)r->elev->ox + ((float)i + 0.5f) * cell;
-                const float ay = (float)r->elev->oy + ((float)j + 0.5f) * cell;
+                const float ax = (float)r->elev->lattice.origin_x + ((float)i + 0.5f) * cell;
+                const float ay = (float)r->elev->lattice.origin_y + ((float)j + 0.5f) * cell;
                 const float vx = (float)dx * cell;
                 const float vy = (float)dy * cell;
 
@@ -144,9 +131,9 @@ rlk_wg_nf_rivers_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
 
     /* Creeks: noise level-line streams on top of the drainage network */
     if (r->f_creek != RLK_WG_NF_RIVERS_NONE && r->creek_width > 0.0f) {
-        const float cv = sample_creek_field(wg, r->f_creek, px, py);
-        const float cx = sample_creek_field(wg, r->f_creek, px + 1.0f, py) - cv;
-        const float cy = sample_creek_field(wg, r->f_creek, px, py + 1.0f) - cv;
+        const float cv = rlk_wg_nf_sample_field(wg, r->f_creek, px, py);
+        const float cx = rlk_wg_nf_sample_field(wg, r->f_creek, px + 1.0f, py) - cv;
+        const float cy = rlk_wg_nf_sample_field(wg, r->f_creek, px, py + 1.0f) - cv;
         float g = sqrtf(cx * cx + cy * cy);
         if (g < 0.004f) g = 0.004f;
         const float dist = fabsf(cv - 0.5f) / g;
@@ -161,9 +148,22 @@ rlk_wg_nf_rivers_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
         }
     }
 
-    /* Lake overlay: bilinear sample of the lake-depth grid */
+    /* Rivers do not flow under the sea: zero the mask where the coarse
+       elevation is below sea level. Uses the original tile position (not the
+       wiggle-displaced one). Lake overlay below is exempt (inland depressions). */
+    {
+        const float e_coarse = rlk_grid_sample(r->elev, (float)ctx->wx + 0.5f, (float)ctx->wy + 0.5f);
+        if (e_coarse < r->sea) {
+            mask = 0.0f;
+            carve = 0.0f;
+        }
+    }
+
+    /* Lake overlay: bilinear sample of the lake-depth grid.
+       Uses the original tile position (not the wiggle-displaced one):
+       a lake is a property of the terrain, not of the meander. */
     if (r->lake_depth && r->lake_min_depth > 0.0f) {
-        const float d = rlk_wg_grid_sample(r->lake_depth, px, py);
+        const float d = rlk_grid_sample(r->lake_depth, (float)ctx->wx + 0.5f, (float)ctx->wy + 0.5f);
         if (d >= r->lake_min_depth) {
             /* Smooth threshold */
             const float lm = (d - 0.5f * r->lake_min_depth) / (0.5f * r->lake_min_depth);
@@ -190,5 +190,10 @@ rlk_err_t
 rlk_wg_nf_rivers_add(rlk_wg_nf_t *wg, rlk_wg_nf_rivers_t *r) {
     assert(wg && r);
     rlk_wg_nf_rivers_init(r);
+    /* Validate slots against the declared derived field count */
+    if (r->slot_mask != RLK_WG_NF_RIVERS_NONE && r->slot_mask >= wg->nderived)
+        return RLK_E_INVALID;
+    if (r->slot_carve != RLK_WG_NF_RIVERS_NONE && r->slot_carve >= wg->nderived)
+        return RLK_E_INVALID;
     return rlk_wg_nf_add_stage(wg, rlk_wg_nf_rivers_stage, r);
 }

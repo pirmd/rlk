@@ -3,7 +3,7 @@
 
 /*
  * Drainage on a coarse elevation grid: depression filling, D8 flow directions
- * and flow accumulation. Works on any rlk_wg_grid_t of elevations.
+ * and flow accumulation. Works on any rlk_grid_t of elevations.
  *
  * From a grid of elevations and a sea level:
  *   fill   per cell, the elevation after filling depressions (quantized).
@@ -23,6 +23,12 @@
  * Memory (caller-owned, no allocation):
  *   fill 2B + dir 1B + acc 4B + order 4B = 11B persistent per cell
  *   + 8B scratch (w*h uint64) during build.
+ *
+ * Usage (POD, designated initializer):
+ *   uint16_t fill[W*H]; uint8_t dir[W*H]; uint32_t acc[W*H];
+ *   int order[W*H]; uint64_t scratch[W*H];
+ *   rlk_wg_flow_t f = { .w=W, .h=H, .fill=fill, .dir=dir, .acc=acc, .order=order };
+ *   rlk_wg_flow_build(&f, &elev_grid, sea, scratch);
  */
 
 #include <assert.h>
@@ -30,7 +36,7 @@
 #include <stdint.h>
 
 #include "err.h"
-#include "wg_grid.h"
+#include "grid.h"
 
 #define RLK_WG_FLOW_MAX_CELLS  (1 << 20)  /* Maximum cells for single-pass processing */
 #define RLK_WG_FLOW_OUTLET     8          /* dir value: drains out of the domain */
@@ -41,6 +47,7 @@
 typedef struct {
     int w, h;          /* same size as the grid it is built from */
     float lo;          /* grid minimum used for quantization */
+    int built;         /* 1 after rlk_wg_flow_build() succeeds, 0 otherwise */
     uint16_t *fill;    /* filled elevation, quantized: (e - lo) * RLK_WG_FLOW_SCALE */
     uint8_t *dir;      /* 0..7 downstream direction, RLK_WG_FLOW_OUTLET */
     uint32_t *acc;     /* drainage area in cells, >= 1 */
@@ -49,14 +56,10 @@ typedef struct {
 
 /* --- PUBLIC API ---------------------------------------------------------- */
 
-/* Bind a flow to caller storage (w*h elements each). */
-void rlk_wg_flow_init(rlk_wg_flow_t *f, int w, int h,
-                      uint16_t *fill, uint8_t *dir, uint32_t *acc, int *order);
-
 /* Build fill / dir / acc / order from the elevation grid. Cells with elevation < sea
    are the ocean; grid edge cells are outlets too. `scratch` holds w*h uint64.
    Returns RLK_OK on success, RLK_E_INVALID if elevation span >= 256. */
-rlk_err_t rlk_wg_flow_build(rlk_wg_flow_t *f, const rlk_wg_grid_t *elev,
+rlk_err_t rlk_wg_flow_build(rlk_wg_flow_t *f, const rlk_grid_t *elev,
                             float sea, uint64_t *scratch);
 
 /* --- HELPERS (static inline) --------------------------------------------- */
@@ -83,10 +86,10 @@ rlk_wg_flow_downstream(const rlk_wg_flow_t *f, int i, int j, int *ni, int *nj) {
     assert(f && ni && nj);
     uint8_t d = f->dir[(size_t)j * (size_t)f->w + (size_t)i];
     if (d == RLK_WG_FLOW_OUTLET) return 0;
-    static const int8_t sx[8] = { 1, 1, 0, -1, -1, -1, 0, 1 };
-    static const int8_t sy[8] = { 0, 1, 1, 1, 0, -1, -1, -1 };
-    *ni = i + sx[d];
-    *nj = j + sy[d];
+    int dx, dy;
+    rlk_wg_flow_step(d, &dx, &dy);
+    *ni = i + dx;
+    *nj = j + dy;
     return 1;
 }
 
@@ -101,10 +104,10 @@ rlk_wg_flow_fill_elev(const rlk_wg_flow_t *f, int i, int j) {
    in elevation units (0 on slopes and at sea). `elev` must be the grid the
    flow was built from. */
 static inline float
-rlk_wg_flow_lake_depth(const rlk_wg_flow_t *f, const rlk_wg_grid_t *elev,
+rlk_wg_flow_lake_depth(const rlk_wg_flow_t *f, const rlk_grid_t *elev,
                        float sea, int i, int j) {
     assert(f && elev);
-    float e = elev->v[(size_t)j * (size_t)elev->w + (size_t)i];
+    float e = elev->v[(size_t)j * (size_t)elev->lattice.w + (size_t)i];
     if (e < sea) return 0.0f;
     uint16_t q = (uint16_t)((e - f->lo) * RLK_WG_FLOW_SCALE);
     uint16_t z = f->fill[(size_t)j * (size_t)f->w + (size_t)i];
@@ -113,7 +116,7 @@ rlk_wg_flow_lake_depth(const rlk_wg_flow_t *f, const rlk_wg_grid_t *elev,
 
 /* 1 if the cell is part of a lake: its basin was filled by at least `min_depth`. */
 static inline int
-rlk_wg_flow_is_lake(const rlk_wg_flow_t *f, const rlk_wg_grid_t *elev,
+rlk_wg_flow_is_lake(const rlk_wg_flow_t *f, const rlk_grid_t *elev,
                     float sea, float min_depth, int i, int j) {
     float d = rlk_wg_flow_lake_depth(f, elev, sea, i, j);
     return d > 0.0f && d >= min_depth;

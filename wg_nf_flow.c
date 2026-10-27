@@ -6,7 +6,8 @@ void
 rlk_wg_nf_flow_init(rlk_wg_nf_flow_t *f) {
     assert(f);
     assert(f->flow && f->elev);
-    assert(f->flow->w == f->elev->w && f->flow->h == f->elev->h);
+    assert(f->flow->built);  /* rlk_wg_flow_build() must have been called */
+    assert(f->flow->w == f->elev->lattice.w && f->flow->h == f->elev->lattice.h);
     if (f->acc_scale == 0.0f)
         f->acc_scale = 1.0f;
 }
@@ -18,7 +19,7 @@ rlk_wg_nf_flow_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
     const rlk_wg_nf_t *wg = ctx->wg;
 
     int i, j;
-    int inside = rlk_wg_grid_cell_of(f->elev, ctx->wx, ctx->wy, &i, &j);
+    int inside = rlk_grid_cell_of(f->elev, ctx->wx, ctx->wy, &i, &j);
 
     float acc_val = 0.0f;
     float dir_val = (float)RLK_WG_FLOW_OUTLET;

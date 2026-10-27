@@ -28,7 +28,7 @@
 #include "wg_nf.h"
 #include "wg_poi.h"
 #include "wg_flow.h"
-#include "wg_grid.h"
+#include "grid.h"
 
 /* POI detector stage configuration. */
 typedef struct {
@@ -45,11 +45,11 @@ typedef struct {
 
     /* --- Optional: flow constraint (near river) --- */
     const rlk_wg_flow_t *flow;      /* NULL = no constraint */
-    const rlk_wg_grid_t *flow_grid; /* elevation grid matching flow; required if flow set */
+    const rlk_grid_t *flow_grid; /* elevation grid matching flow; required if flow set */
     float min_acc;                  /* min flow accumulation in cells */
 
     /* --- Optional: grid constraint (elevation/other) --- */
-    const rlk_wg_grid_t *grid;      /* NULL = no constraint */
+    const rlk_grid_t *grid;      /* NULL = no constraint */
     float grid_min;                 /* min grid value (inclusive) */
     float grid_max;                 /* max grid value (inclusive) */
 

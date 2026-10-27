@@ -26,8 +26,8 @@ fixture_teardown(void) {
 static void
 test_rlk_tilemap_init_valid(void) {
 	fixture_setup();
-	assert(g_tm.width == FIXTURE_W);
-	assert(g_tm.height == FIXTURE_H);
+	assert(g_tm.w == FIXTURE_W);
+	assert(g_tm.h == FIXTURE_H);
 	assert(g_tm.tiles == (rlk_tile_t *)g_buf);
 	fixture_teardown();
 }
@@ -81,8 +81,8 @@ test_rlk_tilemap_init_buffer_exact_size(void) {
 	rlk_tile_t buf[2 * 2];
 	rlk_tilemap_t tm;
 	rlk_tilemap_init(&tm, 2, 2, buf, sizeof(buf));
-	assert(tm.width == 2);
-	assert(tm.height == 2);
+	assert(tm.w == 2);
+	assert(tm.h == 2);
 	assert(tm.tiles == buf);
 }
 

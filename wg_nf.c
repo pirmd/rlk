@@ -71,9 +71,12 @@ rlk_wg_nf_init(rlk_wg_nf_t *wg) {
 
 /* --- FIELDS -------------------------------------------------------------- */
 
-/* Sample field f at float world position (x, y). */
-static inline float
-field_sample(const rlk_noise_t *n, const rlk_wg_nf_field_t *f, float x, float y) {
+/* Sample field f at float world position (x, y). Public: stages reuse it. */
+float
+rlk_wg_nf_sample_field(const rlk_wg_nf_t *wg, int idx, float x, float y) {
+    assert(wg && idx >= 0 && idx < wg->nsampled);
+    const rlk_noise_t *n = &wg->noise[idx];
+    const rlk_wg_nf_field_t *f = &wg->fields[idx];
     assert(f->freq > 0.0f && f->gain > 0.0f);
     float v = rlk_noise_fbm(n, x, y, f->octaves, f->freq, f->gain);
     if (f->kind == RLK_WG_NF_RIDGE)
@@ -150,7 +153,7 @@ eval(const rlk_wg_nf_t *wg, int wx, int wy, int x, int y,
     /* FIELDS */
     const float wxf = (float)wx, wyf = (float)wy;
     for (int i = 0; i < wg->nsampled; i++)
-        ctx->field[i] = field_sample(&wg->noise[i], &wg->fields[i], wxf, wyf);
+        ctx->field[i] = rlk_wg_nf_sample_field(wg, i, wxf, wyf);
 
     /* STAGES */
     for (int i = 0; i < wg->nstages; i++)
@@ -163,20 +166,20 @@ eval(const rlk_wg_nf_t *wg, int wx, int wy, int x, int y,
 /* --- DRIVER -------------------------------------------------------------- */
 
 /* Fill tilemap tm with tiles for the world-space rect starting at (ox, oy).
- * Rect dimensions are tm->width x tm->height tiles. */
+ * Rect dimensions are tm->w x tm->h tiles. */
 void
 rlk_wg_nf_fill(const rlk_wg_nf_t *wg, int ox, int oy, rlk_tilemap_t *tm) {
     assert(wg && tm);
-    assert(tm->width > 0 && tm->height > 0);
+    assert(tm->w > 0 && tm->h > 0);
 
-    for (int y = 0; y < tm->height; y++) {
-        for (int x = 0; x < tm->width; x++) {
+    for (int y = 0; y < tm->h; y++) {
+        for (int x = 0; x < tm->w; x++) {
             rlk_wg_nf_ctx_t ctx;
             eval(wg, ox + x, oy + y, x, y, &ctx);
 
             /* WRITE */
             const rlk_wg_nf_zone_t *z = &wg->zones[ctx.zone];
-            rlk_tile_t *tile = rlk_tilemap_get(tm, x, y);
+            rlk_tile_t *tile = rlk_tilemap_get(tm, tm->origin_x + x, tm->origin_y + y);
             assert(tile);
             /* Reset tile, set biome to zone id, then the zone writer fills type/flags/variant. */
             *tile = (rlk_tile_t){.biome = ctx.zone};

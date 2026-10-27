@@ -39,7 +39,7 @@ rlk_wg_nf_poi_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
     if (cfg->flow) {
         assert(cfg->flow_grid);
         int i, j;
-        if (!rlk_wg_grid_cell_of(cfg->flow_grid, ctx->wx, ctx->wy, &i, &j))
+        if (!rlk_grid_cell_of(cfg->flow_grid, ctx->wx, ctx->wy, &i, &j))
             return;
         const rlk_wg_flow_t *f = cfg->flow;
         const size_t c = (size_t)j * (size_t)f->w + (size_t)i;
@@ -52,7 +52,7 @@ rlk_wg_nf_poi_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
     if (cfg->grid) {
         const float wxf = (float)ctx->wx + 0.5f;
         const float wyf = (float)ctx->wy + 0.5f;
-        float v = rlk_wg_grid_sample(cfg->grid, wxf, wyf);
+        float v = rlk_grid_sample(cfg->grid, wxf, wyf);
         if (v < cfg->grid_min || v > cfg->grid_max)
             return;
         /* Heuristic: if grid range is above 0.5, mark as ON_HILL. */
@@ -79,7 +79,7 @@ rlk_wg_nf_poi_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
         .size = cfg->size,
         .flags = flags,
     };
-    (void)rlk_wg_poi_add(cfg->list, &poi);
+    (void)rlk_wg_poi_push(cfg->list, &poi);
 }
 
 rlk_err_t

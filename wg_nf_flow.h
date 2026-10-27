@@ -15,14 +15,14 @@
 
 #include "wg_nf.h"
 #include "wg_flow.h"
-#include "wg_grid.h"
+#include "grid.h"
 
 #define RLK_WG_NF_FLOW_NONE 255  /* slot value: do not write this output */
 
 /* Flow reader stage configuration. */
 typedef struct {
     const rlk_wg_flow_t *flow;  /* pre-built flow; must outlive the wg */
-    const rlk_wg_grid_t *elev;  /* elevation grid (for lake_depth); must outlive the wg */
+    const rlk_grid_t *elev;  /* elevation grid (for lake_depth); must outlive the wg */
     float sea;                  /* sea level for lake detection */
     uint8_t slot_acc;           /* derived field for accumulation, or NONE */
     uint8_t slot_dir;           /* derived field for direction, or NONE */

@@ -14,8 +14,8 @@ test_rlk_err_to_string_invalid(void) {
 }
 
 static void
-test_rlk_err_to_string_range(void) {
-    assert(strcmp(rlk_err_to_string(RLK_E_RANGE), "Out of range") == 0);
+test_rlk_err_to_string_notfound(void) {
+    assert(strcmp(rlk_err_to_string(RLK_E_NOTFOUND), "Not found") == 0);
 }
 
 static void
@@ -27,7 +27,7 @@ int
 main(void) {
     test_rlk_err_to_string_ok();
     test_rlk_err_to_string_invalid();
-    test_rlk_err_to_string_range();
+    test_rlk_err_to_string_notfound();
     test_rlk_err_to_string_unknown();
     return 0;
 }

@@ -16,32 +16,33 @@ static uint64_t g_scratch[FW * FH];
 static float g_elev_buf[FW * FH];
 
 static rlk_wg_flow_t g_flow;
-static rlk_wg_grid_t g_elev;
+static rlk_grid_t g_elev;
 
 /* Simple slope: elevation increases with i (eastward). */
 static void
 fixture_setup_slope(void) {
-    rlk_wg_grid_init(&g_elev, FW, FH, 1, 0, 0, g_elev_buf);
+    g_elev = (rlk_grid_t){ .lattice = { .w = FW, .h = FH, .cellsize = 1, .origin_x = 0, .origin_y = 0 }, .v = g_elev_buf };
     for (int j = 0; j < FH; j++) {
         for (int i = 0; i < FW; i++) {
             g_elev.v[(size_t)j * (size_t)FW + (size_t)i] = (float)i;
         }
     }
-    rlk_wg_flow_init(&g_flow, FW, FH, g_fill, g_dir, g_acc, g_order);
+    g_flow = (rlk_wg_flow_t){ .w = FW, .h = FH, .fill = g_fill, .dir = g_dir, .acc = g_acc, .order = g_order };
 }
 
-/* init */
+/* POD init via designated initializer */
 
 static void
-test_rlk_wg_flow_init(void) {
-    rlk_wg_flow_init(&g_flow, FW, FH, g_fill, g_dir, g_acc, g_order);
-    assert(g_flow.w == FW);
-    assert(g_flow.h == FH);
-    assert(g_flow.fill == g_fill);
-    assert(g_flow.dir == g_dir);
-    assert(g_flow.acc == g_acc);
-    assert(g_flow.order == g_order);
-    assert(g_flow.lo == 0.0f);
+test_rlk_wg_flow_pod_init(void) {
+    rlk_wg_flow_t f = { .w = FW, .h = FH, .fill = g_fill, .dir = g_dir, .acc = g_acc, .order = g_order };
+    assert(f.w == FW);
+    assert(f.h == FH);
+    assert(f.fill == g_fill);
+    assert(f.dir == g_dir);
+    assert(f.acc == g_acc);
+    assert(f.order == g_order);
+    assert(f.lo == 0.0f);
+    assert(f.built == 0);
 }
 
 /* quant */
@@ -118,12 +119,11 @@ test_rlk_wg_flow_build_accumulation(void) {
 static void
 test_rlk_wg_flow_build_flat(void) {
     float flat_buf[FW * FH];
-    rlk_wg_grid_t flat;
-    rlk_wg_grid_init(&flat, FW, FH, 1, 0, 0, flat_buf);
+    rlk_grid_t flat = { .lattice = { .w = FW, .h = FH, .cellsize = 1, .origin_x = 0, .origin_y = 0 }, .v = flat_buf };
     for (int k = 0; k < FW * FH; k++)
         flat.v[k] = 0.5f;
 
-    rlk_wg_flow_init(&g_flow, FW, FH, g_fill, g_dir, g_acc, g_order);
+    g_flow = (rlk_wg_flow_t){ .w = FW, .h = FH, .fill = g_fill, .dir = g_dir, .acc = g_acc, .order = g_order };
     assert(rlk_wg_flow_build(&g_flow, &flat, -1.0f, g_scratch) == RLK_OK);
 
     /* All cells processed: no UNSET directions remain */
@@ -192,8 +192,7 @@ static void
 test_rlk_wg_flow_lake(void) {
     /* 5x5 grid with a pit at center: surrounded by higher cells */
     float pit_buf[25];
-    rlk_wg_grid_t pit;
-    rlk_wg_grid_init(&pit, 5, 5, 1, 0, 0, pit_buf);
+    rlk_grid_t pit = { .lattice = { .w = 5, .h = 5, .cellsize = 1, .origin_x = 0, .origin_y = 0 }, .v = pit_buf };
     for (int k = 0; k < 25; k++)
         pit.v[k] = 1.0f;
     pit.v[2 * 5 + 2] = 0.0f;  /* pit at (2,2) */
@@ -204,8 +203,7 @@ test_rlk_wg_flow_lake(void) {
     int order[25];
     uint64_t scratch[25];
 
-    rlk_wg_flow_t flow;
-    rlk_wg_flow_init(&flow, 5, 5, fill, dir, acc, order);
+    rlk_wg_flow_t flow = { .w = 5, .h = 5, .fill = fill, .dir = dir, .acc = acc, .order = order };
     assert(rlk_wg_flow_build(&flow, &pit, -1.0f, scratch) == RLK_OK);
 
     /* The pit cell is filled up to the edge level (1.0) */
@@ -222,8 +220,7 @@ test_rlk_wg_flow_lake(void) {
 static void
 test_rlk_wg_flow_build_span_error(void) {
     float buf[4];
-    rlk_wg_grid_t g;
-    rlk_wg_grid_init(&g, 2, 2, 1, 0, 0, buf);
+    rlk_grid_t g = { .lattice = { .w = 2, .h = 2, .cellsize = 1, .origin_x = 0, .origin_y = 0 }, .v = buf };
     g.v[0] = 0.0f;
     g.v[1] = 300.0f;  /* span > 256 */
     g.v[2] = 0.0f;
@@ -235,8 +232,7 @@ test_rlk_wg_flow_build_span_error(void) {
     int order[4];
     uint64_t scratch[4];
 
-    rlk_wg_flow_t flow;
-    rlk_wg_flow_init(&flow, 2, 2, fill, dir, acc, order);
+    rlk_wg_flow_t flow = { .w = 2, .h = 2, .fill = fill, .dir = dir, .acc = acc, .order = order };
     assert(rlk_wg_flow_build(&flow, &g, -1.0f, scratch) == RLK_E_INVALID);
 }
 
@@ -244,7 +240,7 @@ test_rlk_wg_flow_build_span_error(void) {
 
 int
 main(void) {
-    test_rlk_wg_flow_init();
+    test_rlk_wg_flow_pod_init();
     test_rlk_wg_flow_quant();
     test_rlk_wg_flow_step();
     test_rlk_wg_flow_build_slope();

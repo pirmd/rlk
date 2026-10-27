@@ -15,6 +15,16 @@ instead of GNU make.
 Configuration:
   Copy config.mk.example to config.mk to customize CFLAGS or library paths.
 
+Design:
+  - Zero allocation: the lib never calls malloc/free; all buffers are
+    caller-owned (doc/architecture.md, "Memory model").
+  - Determinism: same seed + same build -> identical world, byte for byte
+    (build flags enforced in Makefile.inc).
+
+Documentation:
+  doc/architecture.md   # Layered architecture, memory model, determinism contract
+  doc/conventions.md    # Naming rules
+
 Headers:
   rlk.h                # Umbrella header (includes all of the below)
   err.h                # Error handling
@@ -22,6 +32,8 @@ Headers:
   fmath.h              # Math helpers
   noise.h              # Noise generation (value, perlin, fbm)
   rng.h                # Deterministic PRNG (splitmix64)
+  geom.h               # Rect (region) + lattice (grid geometry on world)
+  grid.h               # Coarse float grid with bilinear sampling
   tilemap.h            # 2D grid with occupancy
   wg_nf.h              # Noise-field world generation
   wg_nf_modulator.h    # Voronoi modulation stage for wg_nf
@@ -30,6 +42,8 @@ Headers:
   wg_nf_rivers.h       # Project wg_flow drainage into per-tile river masks
   wg_nf_relief.h       # Standardised elevation (domain warp, fjords, lapse)
   wg_nf_poi.h          # Detect Points of Interest during wg_nf fill
+  wg_flow.h            # Hydrology on a coarse grid: pits, D8 drainage, accumulation
+  wg_poi.h             # Points of interest (fixed-capacity list, no allocation)
   wg_ca.h              # Cellular Automata (caves, organic structures)
   wg_bsp.h             # Binary Space Partitioning (rooms + corridors)
 

@@ -37,31 +37,18 @@ heap_pop(uint64_t *hp, int *n) {
     return top;
 }
 
-void
-rlk_wg_flow_init(rlk_wg_flow_t *f, int w, int h,
-                 uint16_t *fill, uint8_t *dir, uint32_t *acc, int *order) {
-    assert(f && fill && dir && acc && order);
-    assert(w >= 1 && h >= 1);
-    assert((int64_t)w * (int64_t)h <= RLK_WG_FLOW_MAX_CELLS);
-
-    f->w = w;
-    f->h = h;
-    f->lo = 0.0f;
-    f->fill = fill;
-    f->dir = dir;
-    f->acc = acc;
-    f->order = order;
-}
-
 rlk_err_t
-rlk_wg_flow_build(rlk_wg_flow_t *f, const rlk_wg_grid_t *elev,
+rlk_wg_flow_build(rlk_wg_flow_t *f, const rlk_grid_t *elev,
                   float sea, uint64_t *scratch) {
     assert(f && elev && scratch);
-    assert(f->w == elev->w && f->h == elev->h);
+    assert(f->fill && f->dir && f->acc && f->order);
+    assert(f->w >= 1 && f->h >= 1);
+    assert((int64_t)f->w * (int64_t)f->h <= RLK_WG_FLOW_MAX_CELLS);
+    assert(f->w == elev->lattice.w && f->h == elev->lattice.h);
 
     const int w = f->w, h = f->h, n = w * h;
     float lo, hi;
-    rlk_wg_grid_minmax(elev, &lo, &hi);
+    rlk_grid_minmax(elev, &lo, &hi);
     if (hi - lo >= 256.0f) return RLK_E_INVALID;
     f->lo = lo;
 
@@ -123,5 +110,6 @@ rlk_wg_flow_build(rlk_wg_flow_t *f, const rlk_wg_grid_t *elev,
         int t = (c / w + dy) * w + (c % w + dx);
         f->acc[t] += f->acc[c];
     }
+    f->built = 1;
     return RLK_OK;
 }

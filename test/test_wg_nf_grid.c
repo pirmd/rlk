@@ -38,18 +38,13 @@ wg_min(void) {
 #define GCELL 8
 
 static float grid_buf[GW * GH];
-static rlk_wg_grid_t grid;
-
-static float
-const_fn(float px, float py, const void *user) {
-    (void)px; (void)py; (void)user;
-    return 0.5f;
-}
+static rlk_grid_t grid;
 
 static void
 grid_setup(void) {
-    rlk_wg_grid_init(&grid, GW, GH, GCELL, 0, 0, grid_buf);
-    rlk_wg_grid_fill(&grid, const_fn, NULL);
+    grid = (rlk_grid_t){ .lattice = { .w = GW, .h = GH, .cellsize = GCELL, .origin_x = 0, .origin_y = 0 }, .v = grid_buf };
+    for (int k = 0; k < GW * GH; k++)
+        grid_buf[k] = 0.5f;
 }
 
 /* init: scale 0 -> 1.0 */

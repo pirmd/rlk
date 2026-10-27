@@ -22,6 +22,10 @@
  * Field indices refer to ctx->field[]: sampled fields are [0, nsampled),
  * derived fields are [nsampled, nsampled+nderived). Use RLK_WG_NF_RELIEF_NONE
  * (255) to disable an optional input.
+ *
+ * STAGE ORDER: if river_carve_field is set (e.g. from wg_nf_rivers), this stage
+ * must run AFTER wg_nf_rivers so the carve is already computed. Adding stages
+ * in the wrong order silently skips river valley carving.
  */
 
 #include "wg_nf.h"

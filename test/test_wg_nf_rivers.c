@@ -65,7 +65,7 @@ wg_wiggle(void) {
 #define FCELL 4
 
 static float elev_buf[FW * FH];
-static rlk_wg_grid_t elev;
+static rlk_grid_t elev;
 static uint16_t fill_buf[FW * FH];
 static uint8_t dir_buf[FW * FH];
 static uint32_t acc_buf[FW * FH];
@@ -75,18 +75,19 @@ static rlk_wg_flow_t flow;
 
 static void
 flow_setup(void) {
-    rlk_wg_grid_init(&elev, FW, FH, FCELL, 0, 0, elev_buf);
+    elev = (rlk_grid_t){ .lattice = { .w = FW, .h = FH, .cellsize = FCELL, .origin_x = 0, .origin_y = 0 }, .v = elev_buf };
     for (int j = 0; j < FH; j++)
         for (int i = 0; i < FW; i++)
             elev.v[(size_t)j * FW + (size_t)i] = (float)i + 0.5f;
 
-    rlk_wg_flow_init(&flow, FW, FH, fill_buf, dir_buf, acc_buf, order_buf);
+    flow = (rlk_wg_flow_t){ .w = FW, .h = FH, .fill = fill_buf, .dir = dir_buf, .acc = acc_buf, .order = order_buf };
     assert(rlk_wg_flow_build(&flow, &elev, -1.0f, scratch) == RLK_OK);
 }
 
 /* init: zero defaults resolved */
 static void
 test_rivers_init_defaults(void) {
+    flow_setup();
     rlk_wg_nf_rivers_t r = {0};
     r.flow = &flow;
     r.elev = &elev;
@@ -267,6 +268,7 @@ test_rivers_stage_all_underwater(void) {
 /* init: wig_tiles=0 disables wiggle fields, creek_width=0 disables creek */
 static void
 test_rivers_init_wiggle_creek_defaults(void) {
+    flow_setup();
     rlk_wg_nf_rivers_t r = {0};
     r.flow = &flow;
     r.elev = &elev;

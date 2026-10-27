@@ -64,7 +64,7 @@ void rlk_wg_poi_list_init(rlk_wg_poi_list_t *list);
 
 /* Append a POI. Returns RLK_E_INVALID if list is full or poi is NULL.
  * Does NOT check for duplicates (caller's responsibility). */
-rlk_err_t rlk_wg_poi_add(rlk_wg_poi_list_t *list, const rlk_wg_poi_t *poi);
+rlk_err_t rlk_wg_poi_push(rlk_wg_poi_list_t *list, const rlk_wg_poi_t *poi);
 
 /* Find the nearest POI of a given kind within `radius` tiles of (wx, wy).
  * Returns NULL if none found. */

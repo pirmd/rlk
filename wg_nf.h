@@ -146,6 +146,12 @@ rlk_wg_nf_rand(const rlk_wg_nf_t *wg, int wx, int wy, uint64_t salt) {
     return (float)(h >> 40) * (1.0f / 16777216.0f);
 }
 
+/* Re-sample a wg_nf field at an arbitrary float world position.
+ * Mirrors the field sampling done in eval(): FBM or RIDGE, same noise generator.
+ * For stages that need to sample a field at a non-tile position (e.g. creeks,
+ * domain-warped relief). */
+float rlk_wg_nf_sample_field(const rlk_wg_nf_t *wg, int idx, float x, float y);
+
 /* --- PUBLIC API ---------------------------------------------------------- */
 
 /* Register a pipeline stage. Returns RLK_E_INVALID if the stage table is full.
@@ -157,17 +163,17 @@ rlk_err_t rlk_wg_nf_add_stage(rlk_wg_nf_t *wg, rlk_wg_nf_stage_fn fn, const void
    Call once after filling the config fields and registering stages. */
 void rlk_wg_nf_init(rlk_wg_nf_t *wg);
 
-/* Fill tm with the world rect (tm->width x tm->height tiles) at world origin
+/* Fill tm with the world rect (tm->w x tm->h tiles) at world origin
    (ox, oy). General primitive; origin may be any tile (incl. negative). */
 void rlk_wg_nf_fill(const rlk_wg_nf_t *wg, int ox, int oy, rlk_tilemap_t *tm);
 
 /* Generate chunk (cx, cy) into tm. tm must be exactly one chunk; chunk origin
-   is (cx*tm->width, cy*tm->height). Convenience wrapper over rlk_wg_nf_fill. */
+   is (cx*tm->w, cy*tm->h). Convenience wrapper over rlk_wg_nf_fill. */
 static inline void
 rlk_wg_nf_chunk(const rlk_wg_nf_t *wg, int cx, int cy, rlk_tilemap_t *tm) {
     assert(tm);
-    const int64_t ox = (int64_t)cx * tm->width;
-    const int64_t oy = (int64_t)cy * tm->height;
+    const int64_t ox = (int64_t)cx * tm->w;
+    const int64_t oy = (int64_t)cy * tm->h;
     assert(ox >= INT_MIN && ox <= INT_MAX && oy >= INT_MIN && oy <= INT_MAX);
     rlk_wg_nf_fill(wg, (int)ox, (int)oy, tm);
 }

@@ -21,7 +21,7 @@ rlk_wg_nf_grid_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
 
     const float wxf = (float)ctx->wx + 0.5f;
     const float wyf = (float)ctx->wy + 0.5f;
-    const float v = rlk_wg_grid_sample(g->grid, wxf, wyf);
+    const float v = rlk_grid_sample(g->grid, wxf, wyf);
     ctx->field[idx] = v * g->scale + g->offset;
 }
 

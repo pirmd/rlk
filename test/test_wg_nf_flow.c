@@ -42,7 +42,7 @@ wg_min(void) {
 #define FCELL 4
 
 static float elev_buf[FW * FH];
-static rlk_wg_grid_t elev;
+static rlk_grid_t elev;
 static uint16_t fill_buf[FW * FH];
 static uint8_t dir_buf[FW * FH];
 static uint32_t acc_buf[FW * FH];
@@ -52,18 +52,19 @@ static rlk_wg_flow_t flow;
 
 static void
 flow_setup(void) {
-    rlk_wg_grid_init(&elev, FW, FH, FCELL, 0, 0, elev_buf);
+    elev = (rlk_grid_t){ .lattice = { .w = FW, .h = FH, .cellsize = FCELL, .origin_x = 0, .origin_y = 0 }, .v = elev_buf };
     for (int j = 0; j < FH; j++)
         for (int i = 0; i < FW; i++)
             elev.v[(size_t)j * FW + (size_t)i] = (float)i;
 
-    rlk_wg_flow_init(&flow, FW, FH, fill_buf, dir_buf, acc_buf, order_buf);
+    flow = (rlk_wg_flow_t){ .w = FW, .h = FH, .fill = fill_buf, .dir = dir_buf, .acc = acc_buf, .order = order_buf };
     assert(rlk_wg_flow_build(&flow, &elev, -1.0f, scratch) == RLK_OK);
 }
 
 /* init: acc_scale 0 -> 1.0 */
 static void
 test_flow_init_defaults(void) {
+    flow_setup();
     rlk_wg_nf_flow_t f = {0};
     f.flow = &flow;
     f.elev = &elev;

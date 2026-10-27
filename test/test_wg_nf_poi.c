@@ -193,7 +193,7 @@ test_poi_stage_deterministic(void) {
 #define FCELL 4
 
 static float elev_buf[FW * FH];
-static rlk_wg_grid_t elev_grid;
+static rlk_grid_t elev_grid;
 static uint16_t fill_buf[FW * FH];
 static uint8_t dir_buf[FW * FH];
 static uint32_t acc_buf[FW * FH];
@@ -203,12 +203,12 @@ static rlk_wg_flow_t flow;
 
 static void
 flow_setup(void) {
-    rlk_wg_grid_init(&elev_grid, FW, FH, FCELL, 0, 0, elev_buf);
+    elev_grid = (rlk_grid_t){ .lattice = { .w = FW, .h = FH, .cellsize = FCELL, .origin_x = 0, .origin_y = 0 }, .v = elev_buf };
     for (int j = 0; j < FH; j++)
         for (int i = 0; i < FW; i++)
             elev_grid.v[(size_t)j * FW + (size_t)i] = (float)i;
 
-    rlk_wg_flow_init(&flow, FW, FH, fill_buf, dir_buf, acc_buf, order_buf);
+    flow = (rlk_wg_flow_t){ .w = FW, .h = FH, .fill = fill_buf, .dir = dir_buf, .acc = acc_buf, .order = order_buf };
     assert(rlk_wg_flow_build(&flow, &elev_grid, -1.0f, scratch) == RLK_OK);
 }
 
@@ -253,19 +253,17 @@ test_poi_stage_flow_constraint(void) {
 #define GCELL 4
 
 static float grid_buf[GW * GH];
-static rlk_wg_grid_t val_grid;
-
-static float
-ramp_fn(float px, float py, const void *user) {
-    (void)py; (void)user;
-    /* Ramp: value = x / (GW*GCELL) in [0, 1). */
-    return px / ((float)GW * (float)GCELL);
-}
+static rlk_grid_t val_grid;
 
 static void
 grid_setup(void) {
-    rlk_wg_grid_init(&val_grid, GW, GH, GCELL, 0, 0, grid_buf);
-    rlk_wg_grid_fill(&val_grid, ramp_fn, NULL);
+    val_grid = (rlk_grid_t){ .lattice = { .w = GW, .h = GH, .cellsize = GCELL, .origin_x = 0, .origin_y = 0 }, .v = grid_buf };
+    for (int j = 0; j < GH; j++)
+        for (int i = 0; i < GW; i++) {
+            float px, py;
+            rlk_grid_center(&val_grid, i, j, &px, &py);
+            grid_buf[(size_t)j * GW + (size_t)i] = px / ((float)GW * (float)GCELL);
+        }
 }
 
 static void

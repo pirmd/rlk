@@ -2,18 +2,18 @@
 #define RLK_WG_NF_GRID_H
 
 /*
- * Optional wg_nf stage: samples a pre-filled rlk_wg_grid_t into a derived field.
+ * Optional wg_nf stage: samples a pre-filled rlk_grid_t into a derived field.
  *
  * Applied as: ctx->field[nsampled + slot] = grid_sample(wx, wy) * scale + offset
  * The grid must be filled before rlk_wg_nf_init() and must outlive the wg.
  */
 
 #include "wg_nf.h"
-#include "wg_grid.h"
+#include "grid.h"
 
 /* Grid sampler stage configuration. */
 typedef struct {
-    const rlk_wg_grid_t *grid;  /* pre-filled grid; must outlive the wg */
+    const rlk_grid_t *grid;  /* pre-filled grid; must outlive the wg */
     uint8_t slot;               /* derived field index: ctx->field[nsampled + slot] */
     float scale;                /* 0 -> 1.0 */
     float offset;               /* added after scale */

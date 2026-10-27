@@ -119,8 +119,8 @@ wg_quad(float freq) {
 /* 1 if at least one tile byte differs between a and b (same dimensions). */
 static int
 tm_differ(const rlk_tilemap_t *a, const rlk_tilemap_t *b) {
-    for (int y = 0; y < a->height; y++) {
-        for (int x = 0; x < a->width; x++) {
+    for (int y = 0; y < a->h; y++) {
+        for (int x = 0; x < a->w; x++) {
             const rlk_tile_t *t1 = rlk_tilemap_get(a, x, y);
             const rlk_tile_t *t2 = rlk_tilemap_get(b, x, y);
             if (t1->type != t2->type || t1->flags != t2->flags ||

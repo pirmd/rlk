@@ -4,20 +4,6 @@
 #include <math.h>
 
 #include "fmath.h"
-#include "noise.h"
-
-/* Re-sample a wg_nf field at an arbitrary float position.
-   Mirrors the field_sample() logic in wg_nf.c. */
-static inline float
-sample_field(const rlk_wg_nf_t *wg, int idx, float x, float y) {
-    assert(wg && idx >= 0 && idx < wg->nsampled);
-    const rlk_noise_t *n = &wg->noise[idx];
-    const rlk_wg_nf_field_t *f = &wg->fields[idx];
-    float v = rlk_noise_fbm(n, x, y, f->octaves, f->freq, f->gain);
-    if (f->kind == RLK_WG_NF_RIDGE)
-        v = 1.0f - fabsf(2.0f * v - 1.0f);
-    return v;
-}
 
 /* Smoothstep between lo and hi (t in [0,1] mapped to [lo,hi]). */
 static inline float
@@ -75,9 +61,9 @@ river_noise(const rlk_wg_nf_t *wg, const rlk_wg_nf_relief_t *r,
             float *out_mask, float *out_carve) {
     assert(r->f_river != RLK_WG_NF_RELIEF_NONE);
 
-    const float rn = sample_field(wg, r->f_river, qx, qy);
-    const float gx = sample_field(wg, r->f_river, qx + 1.0f, qy) - rn;
-    const float gy = sample_field(wg, r->f_river, qx, qy + 1.0f) - rn;
+    const float rn = rlk_wg_nf_sample_field(wg, r->f_river, qx, qy);
+    const float gx = rlk_wg_nf_sample_field(wg, r->f_river, qx + 1.0f, qy) - rn;
+    const float gy = rlk_wg_nf_sample_field(wg, r->f_river, qx, qy + 1.0f) - rn;
     float g = sqrtf(gx * gx + gy * gy);
     if (g < RLK_WG_NF_RELIEF_MIN_GRAD)
         g = RLK_WG_NF_RELIEF_MIN_GRAD;
@@ -126,7 +112,7 @@ fjord_carve(const rlk_wg_nf_t *wg, const rlk_wg_nf_relief_t *r,
     const float u = px * r->fjord_dir[0] + py * r->fjord_dir[1];
     const float v = -px * r->fjord_dir[1] + py * r->fjord_dir[0];
 
-    const float fn = sample_field(wg, r->f_fjord, u * r->fjord_stretch, v);
+    const float fn = rlk_wg_nf_sample_field(wg, r->f_fjord, u * r->fjord_stretch, v);
     const float fr = 1.0f - fabsf(2.0f * fn - 1.0f);
     const float vv = rlk_clampf((fr - (1.0f - r->fjord_width)) / r->fjord_width, 0.0f, 1.0f);
     const float steeper = vv * r->fjord_steep;
@@ -161,12 +147,12 @@ rlk_wg_nf_relief_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
     /* Base elevation: cont + hills + mountains */
     float elev = cont;
     if (r->f_hills != RLK_WG_NF_RELIEF_NONE) {
-        const float hills = sample_field(wg, r->f_hills, qx, qy);
+        const float hills = rlk_wg_nf_sample_field(wg, r->f_hills, qx, qy);
         elev += r->hills_amp * (hills - 0.5f);
     }
     if (r->f_ridge != RLK_WG_NF_RELIEF_NONE) {
         const float mt = smoothstep_between(r->mountain_lo, r->mountain_hi, cont);
-        const float ridge = sample_field(wg, r->f_ridge, qx, qy);
+        const float ridge = rlk_wg_nf_sample_field(wg, r->f_ridge, qx, qy);
         elev += r->mountain_amp * mt * ridge;
     }
 
@@ -177,13 +163,13 @@ rlk_wg_nf_relief_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
     /* Rivers: from a derived field (e.g. wg_nf_rivers) or noise */
     if (h0 > 0.0f) {
         if (r->river_carve_field != RLK_WG_NF_RELIEF_NONE) {
-            /* Read carve from a derived field produced by another stage */
+            /* Read carve from a derived field produced by another stage.
+               The river mask is NOT recomputed here: it lives in its own
+               derived slot (written by wg_nf_rivers). Only the carve is
+               subtracted from the elevation below. */
             const int cidx = wg->nsampled + r->river_carve_field;
             assert(cidx >= 0 && cidx < RLK_WG_NF_MAX_FIELDS);
             river_carve = ctx->field[cidx];
-            /* Derive a simple mask from the carve: mask = 1 - carve/river_carve */
-            if (r->river_carve > 0.0f)
-                river_mask = rlk_clampf(1.0f - river_carve / r->river_carve, 0.0f, 1.0f);
         } else if (r->f_river != RLK_WG_NF_RELIEF_NONE) {
             const float hum = 0.5f; /* no humidity field for now */
             river_noise(wg, r, qx, qy, h0, hum, &river_mask, &river_carve);

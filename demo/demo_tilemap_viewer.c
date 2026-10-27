@@ -10,7 +10,7 @@
 
 #include "noise.h"
 #include "tilemap.h"
-#include "wg_grid.h"
+#include "grid.h"
 #include "wg_flow.h"
 #include "wg_nf.h"
 #include "wg_nf_grid.h"
@@ -124,8 +124,8 @@ enum {
 #define GRID_W       64
 #define GRID_H       48
 #define GRID_CELL    4
-#define GRID_OX      (-(GRID_W * GRID_CELL / 2 - TM_W / 2))   /* -64 */
-#define GRID_OY      (-(GRID_H * GRID_CELL / 2 - TM_H / 2))   /* -48 */
+#define GRID_ORIGIN_X      (-(GRID_W * GRID_CELL / 2 - TM_W / 2))   /* -64 */
+#define GRID_ORIGIN_Y      (-(GRID_H * GRID_CELL / 2 - TM_H / 2))   /* -48 */
 #define SEA_LEVEL    0.33f      /* ocean level */
 #define LAKE_MIN_DEPTH 0.02f    /* min filled depth to be a lake tile */
 #define RIVER_ACC_MIN  40u      /* drainage area (cells) at which a river starts */
@@ -230,7 +230,7 @@ struct world_s {
     rlk_wg_nf_t wg;
 
     /* Coarse elevation grid + flow (hydrology) */
-    rlk_wg_grid_t elev_grid;
+    rlk_grid_t elev_grid;
     float elev_buf[GRID_W * GRID_H];
     rlk_wg_flow_t flow;
     uint16_t flow_fill[GRID_W * GRID_H];
@@ -238,7 +238,7 @@ struct world_s {
     uint32_t flow_acc[GRID_W * GRID_H];
     int      flow_order[GRID_W * GRID_H];
     uint64_t flow_scratch[GRID_W * GRID_H];
-    rlk_wg_grid_t lake_grid;       /* lake depths, filtered by outlet accumulation */
+    rlk_grid_t lake_grid;       /* lake depths, filtered by outlet accumulation */
     float lake_buf[GRID_W * GRID_H];
     rlk_noise_t relief_noise[F_NSAMPLED];
 
@@ -624,19 +624,27 @@ world_generate(world_t *w, uint64_t seed) {
         .mountain_hi = 0.80f,
         .mountain_amp = 0.45f,
     };
-    rlk_wg_grid_init(&w->elev_grid, GRID_W, GRID_H, GRID_CELL, GRID_OX, GRID_OY, w->elev_buf);
-    rlk_wg_grid_fill(&w->elev_grid, relief_elev_fn, &elev_ctx);
+    w->elev_grid = (rlk_grid_t){ .lattice = { .w = GRID_W, .h = GRID_H, .cellsize = GRID_CELL,
+                                    .origin_x = GRID_ORIGIN_X, .origin_y = GRID_ORIGIN_Y }, .v = w->elev_buf };
+    for (int j = 0; j < GRID_H; j++)
+        for (int i = 0; i < GRID_W; i++) {
+            float cx, cy;
+            rlk_grid_center(&w->elev_grid, i, j, &cx, &cy);
+            w->elev_buf[(size_t)(j * GRID_W + i)] = relief_elev_fn(cx, cy, &elev_ctx);
+        }
 
     /* --- Flow: depression filling + D8 drainage + accumulation (wg_flow) --- */
-    rlk_wg_flow_init(&w->flow, GRID_W, GRID_H,
-                     w->flow_fill, w->flow_dir, w->flow_acc, w->flow_order);
+    w->flow = (rlk_wg_flow_t){ .w = GRID_W, .h = GRID_H,
+                               .fill = w->flow_fill, .dir = w->flow_dir,
+                               .acc = w->flow_acc, .order = w->flow_order };
     rlk_err_t ferr = rlk_wg_flow_build(&w->flow, &w->elev_grid, SEA_LEVEL, w->flow_scratch);
     assert(ferr == RLK_OK);
 
     /* --- Lake grid: filled depression depths, filtered by outlet accumulation ---
        Lakes whose outflow drains fewer than RIVER_ACC_MIN cells are dropped:
        they would sit with no visible outlet. */
-    rlk_wg_grid_init(&w->lake_grid, GRID_W, GRID_H, GRID_CELL, GRID_OX, GRID_OY, w->lake_buf);
+    w->lake_grid = (rlk_grid_t){ .lattice = { .w = GRID_W, .h = GRID_H, .cellsize = GRID_CELL,
+                                    .origin_x = GRID_ORIGIN_X, .origin_y = GRID_ORIGIN_Y }, .v = w->lake_buf };
     for (int j = 0; j < GRID_H; j++)
         for (int i = 0; i < GRID_W; i++)
             w->lake_buf[(size_t)(j * GRID_W + i)] =
@@ -989,7 +997,7 @@ get_elevation_color(float e) {
 /* Sample elevation at a world tile position from the coarse grid. */
 static float
 sample_elevation(const world_t *w, int wx, int wy) {
-    return rlk_wg_grid_sample(&w->elev_grid, (float)wx + 0.5f, (float)wy + 0.5f);
+    return rlk_grid_sample(&w->elev_grid, (float)wx + 0.5f, (float)wy + 0.5f);
 }
 
 /* Get the base color for a tile according to base_mode. */
@@ -1114,8 +1122,8 @@ render_minimap(pxl_canvas_t *cnv, const viewer_t *a) {
     int mm_w = view.w;
     int mm_h = view.h;
 
-    for (int wy = 0; wy < w->tm.height; wy++) {
-        for (int wx = 0; wx < w->tm.width; wx++) {
+    for (int wy = 0; wy < w->tm.h; wy++) {
+        for (int wx = 0; wx < w->tm.w; wx++) {
             int px = mm->off_x + (int)((float)wx * mm->scale);
             int py = mm->off_y + (int)((float)wy * mm->scale);
             int pw = (int)mm->scale + 1;
@@ -1259,7 +1267,7 @@ render_tile_info(pxl_canvas_t *cnv, const ui_t *ui, const viewer_t *a) {
     int ci = -1, cj = -1;
     uint32_t acc = 0;
     float lake = 0.0f;
-    if (rlk_wg_grid_cell_of(&w->elev_grid, v->selected_wx, v->selected_wy, &ci, &cj)) {
+    if (rlk_grid_cell_of(&w->elev_grid, v->selected_wx, v->selected_wy, &ci, &cj)) {
         acc = w->flow.acc[(size_t)cj * (size_t)w->flow.w + (size_t)ci];
         lake = rlk_wg_flow_lake_depth(&w->flow, &w->elev_grid, SEA_LEVEL, ci, cj);
     }
@@ -1468,7 +1476,7 @@ handle_input(pxl_app_t *pxl, viewer_t *a) {
     if (a->ui.mouse_left_down) {
         int wx, wy;
         if (minimap_view_to_tile(&a->mm, &a->layout.minimap,
-                                 a->world.tm.width, a->world.tm.height,
+                                 a->world.tm.w, a->world.tm.h,
                                  mx, my, &wx, &wy))
             camera_center_on(&a->view.cam, wx, wy, a->layout.map.w, a->layout.map.h);
     }
@@ -1477,21 +1485,21 @@ handle_input(pxl_app_t *pxl, viewer_t *a) {
     if (a->ui.mouse_left_clicked) {
         int wx, wy;
         if (minimap_view_to_tile(&a->mm, &a->layout.minimap,
-                                 a->world.tm.width, a->world.tm.height,
+                                 a->world.tm.w, a->world.tm.h,
                                  mx, my, &wx, &wy)) {
             camera_center_on(&a->view.cam, wx, wy, a->layout.map.w, a->layout.map.h);
         } else if (pt_in_rect(mx, my, a->layout.map)) {
             int twx = (int)(a->view.cam.wx + (float)(mx - a->layout.map.x) / (float)TILE_PX);
             int twy = (int)(a->view.cam.wy + (float)(my - a->layout.map.y) / (float)TILE_PX);
 
-            if (twx >= 0 && twx < a->world.tm.width && twy >= 0 && twy < a->world.tm.height) {
+            if (twx >= 0 && twx < a->world.tm.w && twy >= 0 && twy < a->world.tm.h) {
                 a->view.selected_wx = twx;
                 a->view.selected_wy = twy;
             }
         }
     }
 
-    camera_clamp(&a->view.cam, a->world.tm.width, a->world.tm.height,
+    camera_clamp(&a->view.cam, a->world.tm.w, a->world.tm.h,
                  a->layout.map.w, a->layout.map.h);
 }
 

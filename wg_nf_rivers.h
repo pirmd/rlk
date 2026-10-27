@@ -26,17 +26,21 @@
  *
  * The flow and elevation grid must be built before rlk_wg_nf_init() and must
  * outlive the wg.
+ *
+ * STAGE ORDER: this stage must run BEFORE wg_nf_relief (which reads slot_carve
+ * via river_carve_field). Adding stages in the wrong order silently produces
+ * rivers without valley carving.
  */
 
 #include "wg_nf.h"
 #include "wg_flow.h"
-#include "wg_grid.h"
+#include "grid.h"
 
 #define RLK_WG_NF_RIVERS_NONE 255  /* slot value: do not write this output */
 
 typedef struct {
     const rlk_wg_flow_t *flow;  /* pre-built drainage; must outlive the wg */
-    const rlk_wg_grid_t *elev;  /* elevation grid matching flow; must outlive the wg */
+    const rlk_grid_t *elev;  /* elevation grid matching flow; must outlive the wg */
     float sea;                  /* sea level (rivers only on land) */
 
     uint32_t acc_min;           /* min drainage area (cells) for a river segment */
@@ -49,7 +53,7 @@ typedef struct {
     uint8_t slot_carve;         /* derived field for valley carve, or NONE */
 
     /* Optional: lake overlay */
-    const rlk_wg_grid_t *lake_depth;  /* pre-computed lake depths; NULL = none */
+    const rlk_grid_t *lake_depth;  /* pre-computed lake depths; NULL = none */
     float lake_min_depth;             /* min depth for lake mask (elevation units) */
 
     /* Optional: meanders (fine displacement of the tile position) */

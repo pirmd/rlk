@@ -12,7 +12,7 @@ rlk_wg_poi_list_init(rlk_wg_poi_list_t *list) {
 }
 
 rlk_err_t
-rlk_wg_poi_add(rlk_wg_poi_list_t *list, const rlk_wg_poi_t *poi) {
+rlk_wg_poi_push(rlk_wg_poi_list_t *list, const rlk_wg_poi_t *poi) {
     assert(list && poi);
     if (list->count >= RLK_WG_POI_MAX)
         return RLK_E_INVALID;

@@ -3,3 +3,6 @@
 *.so
 
 config.mk
+
+.vibe/
+TODO.candidats/

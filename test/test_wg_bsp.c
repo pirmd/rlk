@@ -85,8 +85,8 @@ test_fill_basic(void) {
     rlk_wg_bsp_fill(&g_bsp, 0, 0, &g_tilemap);
 
     int has_wall = 0, has_floor = 0;
-    for (int y = 0; y < g_tilemap.height; y++) {
-        for (int x = 0; x < g_tilemap.width; x++) {
+    for (int y = 0; y < g_tilemap.h; y++) {
+        for (int x = 0; x < g_tilemap.w; x++) {
             rlk_tile_t *tile = rlk_tilemap_get(&g_tilemap, x, y);
             assert(tile != NULL);
             if (tile->type == 1) has_wall = 1;
@@ -239,8 +239,8 @@ test_fill_offset(void) {
     fixture_setup();
 
     /* Sentinel: mark all tiles as type 99. */
-    for (int y = 0; y < g_tilemap.height; y++)
-        for (int x = 0; x < g_tilemap.width; x++)
+    for (int y = 0; y < g_tilemap.h; y++)
+        for (int x = 0; x < g_tilemap.w; x++)
             rlk_tilemap_get(&g_tilemap, x, y)->type = 99;
 
     /* Fill at offset (5, 5). */
@@ -254,8 +254,8 @@ test_fill_offset(void) {
 
     /* Inside the offset area: filled with wall(1) or floor(0). */
     int has_wall = 0, has_floor = 0;
-    for (int y = 5; y < g_tilemap.height; y++) {
-        for (int x = 5; x < g_tilemap.width; x++) {
+    for (int y = 5; y < g_tilemap.h; y++) {
+        for (int x = 5; x < g_tilemap.w; x++) {
             uint8_t t = rlk_tilemap_get(&g_tilemap, x, y)->type;
             assert(t == 0 || t == 1);
             if (t == 1) has_wall = 1;
@@ -272,16 +272,16 @@ test_fill_idempotent(void) {
 
     rlk_wg_bsp_fill(&g_bsp, 0, 0, &g_tilemap);
     uint8_t first[FIXTURE_MAP_W * FIXTURE_MAP_H];
-    for (int y = 0; y < g_tilemap.height; y++)
-        for (int x = 0; x < g_tilemap.width; x++)
-            first[(size_t)y * (size_t)g_tilemap.width + (size_t)x] =
+    for (int y = 0; y < g_tilemap.h; y++)
+        for (int x = 0; x < g_tilemap.w; x++)
+            first[(size_t)y * (size_t)g_tilemap.w + (size_t)x] =
                 rlk_tilemap_get(&g_tilemap, x, y)->type;
 
     rlk_wg_bsp_fill(&g_bsp, 0, 0, &g_tilemap);
-    for (int y = 0; y < g_tilemap.height; y++)
-        for (int x = 0; x < g_tilemap.width; x++)
+    for (int y = 0; y < g_tilemap.h; y++)
+        for (int x = 0; x < g_tilemap.w; x++)
             assert(rlk_tilemap_get(&g_tilemap, x, y)->type ==
-                   first[(size_t)y * (size_t)g_tilemap.width + (size_t)x]);
+                   first[(size_t)y * (size_t)g_tilemap.w + (size_t)x]);
 }
 
 static void
@@ -441,8 +441,8 @@ test_fill_writer_callback(void) {
     assert(g_writer_has_floor == 1);
 
     int has_10 = 0, has_20 = 0;
-    for (int y = 0; y < g_tilemap.height; y++) {
-        for (int x = 0; x < g_tilemap.width; x++) {
+    for (int y = 0; y < g_tilemap.h; y++) {
+        for (int x = 0; x < g_tilemap.w; x++) {
             uint8_t t = rlk_tilemap_get(&g_tilemap, x, y)->type;
             if (t == 10) has_10 = 1;
             if (t == 20) has_20 = 1;
@@ -470,8 +470,8 @@ test_fill_writer_with_data(void) {
     rlk_wg_bsp_fill(&g_bsp, 0, 0, &g_tilemap);
 
     int has_7 = 0, has_3 = 0;
-    for (int y = 0; y < g_tilemap.height; y++) {
-        for (int x = 0; x < g_tilemap.width; x++) {
+    for (int y = 0; y < g_tilemap.h; y++) {
+        for (int x = 0; x < g_tilemap.w; x++) {
             uint8_t t = rlk_tilemap_get(&g_tilemap, x, y)->type;
             if (t == 7) has_7 = 1;
             if (t == 3) has_3 = 1;
@@ -490,8 +490,8 @@ test_fill_default_biome_variant(void) {
     rlk_wg_bsp_fill(&g_bsp, 0, 0, &g_tilemap);
 
     int has_biome_zero = 0, has_biome_one = 0;
-    for (int y = 0; y < g_tilemap.height; y++) {
-        for (int x = 0; x < g_tilemap.width; x++) {
+    for (int y = 0; y < g_tilemap.h; y++) {
+        for (int x = 0; x < g_tilemap.w; x++) {
             rlk_tile_t *tile = rlk_tilemap_get(&g_tilemap, x, y);
             if (tile->biome == 0) has_biome_zero = 1;
             else if (tile->biome == 1) has_biome_one = 1;
@@ -502,8 +502,8 @@ test_fill_default_biome_variant(void) {
 
     /* At least some tiles should have non-zero variant. */
     int has_variant = 0;
-    for (int y = 0; y < g_tilemap.height; y++) {
-        for (int x = 0; x < g_tilemap.width; x++) {
+    for (int y = 0; y < g_tilemap.h; y++) {
+        for (int x = 0; x < g_tilemap.w; x++) {
             if (rlk_tilemap_get(&g_tilemap, x, y)->variant != 0) {
                 has_variant = 1;
                 break;
