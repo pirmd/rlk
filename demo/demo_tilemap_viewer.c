@@ -2,7 +2,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <string.h>
 #include <math.h>
 
 #include "pxl.h"
@@ -11,10 +10,10 @@
 #include "noise.h"
 #include "tilemap.h"
 #include "grid.h"
-#include "wg_flow.h"
+#include "drain.h"
 #include "wg_nf.h"
 #include "wg_nf_grid.h"
-#include "wg_nf_flow.h"
+#include "wg_nf_drain.h"
 #include "wg_nf_rivers.h"
 #include "wg_nf_relief.h"
 #include "wg_nf_poi.h"
@@ -151,8 +150,8 @@ enum {
     D_ELEV = 0,       /* final elevation (wg_nf_relief) -> field[F_NSAMPLED + 0] */
     D_RIVER_MASK,    /* river mask [0,1] (wg_nf_rivers) */
     D_RIVER_CARVE,   /* valley carve depth (wg_nf_rivers) */
-    D_ACC,           /* flow accumulation (wg_nf_flow) */
-    D_LAKE,          /* lake depth (wg_nf_flow) */
+    D_ACC,           /* flow accumulation (wg_nf_drain) */
+    D_LAKE,          /* lake depth (wg_nf_drain) */
     F_NDERIVED
 };
 
@@ -200,17 +199,6 @@ static const char *const POI_NAMES[POI_KIND_COUNT] = {
     "Cave", "Dungeon", "Village", "Tower"
 };
 
-static int
-poi_kind_index(rlk_wg_poi_kind_t kind) {
-    switch (kind) {
-    case RLK_WG_POI_CAVE:    return POI_CAVE;
-    case RLK_WG_POI_DUNGEON: return POI_DUNGEON;
-    case RLK_WG_POI_VILLAGE: return POI_VILLAGE;
-    case RLK_WG_POI_TOWER:   return POI_TOWER;
-    default:                 return -1;
-    }
-}
-
 /* --- STRUCTS ------------------------------------------------------------- */
 
 typedef struct world_s world_t;
@@ -229,26 +217,27 @@ struct world_s {
     uint8_t buffer[TM_W * TM_H * sizeof(rlk_tile_t)];
     rlk_wg_nf_t wg;
 
-    /* Coarse elevation grid + flow (hydrology) */
+    /* Coarse elevation grid + drain (hydrology) */
     rlk_grid_t elev_grid;
     float elev_buf[GRID_W * GRID_H];
-    rlk_wg_flow_t flow;
-    uint16_t flow_fill[GRID_W * GRID_H];
-    uint8_t  flow_dir[GRID_W * GRID_H];
-    uint32_t flow_acc[GRID_W * GRID_H];
-    int      flow_order[GRID_W * GRID_H];
-    uint64_t flow_scratch[GRID_W * GRID_H];
+    rlk_drain_t drain;
+    uint16_t drain_filled[GRID_W * GRID_H];
+    uint8_t  drain_dir[GRID_W * GRID_H];
+    uint32_t drain_acc[GRID_W * GRID_H];
+    int      drain_order[GRID_W * GRID_H];
+    uint64_t drain_scratch[GRID_W * GRID_H];
     rlk_grid_t lake_grid;       /* lake depths, filtered by outlet accumulation */
     float lake_buf[GRID_W * GRID_H];
     rlk_noise_t relief_noise[F_NSAMPLED];
 
     /* wg_nf stage configs (must outlive wg) */
-    rlk_wg_nf_flow_t flow_stage;
+    rlk_wg_nf_drain_t drain_stage;
     rlk_wg_nf_rivers_t rivers_stage;
     rlk_wg_nf_relief_t relief_stage;
 
     /* POI detection */
-    rlk_wg_poi_list_t pois;
+    rlk_poi_t poi_buf[256];
+    rlk_poi_list_t pois;
     rlk_wg_nf_poi_t poi_cave_cfg;
     rlk_wg_nf_poi_t poi_dungeon_cfg;
     rlk_wg_nf_poi_t poi_village_cfg;
@@ -358,7 +347,7 @@ relief_sample_field(const rlk_wg_nf_t *wg, const rlk_noise_t *noise,
 }
 
 /* Elevation grid function: reproduces the wg_nf_relief stage's BASE elevation
-   (cont + hills + mountains, before river/fjord carving), so the flow grid
+   (cont + hills + mountains, before river/fjord carving), so the drain grid
    sees the same terrain that is displayed. Rivers follow the displayed relief.
    Field parameters are read from wg->fields[] to stay in sync with the stage. */
 static float
@@ -609,7 +598,7 @@ world_generate(world_t *w, uint64_t seed) {
     wg->fields[F_CREEK]  = (rlk_wg_nf_field_t){ .kind = RLK_WG_NF_FBM,   .seed = 11, .octaves = 2, .freq = 0.025f, .gain = 0.5f };
 
     /* --- Coarse elevation grid: seed noise like wg_nf, fill with relief terrain ---
-       The flow grid must see the SAME terrain the relief stage displays,
+       The drain grid must see the SAME terrain the relief stage displays,
        otherwise rivers follow a different landscape than what is shown. */
     for (int i = 0; i < F_NSAMPLED; i++) {
         uint64_t s = rlk_hash_sub(seed, 0xF1E1D000ULL + (uint64_t)i);
@@ -630,15 +619,15 @@ world_generate(world_t *w, uint64_t seed) {
         for (int i = 0; i < GRID_W; i++) {
             float cx, cy;
             rlk_grid_center(&w->elev_grid, i, j, &cx, &cy);
-            w->elev_buf[(size_t)(j * GRID_W + i)] = relief_elev_fn(cx, cy, &elev_ctx);
+            w->elev_buf[(size_t)j * GRID_W + (size_t)i] = relief_elev_fn(cx, cy, &elev_ctx);
         }
 
-    /* --- Flow: depression filling + D8 drainage + accumulation (wg_flow) --- */
-    w->flow = (rlk_wg_flow_t){ .w = GRID_W, .h = GRID_H,
-                               .fill = w->flow_fill, .dir = w->flow_dir,
-                               .acc = w->flow_acc, .order = w->flow_order };
-    rlk_err_t ferr = rlk_wg_flow_build(&w->flow, &w->elev_grid, SEA_LEVEL, w->flow_scratch);
-    assert(ferr == RLK_OK);
+    /* --- Drain: depression filling + D8 drainage + accumulation --- */
+    w->drain = (rlk_drain_t){ .lattice = w->elev_grid.lattice,
+                              .filled = w->drain_filled, .dir = w->drain_dir,
+                              .acc = w->drain_acc, .order = w->drain_order };
+    rlk_err_t derr = rlk_drain_build(&w->drain, &w->elev_grid, SEA_LEVEL, w->drain_scratch);
+    assert(derr == RLK_OK);
 
     /* --- Lake grid: filled depression depths, filtered by outlet accumulation ---
        Lakes whose outflow drains fewer than RIVER_ACC_MIN cells are dropped:
@@ -647,44 +636,44 @@ world_generate(world_t *w, uint64_t seed) {
                                     .origin_x = GRID_ORIGIN_X, .origin_y = GRID_ORIGIN_Y }, .v = w->lake_buf };
     for (int j = 0; j < GRID_H; j++)
         for (int i = 0; i < GRID_W; i++)
-            w->lake_buf[(size_t)(j * GRID_W + i)] =
-                rlk_wg_flow_lake_depth(&w->flow, &w->elev_grid, SEA_LEVEL, i, j);
+            w->lake_buf[(size_t)j * GRID_W + (size_t)i] =
+                rlk_drain_lake_depth(&w->drain, &w->elev_grid, SEA_LEVEL, i, j);
     /* Filter: drop lake cells whose outlet accumulation < RIVER_ACC_MIN */
     for (int c = 0; c < GRID_W * GRID_H; c++) {
         if (w->lake_buf[c] <= 0.0f) continue;
         int cur = c;
         for (;;) {
-            if (w->flow.dir[cur] == RLK_WG_FLOW_OUTLET) break;
+            if (w->drain.dir[cur] == RLK_DRAIN_OUTLET) break;
             int dx, dy;
-            rlk_wg_flow_step(w->flow.dir[cur], &dx, &dy);
+            rlk_drain_step(w->drain.dir[cur], &dx, &dy);
             const int nx = (cur % GRID_W) + dx, ny = (cur / GRID_W) + dy;
             if (nx < 0 || nx >= GRID_W || ny < 0 || ny >= GRID_H) break;
             const int nc = ny * GRID_W + nx;
             if (w->lake_buf[nc] <= 0.0f) break;
             cur = nc;
         }
-        if (w->flow.acc[cur] < RIVER_ACC_MIN) w->lake_buf[c] = 0.0f;
+        if (w->drain.acc[cur] < RIVER_ACC_MIN) w->lake_buf[c] = 0.0f;
     }
 
-    /* --- wg_nf stages: flow + rivers + relief + POI --- */
+    /* --- wg_nf stages: drain + rivers + relief + POI --- */
 
-    /* Stage 1: wg_nf_flow — inject accumulation + lake depth */
-    w->flow_stage = (rlk_wg_nf_flow_t){
-        .flow = &w->flow,
+    /* Stage 1: wg_nf_drain — inject accumulation + lake depth */
+    w->drain_stage = (rlk_wg_nf_drain_t){
+        .drain = &w->drain,
         .elev = &w->elev_grid,
         .sea = SEA_LEVEL,
         .slot_acc  = D_ACC,
-        .slot_dir  = RLK_WG_NF_FLOW_NONE,
+        .slot_dir  = RLK_WG_NF_DRAIN_NONE,
         .slot_lake = D_LAKE,
         .acc_scale = 1.0f,
     };
-    rlk_wg_nf_flow_add(wg, &w->flow_stage);
+    rlk_wg_nf_drain_add(wg, &w->drain_stage);
 
     /* Stage 2: wg_nf_rivers — project drainage into per-tile river masks.
        Narrow rivers (max ~4 tiles wide), valleys 2x river width.
        Meanders from F_WIG_X/Y, creeks from F_CREEK, lakes from the filtered grid. */
     w->rivers_stage = (rlk_wg_nf_rivers_t){
-        .flow = &w->flow,
+        .drain = &w->drain,
         .elev = &w->elev_grid,
         .sea = SEA_LEVEL,
         .acc_min = RIVER_ACC_MIN,
@@ -740,12 +729,12 @@ world_generate(world_t *w, uint64_t seed) {
     rlk_wg_nf_relief_add(wg, &w->relief_stage);
 
     /* Stage 4-7: POI detectors */
-    rlk_wg_poi_list_init(&w->pois);
+    w->pois = (rlk_poi_list_t){ w->poi_buf, 0, 256 };
 
     /* Cave: on hills/mountains, high detail noise */
     w->poi_cave_cfg = (rlk_wg_nf_poi_t){
         .list = &w->pois,
-        .kind = RLK_WG_POI_CAVE,
+        .type = POI_CAVE,
         .salt = 0xCAFEULL,
         .field = F_DETAIL,
         .threshold = 0.70f,
@@ -761,14 +750,13 @@ world_generate(world_t *w, uint64_t seed) {
     /* Dungeon: near rivers */
     w->poi_dungeon_cfg = (rlk_wg_nf_poi_t){
         .list = &w->pois,
-        .kind = RLK_WG_POI_DUNGEON,
+        .type = POI_DUNGEON,
         .salt = 0xD0D0ULL,
         .field = F_DETAIL,
         .threshold = 0.50f,
         .density = 0.002f,
         .size = 32,
-        .flow = &w->flow,
-        .flow_grid = &w->elev_grid,
+        .drain = &w->drain,
         .min_acc = 30.0f,
         .min_separation = 32,
     };
@@ -777,7 +765,7 @@ world_generate(world_t *w, uint64_t seed) {
     /* Village: warm lowland plains only (temperature + altitude constraints) */
     w->poi_village_cfg = (rlk_wg_nf_poi_t){
         .list = &w->pois,
-        .kind = RLK_WG_POI_VILLAGE,
+        .type = POI_VILLAGE,
         .salt = 0xA11CEULL,
         .field = F_TEMP,
         .threshold = 0.45f,
@@ -793,7 +781,7 @@ world_generate(world_t *w, uint64_t seed) {
     /* Tower: on hills and peaks */
     w->poi_tower_cfg = (rlk_wg_nf_poi_t){
         .list = &w->pois,
-        .kind = RLK_WG_POI_TOWER,
+        .type = POI_TOWER,
         .salt = 0x70E1ULL,
         .field = F_DETAIL,
         .threshold = 0.60f,
@@ -1079,18 +1067,17 @@ render_tilemap(pxl_canvas_t *cnv, const viewer_t *a) {
     /* POI markers overlay */
     if (ovl_poi) {
         int half = TILE_PX / 4;
-        for (int i = 0; i < w->pois.count; i++) {
-            const rlk_wg_poi_t *poi = &w->pois.items[i];
-            int ki = poi_kind_index(poi->kind);
-            if (ki < 0) continue;
+        for (int i = 0; i < w->pois.n; i++) {
+            const rlk_poi_t *poi = &w->pois.v[i];
+            if (poi->type >= POI_KIND_COUNT) continue;
 
-            int sx = poi->wx - wx;
-            int sy = poi->wy - wy;
+            int sx = poi->x - wx;
+            int sy = poi->y - wy;
             if (sx < 0 || sx >= vw || sy < 0 || sy >= vh) continue;
 
             int cx = dx + sx * TILE_PX + TILE_PX / 2;
             int cy = dy + sy * TILE_PX + TILE_PX / 2;
-            pxl_canvas_set_color(cnv, POI_COLORS[ki]);
+            pxl_canvas_set_color(cnv, POI_COLORS[poi->type]);
             pxl_fill_rect(cnv, cx - half, cy - half, half * 2, half * 2);
             pxl_canvas_set_color(cnv, HIGHLIGHT_COLOR);
             pxl_draw_rect(cnv, cx - half, cy - half, half * 2, half * 2);
@@ -1167,14 +1154,13 @@ render_minimap(pxl_canvas_t *cnv, const viewer_t *a) {
     if (ovl_poi) {
         int msz = (int)mm->scale + 1;
         if (msz < 2) msz = 2;
-        for (int i = 0; i < w->pois.count; i++) {
-            const rlk_wg_poi_t *poi = &w->pois.items[i];
-            int ki = poi_kind_index(poi->kind);
-            if (ki < 0) continue;
-            pxl_canvas_set_color(cnv, POI_COLORS[ki]);
+        for (int i = 0; i < w->pois.n; i++) {
+            const rlk_poi_t *poi = &w->pois.v[i];
+            if (poi->type >= POI_KIND_COUNT) continue;
+            pxl_canvas_set_color(cnv, POI_COLORS[poi->type]);
             pxl_fill_rect(cnv,
-                          mm->off_x + (int)((float)poi->wx * mm->scale),
-                          mm->off_y + (int)((float)poi->wy * mm->scale),
+                          mm->off_x + (int)((float)poi->x * mm->scale),
+                          mm->off_y + (int)((float)poi->y * mm->scale),
                           msz, msz);
         }
     }
@@ -1241,7 +1227,7 @@ render_map_info(pxl_canvas_t *cnv, const ui_t *ui, const viewer_t *a) {
         "POIs : %d\n"
         "Seed : %llu (R: renew)",
         TM_W, TM_H, TM_W * TM_H,
-        a->world.pois.count,
+        a->world.pois.n,
         (unsigned long long)a->world.seed);
 
     pxl_rect_t r = pxl_canvas_view(cnv);
@@ -1268,8 +1254,8 @@ render_tile_info(pxl_canvas_t *cnv, const ui_t *ui, const viewer_t *a) {
     uint32_t acc = 0;
     float lake = 0.0f;
     if (rlk_grid_cell_of(&w->elev_grid, v->selected_wx, v->selected_wy, &ci, &cj)) {
-        acc = w->flow.acc[(size_t)cj * (size_t)w->flow.w + (size_t)ci];
-        lake = rlk_wg_flow_lake_depth(&w->flow, &w->elev_grid, SEA_LEVEL, ci, cj);
+        acc = w->drain.acc[(size_t)cj * (size_t)w->drain.lattice.w + (size_t)ci];
+        lake = rlk_drain_lake_depth(&w->drain, &w->elev_grid, SEA_LEVEL, ci, cj);
     }
 
     /* Captured derived fields */
@@ -1279,12 +1265,12 @@ render_tile_info(pxl_canvas_t *cnv, const ui_t *ui, const viewer_t *a) {
     const float rc = w->river_carve_buf[idx];
 
     /* Find nearest POI within 16 tiles */
-    const rlk_wg_poi_t *near_poi = NULL;
+    const rlk_poi_t *near_poi = NULL;
     int near_dist = 9999;
-    for (int i = 0; i < w->pois.count; i++) {
-        const rlk_wg_poi_t *p = &w->pois.items[i];
-        int ddx = p->wx - v->selected_wx;
-        int ddy = p->wy - v->selected_wy;
+    for (int i = 0; i < w->pois.n; i++) {
+        const rlk_poi_t *p = &w->pois.v[i];
+        int ddx = p->x - v->selected_wx;
+        int ddy = p->y - v->selected_wy;
         int d = ddx * ddx + ddy * ddy;
         if (d < near_dist) {
             near_dist = d;
@@ -1293,18 +1279,10 @@ render_tile_info(pxl_canvas_t *cnv, const ui_t *ui, const viewer_t *a) {
     }
 
     char poi_line[128] = "";
-    if (near_poi && near_dist <= 256) {
-        int ki = poi_kind_index(near_poi->kind);
-        const char *pname = (ki >= 0) ? POI_NAMES[ki] : "?";
+    if (near_poi && near_dist <= 256 && near_poi->type < POI_KIND_COUNT) {
         int dist = (int)sqrtf((float)near_dist);
-        char flags_str[32] = "";
-        if (near_poi->flags & RLK_WG_POI_NEAR_RIVER) strcat(flags_str, "R");
-        if (near_poi->flags & RLK_WG_POI_ON_HILL)    strcat(flags_str, "H");
-        if (near_poi->flags & RLK_WG_POI_IN_FOREST)  strcat(flags_str, "F");
-        if (near_poi->flags & RLK_WG_POI_COASTAL)    strcat(flags_str, "C");
-        if (flags_str[0] == '\0') strcpy(flags_str, "-");
         snprintf(poi_line, sizeof(poi_line),
-                 "\nPOI: %s d=%d [%s]", pname, dist, flags_str);
+                 "\nPOI: %s d=%d", POI_NAMES[near_poi->type], dist);
     }
 
     char nfo[512];

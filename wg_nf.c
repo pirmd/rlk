@@ -4,8 +4,9 @@
 
 #include "hash.h"
 
-/* Coordinate naming: x,y chunk-local; wx,wy world tile; ox,oy rect origin
- * (wx == ox + x); wxf,wyf float world position (wxf == (float)wx). */
+/* Coordinate naming: x,y chunk-local; wx,wy world tile; origin_x,origin_y
+ * rect origin (wx == origin_x + x); wxf,wyf float world position
+ * (wxf == (float)wx). */
 
 /* --- SETUP --------------------------------------------------------------- */
 
@@ -165,17 +166,17 @@ eval(const rlk_wg_nf_t *wg, int wx, int wy, int x, int y,
 
 /* --- DRIVER -------------------------------------------------------------- */
 
-/* Fill tilemap tm with tiles for the world-space rect starting at (ox, oy).
- * Rect dimensions are tm->w x tm->h tiles. */
+/* Fill tilemap tm with tiles for the world-space rect starting at
+ * (origin_x, origin_y). Rect dimensions are tm->w x tm->h tiles. */
 void
-rlk_wg_nf_fill(const rlk_wg_nf_t *wg, int ox, int oy, rlk_tilemap_t *tm) {
+rlk_wg_nf_fill(const rlk_wg_nf_t *wg, int origin_x, int origin_y, rlk_tilemap_t *tm) {
     assert(wg && tm);
     assert(tm->w > 0 && tm->h > 0);
 
     for (int y = 0; y < tm->h; y++) {
         for (int x = 0; x < tm->w; x++) {
             rlk_wg_nf_ctx_t ctx;
-            eval(wg, ox + x, oy + y, x, y, &ctx);
+            eval(wg, origin_x + x, origin_y + y, x, y, &ctx);
 
             /* WRITE */
             const rlk_wg_nf_zone_t *z = &wg->zones[ctx.zone];

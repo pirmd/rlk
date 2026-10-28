@@ -58,38 +58,39 @@ wg_wiggle(void) {
     return wg;
 }
 
-/* Flow fixture: 4x4 cells of 4 tiles, slope eastward (elev = i).
-   All cells drain east; acc increases eastward. */
+/* Drain fixture: 4x4 cells of 4 tiles, slope eastward (elev = i).
+   All cells drain west; acc increases westward. */
 #define FW 4
 #define FH 4
 #define FCELL 4
 
 static float elev_buf[FW * FH];
 static rlk_grid_t elev;
-static uint16_t fill_buf[FW * FH];
+static uint16_t filled_buf[FW * FH];
 static uint8_t dir_buf[FW * FH];
 static uint32_t acc_buf[FW * FH];
 static int order_buf[FW * FH];
 static uint64_t scratch[FW * FH];
-static rlk_wg_flow_t flow;
+static rlk_drain_t drain;
 
 static void
-flow_setup(void) {
+drain_setup(void) {
     elev = (rlk_grid_t){ .lattice = { .w = FW, .h = FH, .cellsize = FCELL, .origin_x = 0, .origin_y = 0 }, .v = elev_buf };
     for (int j = 0; j < FH; j++)
         for (int i = 0; i < FW; i++)
             elev.v[(size_t)j * FW + (size_t)i] = (float)i + 0.5f;
 
-    flow = (rlk_wg_flow_t){ .w = FW, .h = FH, .fill = fill_buf, .dir = dir_buf, .acc = acc_buf, .order = order_buf };
-    assert(rlk_wg_flow_build(&flow, &elev, -1.0f, scratch) == RLK_OK);
+    drain = (rlk_drain_t){ .lattice = elev.lattice, .filled = filled_buf, .dir = dir_buf,
+                           .acc = acc_buf, .order = order_buf };
+    assert(rlk_drain_build(&drain, &elev, -1.0f, scratch) == RLK_OK);
 }
 
 /* init: zero defaults resolved */
 static void
 test_rivers_init_defaults(void) {
-    flow_setup();
+    drain_setup();
     rlk_wg_nf_rivers_t r = {0};
-    r.flow = &flow;
+    r.drain = &drain;
     r.elev = &elev;
     r.sea = 0.0f;
     r.slot_mask = 0;
@@ -101,15 +102,15 @@ test_rivers_init_defaults(void) {
 }
 
 /* Basic: stage writes mask and carve into derived fields.
-   East-sloping grid: rivers flow east, acc increases eastward.
-   Tiles near the eastern edge should have higher mask (more accumulation). */
+   East-sloping grid: rivers flow west, acc increases westward.
+   Tiles near the western edge should have higher mask (more accumulation). */
 static void
 test_rivers_stage_basic(void) {
-    flow_setup();
+    drain_setup();
 
     rlk_wg_nf_t wg = wg_min();
     rlk_wg_nf_rivers_t r = {0};
-    r.flow = &flow;
+    r.drain = &drain;
     r.elev = &elev;
     r.sea = 0.0f;
     r.acc_min = 1;
@@ -150,11 +151,11 @@ test_rivers_stage_basic(void) {
 /* NONE slots: disabled outputs are not written. */
 static void
 test_rivers_stage_none_slots(void) {
-    flow_setup();
+    drain_setup();
 
     rlk_wg_nf_t wg = wg_min();
     rlk_wg_nf_rivers_t r = {0};
-    r.flow = &flow;
+    r.drain = &drain;
     r.elev = &elev;
     r.sea = 0.0f;
     r.acc_min = 1;
@@ -176,11 +177,11 @@ test_rivers_stage_none_slots(void) {
 /* acc_min too high: no river cells qualify, mask stays 0 everywhere. */
 static void
 test_rivers_stage_high_acc_min(void) {
-    flow_setup();
+    drain_setup();
 
     rlk_wg_nf_t wg = wg_min();
     rlk_wg_nf_rivers_t r = {0};
-    r.flow = &flow;
+    r.drain = &drain;
     r.elev = &elev;
     r.sea = 0.0f;
     r.acc_min = 1000;  /* higher than total cells (16) */
@@ -210,11 +211,11 @@ test_rivers_stage_high_acc_min(void) {
 /* Power-user: init then add_stage manually. */
 static void
 test_rivers_init_then_add_stage(void) {
-    flow_setup();
+    drain_setup();
 
     rlk_wg_nf_t wg = wg_min();
     rlk_wg_nf_rivers_t r = {0};
-    r.flow = &flow;
+    r.drain = &drain;
     r.elev = &elev;
     r.sea = 0.0f;
     r.acc_min = 1;
@@ -235,11 +236,11 @@ test_rivers_init_then_add_stage(void) {
 /* Sea level above all elevations: all cells underwater, no rivers. */
 static void
 test_rivers_stage_all_underwater(void) {
-    flow_setup();
+    drain_setup();
 
     rlk_wg_nf_t wg = wg_min();
     rlk_wg_nf_rivers_t r = {0};
-    r.flow = &flow;
+    r.drain = &drain;
     r.elev = &elev;
     r.sea = 100.0f;  /* everything underwater */
     r.acc_min = 1;
@@ -268,9 +269,9 @@ test_rivers_stage_all_underwater(void) {
 /* init: wig_tiles=0 disables wiggle fields, creek_width=0 disables creek */
 static void
 test_rivers_init_wiggle_creek_defaults(void) {
-    flow_setup();
+    drain_setup();
     rlk_wg_nf_rivers_t r = {0};
-    r.flow = &flow;
+    r.drain = &drain;
     r.elev = &elev;
     r.sea = 0.0f;
     r.slot_mask = 0;
@@ -285,11 +286,11 @@ test_rivers_init_wiggle_creek_defaults(void) {
 /* Wiggle: with wiggle fields active, rivers are still detected (mask > 0 somewhere) */
 static void
 test_rivers_stage_wiggle(void) {
-    flow_setup();
+    drain_setup();
 
     rlk_wg_nf_t wg = wg_wiggle();
     rlk_wg_nf_rivers_t r = {0};
-    r.flow = &flow;
+    r.drain = &drain;
     r.elev = &elev;
     r.sea = 0.0f;
     r.acc_min = 1;
@@ -322,11 +323,11 @@ test_rivers_stage_wiggle(void) {
 /* Creeks: with acc_min very high (no drainage rivers), creeks still produce mask > 0 */
 static void
 test_rivers_stage_creeks(void) {
-    flow_setup();
+    drain_setup();
 
     rlk_wg_nf_t wg = wg_wiggle();
     rlk_wg_nf_rivers_t r = {0};
-    r.flow = &flow;
+    r.drain = &drain;
     r.elev = &elev;
     r.sea = 0.0f;
     r.acc_min = 1000;  /* no drainage rivers */

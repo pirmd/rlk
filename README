@@ -34,12 +34,18 @@ Headers:
   rng.h                # Deterministic PRNG (splitmix64)
   geom.h               # Rect (region) + lattice (grid geometry on world)
   grid.h               # Coarse float grid with bilinear sampling
+  mask.h               # Uint8 mask (weight, density, visibility) + constructors
+  poi.h                # Points of Interest (anchor, bbox, type, seed)
   tilemap.h            # 2D grid with occupancy
-  wg_nf.h              # Noise-field world generation
+  slope.h              # Slope from an elevation grid (Horn 3x3)
+  drain.h              # Drainage: depression filling, D8 flow, accumulation, river SDF
+
+World generation:
+  wg_nf.h              # Noise-field world generation (infinite terrain)
   wg_nf_modulator.h    # Voronoi modulation stage for wg_nf
   wg_nf_grid.h         # Sample a coarse grid into wg_nf fields
-  wg_nf_flow.h         # Read flow data into wg_nf fields
-  wg_nf_rivers.h       # Project wg_flow drainage into per-tile river masks
+  wg_nf_drain.h        # Read drain data into wg_nf fields
+  wg_nf_rivers.h       # Project drain network into per-tile river masks
   wg_nf_relief.h       # Standardised elevation (domain warp, fjords, lapse)
   wg_nf_poi.h          # Detect Points of Interest during wg_nf fill
   wg_flow.h            # Hydrology on a coarse grid: pits, D8 drainage, accumulation
@@ -49,6 +55,14 @@ Headers:
 
 Demos:
   demo/demo_tilemap_viewer.c  # Interactive terrain viewer (PXL)
+
+Documentation:
+  doc/architecture.md  # Target architecture (layers, modules, migration state)
+  doc/conventions.md   # Naming rules, determinism contract, GIS glossary
+  doc/worldgen.md      # World generation overview (all modules)
+  doc/wg_nf.md         # Noise-field world generation guide
+  doc/ca.md            # Cellular Automata guide
+  doc/bsp.md           # BSP dungeon generation guide
 
 License:
   MIT. See LICENSE.

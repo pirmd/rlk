@@ -2,50 +2,51 @@
 #define RLK_WG_NF_POI_H
 
 /*
- * Optional wg_nf stage: detect Points of Interest and populate a rlk_wg_poi_list_t.
+ * Optional wg_nf stage: detect Points of Interest and populate a rlk_poi_list_t.
  *
- * For each tile, evaluates conditions (field threshold, optional flow/grid
+ * For each tile, evaluates conditions (field threshold, optional drain/grid
  * constraints, density) and creates a POI when all conditions are met.
+ * The POI anchor is the tile; its bbox is a square of `size` tiles centred
+ * on the anchor. type is game-defined (the library defines no POI types).
  *
  * Usage:
- *   rlk_wg_poi_list_t pois;
+ *   rlk_poi_t poi_buf[256];
+ *   rlk_poi_list_t pois = { poi_buf, 0, 256 };
  *   rlk_wg_nf_poi_t poi_cfg = {
  *       .list = &pois,
- *       .kind = RLK_WG_POI_CAVE,
+ *       .type = POI_CAVE,      // game-defined type
  *       .field = 1,            // humidity field slot
  *       .threshold = 0.6f,
  *       .density = 0.002f,
  *       .size = 48,
- *       .flow = &flow_data,    // optional: near-river constraint
+ *       .drain = &drain,       // optional: near-river constraint
  *       .min_acc = 300.0f,
- *       .salt = 0xCAVE,
+ *       .salt = 0xCAFE,
  *   };
  *   rlk_wg_nf_poi_add(&nf, &poi_cfg);
- *   rlk_wg_poi_list_init(&pois);
- *   rlk_wg_nf_fill(&nf, ox, oy, tm);  // fills tm AND pois
+ *   rlk_wg_nf_fill(&nf, 0, 0, &tm);  // fills tm AND pois
  */
 
 #include "wg_nf.h"
-#include "wg_poi.h"
-#include "wg_flow.h"
+#include "poi.h"
+#include "drain.h"
 #include "grid.h"
 
 /* POI detector stage configuration. */
 typedef struct {
     /* --- Target --- */
-    rlk_wg_poi_list_t *list;        /* list to populate; must outlive the wg */
-    rlk_wg_poi_kind_t kind;         /* POI kind to create */
+    rlk_poi_list_t *list;           /* list to populate; must outlive the wg */
+    uint32_t type;                  /* POI type to create (game-defined) */
     uint64_t salt;                  /* decorrelates multiple detectors */
 
     /* --- Field condition (required) --- */
     uint8_t field;                  /* field slot to test (0..nsampled+nderived-1) */
     float threshold;                /* create POI if field[field] > threshold */
     float density;                  /* probability per eligible tile (0..1) */
-    uint16_t size;                  /* suggested content size in tiles */
+    uint16_t size;                  /* suggested footprint side in tiles (-> bbox) */
 
-    /* --- Optional: flow constraint (near river) --- */
-    const rlk_wg_flow_t *flow;      /* NULL = no constraint */
-    const rlk_grid_t *flow_grid; /* elevation grid matching flow; required if flow set */
+    /* --- Optional: drain constraint (near river) --- */
+    const rlk_drain_t *drain;       /* NULL = no constraint */
     float min_acc;                  /* min flow accumulation in cells */
 
     /* --- Optional: grid constraint (elevation/other) --- */
@@ -54,7 +55,7 @@ typedef struct {
     float grid_max;                 /* max grid value (inclusive) */
 
     /* --- Deduplication --- */
-    int min_separation;             /* min tiles between POIs of same kind (0=off) */
+    int min_separation;             /* min tiles between POIs of same type (0=off) */
 } rlk_wg_nf_poi_t;
 
 /* Stage function (use directly with rlk_wg_nf_add_stage if managing stages by hand). */

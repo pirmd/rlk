@@ -1,7 +1,7 @@
 /*
  * Fantasy world demo: POI-driven pipeline.
  *
- * Pipeline: elevation grid -> flow (rivers) -> wg_nf terrain
+ * Pipeline: elevation grid -> drain (rivers) -> wg_nf terrain
  *           -> POI detection (caves near rivers, dungeons on hills)
  *           -> local generation (wg_ca for caves, wg_bsp for dungeons)
  *
@@ -37,6 +37,12 @@ enum {
 
 static const char TILE_CHARS[T_COUNT] = {
     '~', '.', 'T', '^', '#', ' ', '#', ',',
+};
+
+/* POI types (game-defined; the library defines none). */
+enum {
+    POI_CAVE = 0,
+    POI_DUNGEON,
 };
 
 /* --- ELEVATION GRID FUNCTION --------------------------------------------- */
@@ -77,11 +83,12 @@ main(void) {
     /* Static buffers: no allocation. */
     static rlk_tile_t tile_buf[MAP_W * MAP_H];
     static float grid_buf[GRID_W * GRID_H];
-    static uint16_t flow_fill[GRID_W * GRID_H];
-    static uint8_t flow_dir[GRID_W * GRID_H];
-    static uint32_t flow_acc[GRID_W * GRID_H];
-    static int flow_order[GRID_W * GRID_H];
-    static uint64_t flow_scratch[GRID_W * GRID_H];
+    static uint16_t drain_filled[GRID_W * GRID_H];
+    static uint8_t drain_dir[GRID_W * GRID_H];
+    static uint32_t drain_acc[GRID_W * GRID_H];
+    static int drain_order[GRID_W * GRID_H];
+    static uint64_t drain_scratch[GRID_W * GRID_H];
+    static rlk_poi_t poi_buf[256];
     static uint8_t ca_grid[MAX_POI_SZ * MAX_POI_SZ];
     static int ca_regions[MAX_POI_SZ * MAX_POI_SZ];
     static uint8_t bsp_grid[MAX_POI_SZ * MAX_POI_SZ];
@@ -103,19 +110,17 @@ main(void) {
             grid_buf[(size_t)j * GRID_W + i] = elev_fn(px, py, &elev_noise);
         }
 
-    /* Flow: depression filling + D8 drainage + accumulation. */
-    rlk_wg_flow_t flow = { .w = GRID_W, .h = GRID_H,
-                           .fill = flow_fill, .dir = flow_dir,
-                           .acc = flow_acc, .order = flow_order };
-    rlk_err_t err = rlk_wg_flow_build(&flow, &elev, SEA_LEVEL, flow_scratch);
+    /* Drain: depression filling + D8 drainage + accumulation. */
+    rlk_drain_t drain = { .lattice = elev.lattice, .filled = drain_filled,
+                          .dir = drain_dir, .acc = drain_acc, .order = drain_order };
+    rlk_err_t err = rlk_drain_build(&drain, &elev, SEA_LEVEL, drain_scratch);
     if (err != RLK_OK) {
-        fprintf(stderr, "flow_build: %s\n", rlk_err_to_string(err));
+        fprintf(stderr, "drain_build: %s\n", rlk_err_to_string(err));
         return 1;
     }
 
     /* POI list: populated by wg_nf_poi stages during fill. */
-    rlk_wg_poi_list_t pois;
-    rlk_wg_poi_list_init(&pois);
+    rlk_poi_list_t pois = { poi_buf, 0, 256 };
 
     /* wg_nf: 3 sampled fields + 3 derived fields. */
     rlk_wg_nf_t nf = {
@@ -180,22 +185,22 @@ main(void) {
     };
     rlk_wg_nf_grid_add(&nf, &grid_stage);
 
-    /* Stage 2: flow accumulation -> field[4], lake depth -> field[5]. */
-    rlk_wg_nf_flow_t flow_stage = {
-        .flow = &flow,
+    /* Stage 2: drain accumulation -> field[4], lake depth -> field[5]. */
+    rlk_wg_nf_drain_t drain_stage = {
+        .drain = &drain,
         .elev = &elev,
         .sea = SEA_LEVEL,
         .slot_acc = 1,
-        .slot_dir = RLK_WG_NF_FLOW_NONE,
+        .slot_dir = RLK_WG_NF_DRAIN_NONE,
         .slot_lake = 2,
         .acc_scale = 500.0f,
     };
-    rlk_wg_nf_flow_add(&nf, &flow_stage);
+    rlk_wg_nf_drain_add(&nf, &drain_stage);
 
     /* Stage 3: detect caves (high humidity = wet areas). */
     rlk_wg_nf_poi_t poi_cave = {
         .list = &pois,
-        .kind = RLK_WG_POI_CAVE,
+        .type = POI_CAVE,
         .salt = 0xCAFEULL,
         .field = 1,            /* humidity */
         .threshold = 0.52f,
@@ -207,7 +212,7 @@ main(void) {
     /* Stage 4: detect dungeons (coarse elevation grid = hills). */
     rlk_wg_nf_poi_t poi_dungeon = {
         .list = &pois,
-        .kind = RLK_WG_POI_DUNGEON,
+        .type = POI_DUNGEON,
         .salt = 0xD06EULL,
         .field = 3,            /* derived: elevation from coarse grid */
         .threshold = 0.55f,
@@ -221,13 +226,13 @@ main(void) {
     rlk_wg_nf_fill(&nf, 0, 0, &tm);
 
     /* Generate local content for each detected POI. */
-    for (int i = 0; i < pois.count; i++) {
-        const rlk_wg_poi_t *poi = &pois.items[i];
-        int sz = (int)poi->size;
-        int ox = poi->wx - sz / 2;
-        int oy = poi->wy - sz / 2;
+    for (int i = 0; i < pois.n; i++) {
+        const rlk_poi_t *poi = &pois.v[i];
+        int sz = poi->bbox.w;
+        int ox = poi->bbox.x;
+        int oy = poi->bbox.y;
 
-        if (poi->kind == RLK_WG_POI_CAVE) {
+        if (poi->type == (uint32_t)POI_CAVE) {
             static const rlk_wg_ca_wallfloor_t wf = {
                 .wall_type = T_CAVE_WALL, .floor_type = T_CAVE_FLOOR,
             };
@@ -244,7 +249,7 @@ main(void) {
             };
             rlk_wg_ca_init(&ca);
             rlk_wg_ca_fill(&ca, ox, oy, &tm);
-        } else if (poi->kind == RLK_WG_POI_DUNGEON) {
+        } else if (poi->type == (uint32_t)POI_DUNGEON) {
             static const rlk_wg_bsp_wallfloor_t wf = {
                 .wall_type = T_DUNGEON_WALL, .floor_type = T_DUNGEON_FLOOR,
             };
@@ -267,9 +272,9 @@ main(void) {
            (unsigned long long)nf.seed,
            MAP_W, MAP_H, GRID_W, GRID_H, GRID_CELL);
     printf("POIs: %d total  (%d caves, %d dungeons)\n\n",
-           pois.count,
-           rlk_wg_poi_count(&pois, RLK_WG_POI_CAVE),
-           rlk_wg_poi_count(&pois, RLK_WG_POI_DUNGEON));
+           pois.n,
+           rlk_poi_count(&pois, POI_CAVE),
+           rlk_poi_count(&pois, POI_DUNGEON));
 
     display(&tm);
 

@@ -164,18 +164,18 @@ rlk_err_t rlk_wg_nf_add_stage(rlk_wg_nf_t *wg, rlk_wg_nf_stage_fn fn, const void
 void rlk_wg_nf_init(rlk_wg_nf_t *wg);
 
 /* Fill tm with the world rect (tm->w x tm->h tiles) at world origin
-   (ox, oy). General primitive; origin may be any tile (incl. negative). */
-void rlk_wg_nf_fill(const rlk_wg_nf_t *wg, int ox, int oy, rlk_tilemap_t *tm);
+   (origin_x, origin_y). General primitive; origin may be any tile (incl. negative). */
+void rlk_wg_nf_fill(const rlk_wg_nf_t *wg, int origin_x, int origin_y, rlk_tilemap_t *tm);
 
 /* Generate chunk (cx, cy) into tm. tm must be exactly one chunk; chunk origin
    is (cx*tm->w, cy*tm->h). Convenience wrapper over rlk_wg_nf_fill. */
 static inline void
 rlk_wg_nf_chunk(const rlk_wg_nf_t *wg, int cx, int cy, rlk_tilemap_t *tm) {
     assert(tm);
-    const int64_t ox = (int64_t)cx * tm->w;
-    const int64_t oy = (int64_t)cy * tm->h;
-    assert(ox >= INT_MIN && ox <= INT_MAX && oy >= INT_MIN && oy <= INT_MAX);
-    rlk_wg_nf_fill(wg, (int)ox, (int)oy, tm);
+    const int64_t origin_x = (int64_t)cx * tm->w;
+    const int64_t origin_y = (int64_t)cy * tm->h;
+    assert(origin_x >= INT_MIN && origin_x <= INT_MAX && origin_y >= INT_MIN && origin_y <= INT_MAX);
+    rlk_wg_nf_fill(wg, (int)origin_x, (int)origin_y, tm);
 }
 
 #endif /* RLK_WG_NF_H */

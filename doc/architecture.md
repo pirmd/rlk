@@ -882,36 +882,25 @@ This document describes the target architecture. The list below
 summarizes the main gaps with the current code; the `TODO` details the
 migration plan.
 
-- Grid: `wg_grid.h`, `rlk_wg_grid_t {w,h,cell,ox,oy,v}` -> `grid.h`, `rlk_grid_t {rlk_lattice_t lattice; float *v}` — done (P0)
-- Geometry: flat fields in `rlk_wg_grid_t` -> `geom.h`, `rlk_lattice_t {w,h,cellsize,origin_x,origin_y}` — done (P0)
-- Region: — -> `geom.h`, `rlk_rect_t {x,y,w,h}` — done (P0)
-- Drainage: `wg_flow.h/c`, `rlk_wg_flow_t {w,h,lo,built,fill,dir,acc,order}` -> `drain.h/c`, `rlk_drain_t {lattice,filled,dir,acc,order}` — P1
-- Drain bridge: `wg_nf_flow.h`, `rlk_wg_nf_flow_add()` -> `wg_nf_drain.h`, `rlk_wg_nf_add(&wg, rlk_wg_nf_drain(&cfg))` — P1
-- Slope: — -> `slope.h`, `rlk_slope_at(g, i, j, zscale)` — P1
-- Mask: — -> `mask.h`, `rlk_mask_t` + constructors — P1
-- Path: — -> `path.h/c`, `rlk_path_find`, `rlk_path_find_fn`, `rlk_path_draw` — P2
-- FOV: — -> `fov.h/c` (planned) — P2
-- POI: `wg_poi.h`, `rlk_wg_poi_t {wx,wy,kind,seed,size,flags,data[8]}` -> `poi.h`, `rlk_poi_t {x,y,bbox,type,seed,gen,level}` — P1
-- POI list: `rlk_wg_poi_list_t {items[256], count}` -> `rlk_poi_list_t {*v, n, cap}` — P1
-- Tilemap: `rlk_tilemap_t {width,height,tiles}`, `rlk_tile_t {type,flags,biome,variant}` -> `[+] origin_x,origin_y` in tilemap; `[+] depth` in tile; `[+] rlk_tilemap_set` — done (P0)
-- Tile props: — -> `[+] rlk_tile_props_t`, flags `RLK_TILE_WALKABLE/TRANSPARENT` — done (P0)
-- Drawing: — -> `[+] rlk_tilemap_lattice`, `rlk_tilemap_line` — done (P0)
-- Generators: `wg_ca.h`, `wg_bsp.h` (`wg_` prefix) -> `ca.h/c`, `bsp.h/c` (generic prefix) — P2
-- Generator contract: `rlk_wg_ca_fill(ca, ox, oy, tm)` -> `rlk_ca_fill(g, tm, poi, spawn)` + `mask` — P2
-- wg_nf API: six `rlk_wg_nf_<x>_add()` -> `rlk_wg_nf_add(&wg, rlk_wg_nf_<x>(&cfg))` — P2
-- Error: `RLK_OK`, `RLK_E_INVALID`, `RLK_E_RANGE` (never used) -> `[+] RLK_E_NOTFOUND`, removal of `RLK_E_RANGE` — done (P0)
-- Rivers: `wg_nf_rivers` with internal geometry -> `[+] rlk_drain_river_sdf` (shared geometry) — P1
-
-### Suggested migration order
-
-See the `TODO` for the detailed plan. Indicative order:
-
-1. **Base**: `err.h` (+`RLK_E_NOTFOUND`), `geom.h` (rect + lattice), `grid.h` (refactor), `tilemap.h` (+props, +line, +set, +depth, +origin_x/origin_y) — done (P0)
-2. **Data**: `mask.h`, `poi.h` — P1
-3. **Terrain**: `slope.h`, `drain.h/c` (rename + `rlk_drain_river_sdf`) — P1
-4. **Spatial**: `path.h/c` — P2
-5. **Worldgen**: rename `wg_ca`->`ca`, `wg_bsp`->`bsp`, unified `wg_nf` API — P2
-6. **Applications**: `demo_dump.h`, `demo_nav.c`, `demo_world.c` — P3
+- Grid: `wg_grid.h`, `rlk_wg_grid_t {w,h,cell,ox,oy,v}` -> `grid.h`, `rlk_grid_t {rlk_lattice_t lattice; float *v}`
+- Geometry: flat fields in `rlk_wg_grid_t` -> `geom.h`, `rlk_lattice_t {w,h,cellsize,origin_x,origin_y}`
+- Region: — -> `geom.h`, `rlk_rect_t {x,y,w,h}`
+- Drainage: `wg_flow.h/c`, `rlk_wg_flow_t {w,h,lo,built,fill,dir,acc,order}` -> `drain.h/c`, `rlk_drain_t {lattice,filled,dir,acc,order}`
+- Drain bridge: `wg_nf_flow.h`, `rlk_wg_nf_flow_add()` -> `wg_nf_drain.h`, `rlk_wg_nf_add(&wg, rlk_wg_nf_drain(&cfg))`
+- Slope: — -> `slope.h`, `rlk_slope_at(g, i, j, zscale)`
+- Mask: — -> `mask.h`, `rlk_mask_t` + constructors
+- Path: — -> `path.h/c`, `rlk_path_find`, `rlk_path_find_fn`, `rlk_path_draw`
+- FOV: — -> `fov.h/c` (planned)
+- POI: `wg_poi.h`, `rlk_wg_poi_t {wx,wy,kind,seed,size,flags,data[8]}` -> `poi.h`, `rlk_poi_t {x,y,bbox,type,seed,gen,level}`
+- POI list: `rlk_wg_poi_list_t {items[256], count}` -> `rlk_poi_list_t {*v, n, cap}`
+- Tilemap: `rlk_tilemap_t {width,height,tiles}`, `rlk_tile_t {type,flags,biome,variant}` -> `[+] origin_x,origin_y` in tilemap; `[+] depth` in tile; `[+] rlk_tilemap_set`
+- Tile props: — -> `[+] rlk_tile_props_t`, flags `RLK_TILE_WALKABLE/TRANSPARENT`
+- Drawing: — -> `[+] rlk_tilemap_lattice`, `rlk_tilemap_line`
+- Generators: `wg_ca.h`, `wg_bsp.h` (`wg_` prefix) -> `ca.h/c`, `bsp.h/c` (generic prefix)
+- Generator contract: `rlk_wg_ca_fill(ca, ox, oy, tm)` -> `rlk_ca_fill(g, tm, poi, spawn)` + `mask`
+- wg_nf API: six `rlk_wg_nf_<x>_add()` -> `rlk_wg_nf_add(&wg, rlk_wg_nf_<x>(&cfg))`
+- Error: `RLK_OK`, `RLK_E_INVALID`, `RLK_E_RANGE` (never used) -> `[+] RLK_E_NOTFOUND`, removal of `RLK_E_RANGE`
+- Rivers: `wg_nf_rivers` with internal geometry -> `[+] rlk_drain_river_sdf` (shared geometry)
 
 ### Documentation and CI
 

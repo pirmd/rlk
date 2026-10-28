@@ -13,9 +13,8 @@ river_width(const rlk_wg_nf_rivers_t *r, uint32_t acc) {
 void
 rlk_wg_nf_rivers_init(rlk_wg_nf_rivers_t *r) {
     assert(r);
-    assert(r->flow && r->elev);
-    assert(r->flow->built);  /* rlk_wg_flow_build() must have been called */
-    assert(r->flow->w == r->elev->lattice.w && r->flow->h == r->elev->lattice.h);
+    assert(r->drain && r->elev);
+    assert(rlk_lattice_same(&r->drain->lattice, &r->elev->lattice));
     if (r->acc_min == 0)
         r->acc_min = 1;
     if (r->width_min <= 0.0f)
@@ -39,8 +38,8 @@ rlk_wg_nf_rivers_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
     const rlk_wg_nf_rivers_t *r = (const rlk_wg_nf_rivers_t *)data;
     const rlk_wg_nf_t *wg = ctx->wg;
 
-    const int w = r->flow->w;
-    const int h = r->flow->h;
+    const int w = r->drain->lattice.w;
+    const int h = r->drain->lattice.h;
     const float cell = (float)r->elev->lattice.cellsize;
 
     /* Tile centre in world coords, displaced by optional meanders */
@@ -72,10 +71,10 @@ rlk_wg_nf_rivers_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
         for (int j = j0; j <= j1; j++) {
             for (int i = i0; i <= i1; i++) {
                 const size_t c = (size_t)j * (size_t)w + (size_t)i;
-                const uint32_t acc = r->flow->acc[c];
+                const uint32_t acc = r->drain->acc[c];
                 if (acc < r->acc_min)
                     continue;
-                if (r->flow->dir[c] == RLK_WG_FLOW_OUTLET)
+                if (r->drain->dir[c] == RLK_DRAIN_OUTLET)
                     continue;
 
                 /* Skip underwater cells */
@@ -85,7 +84,7 @@ rlk_wg_nf_rivers_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
 
                 /* Segment from this cell's centre to its downstream cell's centre */
                 int dx, dy;
-                rlk_wg_flow_step(r->flow->dir[c], &dx, &dy);
+                rlk_drain_step(r->drain->dir[c], &dx, &dy);
                 const int ni = i + dx;
                 const int nj = j + dy;
                 if (ni < 0 || ni >= w || nj < 0 || nj >= h)
@@ -110,7 +109,7 @@ rlk_wg_nf_rivers_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
 
                 /* Interpolated width along the segment */
                 const float w0 = river_width(r, acc);
-                const float w1 = river_width(r, r->flow->acc[nc]);
+                const float w1 = river_width(r, r->drain->acc[nc]);
                 const float wd = w0 + (w1 - w0) * t;
                 if (wd <= 1e-3f)
                     continue;
