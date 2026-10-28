@@ -1,4 +1,4 @@
-#include "wg_ca.h"
+#include "ca.h"
 #include "fmath.h"
 #include "hash.h"
 
@@ -18,15 +18,14 @@ ca_idx(int x, int y, int w) {
    Logic errors (fill_prob range, birth/survive ranges) are the user's
    responsibility. */
 static void
-assert_ca(const rlk_wg_ca_t *ca) {
+assert_ca(const rlk_ca_t *ca) {
     assert(ca);
-    assert(ca->width > 0 && ca->height > 0);
     assert(ca->grid && ca->region_ids);
     assert(ca->write);
 }
 
 void
-rlk_wg_ca_init(rlk_wg_ca_t *ca) {
+rlk_ca_init(rlk_ca_t *ca) {
     assert(ca);
 
     /* Resolve zero defaults. */
@@ -50,7 +49,7 @@ rlk_wg_ca_init(rlk_wg_ca_t *ca) {
 /* --- CA CORE ------------------------------------------------------------- */
 
 static int
-count_neighbors(const rlk_wg_ca_t *ca, int x, int y) {
+count_neighbors(const rlk_ca_t *ca, int x, int y) {
     assert(ca);
     int count = 0;
     for (int dy = -1; dy <= 1; dy++) {
@@ -69,7 +68,7 @@ count_neighbors(const rlk_wg_ca_t *ca, int x, int y) {
 }
 
 static void
-seed_grid(rlk_wg_ca_t *ca) {
+seed_grid(rlk_ca_t *ca) {
     assert(ca);
     assert(ca->grid);
 
@@ -87,7 +86,7 @@ seed_grid(rlk_wg_ca_t *ca) {
 }
 
 static void
-step(rlk_wg_ca_t *ca) {
+step(rlk_ca_t *ca) {
     assert(ca);
     assert(ca->grid);
     assert(ca->region_ids);
@@ -160,7 +159,7 @@ uf_union(int *parent, int a, int b) {
 /* --- REGION LABELLING ---------------------------------------------------- */
 
 static int
-find_regions(rlk_wg_ca_t *ca) {
+find_regions(rlk_ca_t *ca) {
     assert(ca);
     assert(ca->grid);
     assert(ca->region_ids);
@@ -240,7 +239,7 @@ find_regions(rlk_wg_ca_t *ca) {
 /* --- CONNECTIVITY -------------------------------------------------------- */
 
 static void
-find_region_center(const rlk_wg_ca_t *ca, int region_id, int *center_x, int *center_y) {
+find_region_center(const rlk_ca_t *ca, int region_id, int *center_x, int *center_y) {
     assert(ca);
     assert(ca->region_ids);
     assert(region_id >= 1 && region_id <= ca->region_count);
@@ -272,7 +271,7 @@ find_region_center(const rlk_wg_ca_t *ca, int region_id, int *center_x, int *cen
 /* Carve corridors to connect all floor regions. Assumes find_regions() was
    called: ca->region_ids and ca->region_count must be valid. */
 static void
-connect_regions(rlk_wg_ca_t *ca) {
+connect_regions(rlk_ca_t *ca) {
     assert(ca);
     assert(ca->region_ids);
 
@@ -353,12 +352,74 @@ connect_regions(rlk_wg_ca_t *ca) {
     }
 }
 
+/* --- RENDER HELPERS ------------------------------------------------------ */
+
+/* 1 if the tile (x, y) is inside the bbox of a reserved POI. */
+static int
+reserved(const rlk_poi_list_t *poi, int x, int y) {
+    if (!poi)
+        return 0;
+    for (int i = 0; i < poi->n; i++)
+        if (rlk_rect_contains(&poi->v[(size_t)i].bbox, x, y))
+            return 1;
+    return 0;
+}
+
+/* Largest floor region: id, cell count and bounding box (cell coords). */
+static void
+largest_region(const rlk_ca_t *ca, int *out_rid,
+               int *min_x, int *min_y, int *max_x, int *max_y) {
+    const int w = ca->width, h = ca->height;
+    int best = 1, best_count = -1;
+    int bx0 = 0, by0 = 0, bx1 = -1, by1 = -1;
+    /* No allocation: one scan per region (region_count is small). */
+    for (int rid = 1; rid <= ca->region_count; rid++) {
+        int count = 0, x0 = w, y0 = h, x1 = -1, y1 = -1;
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                if (ca->region_ids[(size_t)y * (size_t)w + (size_t)x] == rid) {
+                    count++;
+                    if (x < x0) x0 = x;
+                    if (x > x1) x1 = x;
+                    if (y < y0) y0 = y;
+                    if (y > y1) y1 = y;
+                }
+            }
+        }
+        if (count > best_count) {
+            best_count = count;
+            best = rid;
+            bx0 = x0; by0 = y0; bx1 = x1; by1 = y1;
+        }
+    }
+    *out_rid = best;
+    *min_x = bx0; *min_y = by0; *max_x = bx1; *max_y = by1;
+}
+
 /* --- PUBLIC API ---------------------------------------------------------- */
 
-void
-rlk_wg_ca_fill(rlk_wg_ca_t *ca, int ox, int oy, rlk_tilemap_t *tm) {
-    assert(ca);
-    assert(tm);
+rlk_err_t
+rlk_ca_fill(rlk_ca_t *ca, const rlk_grid_t *g, rlk_tilemap_t *tm,
+            const rlk_mask_t *mask, const rlk_poi_list_t *poi,
+            rlk_poi_t *spawn) {
+    assert(ca && g && tm);
+    assert(g->lattice.w > 0 && g->lattice.h > 0 && g->lattice.cellsize > 0);
+    assert(ca->grid && ca->region_ids && ca->write);
+    if (mask)
+        assert(rlk_lattice_same(&mask->lattice, &g->lattice));
+
+    const rlk_lattice_t *l = &g->lattice;
+    const int w = l->w, h = l->h, cs = l->cellsize;
+
+    /* The tilemap must fully cover the window. */
+    if ((int64_t)l->origin_x < tm->origin_x ||
+        (int64_t)l->origin_y < tm->origin_y ||
+        (int64_t)l->origin_x + (int64_t)w * cs > (int64_t)tm->origin_x + tm->w ||
+        (int64_t)l->origin_y + (int64_t)h * cs > (int64_t)tm->origin_y + tm->h)
+        return RLK_E_INVALID;
+
+    ca->width = w;
+    ca->height = h;
 
     /* Generate: seed, iterate, find regions, connect (optional), re-label. */
     seed_grid(ca);
@@ -371,18 +432,56 @@ rlk_wg_ca_fill(rlk_wg_ca_t *ca, int ox, int oy, rlk_tilemap_t *tm) {
         find_regions(ca);  /* re-label: corridors carved by connect are now floor */
     }
 
-    /* Render at offset (ox, oy). rlk_tilemap_get clips out-of-bounds. */
-    for (int y = 0; y < ca->height; y++) {
-        for (int x = 0; x < ca->width; x++) {
-            rlk_tile_t *tile = rlk_tilemap_get(tm, ox + x, oy + y);
-            if (tile) {
-                size_t idx = ca_idx(x, y, ca->width);
-                uint8_t cell = ca->grid[idx];
-                int rid = (cell == CA_FLOOR) ? ca->region_ids[idx] : 0;
-                /* Preset biome to region id, then the writer fills type/flags/variant. */
-                *tile = (rlk_tile_t){.biome = (uint8_t)rid};
-                ca->write(ca, ca->write_data, x, y, tile);
+    /* Render: writer per cell, stamped over the cell's cs x cs tile block.
+       Mask weight 0 and reserved POI bboxes are not written. */
+    for (int y = 0; y < h; y++) {
+        for (int x = 0; x < w; x++) {
+            size_t idx = ca_idx(x, y, w);
+            if (mask && mask->v[idx] == 0)
+                continue;
+            const int wx = l->origin_x + x * cs;
+            const int wy = l->origin_y + y * cs;
+            uint8_t cell = ca->grid[idx];
+            int rid = (cell == CA_FLOOR) ? ca->region_ids[idx] : 0;
+            /* Preset biome to region id, then the writer fills type/flags/variant. */
+            rlk_tile_t tile = { .biome = (uint8_t)rid };
+            ca->write(ca, ca->write_data, wx, wy, &tile);
+            for (int dy = 0; dy < cs; dy++) {
+                for (int dx = 0; dx < cs; dx++) {
+                    const int tx = wx + dx, ty = wy + dy;
+                    if (!reserved(poi, tx, ty))
+                        rlk_tilemap_set(tm, tx, ty, tile);
+                }
             }
         }
     }
+
+    /* Entrance POI: the largest floor region. The anchor is its floor cell
+       nearest to the bbox centre (the centre itself may be rock). */
+    if (spawn && ca->region_count > 0) {
+        int rid, x0, y0, x1, y1;
+        largest_region(ca, &rid, &x0, &y0, &x1, &y1);
+        const int ccx = (x0 + x1) / 2, ccy = (y0 + y1) / 2;
+        int best_d = INT_MAX, ax = ccx, ay = ccy;
+        for (int y = y0; y <= y1; y++) {
+            for (int x = x0; x <= x1; x++) {
+                if (ca->region_ids[(size_t)y * (size_t)w + (size_t)x] != rid)
+                    continue;
+                int d = (x - ccx) * (x - ccx) + (y - ccy) * (y - ccy);
+                if (d < best_d) {
+                    best_d = d;
+                    ax = x;
+                    ay = y;
+                }
+            }
+        }
+        spawn->x = l->origin_x + ax * cs + cs / 2;
+        spawn->y = l->origin_y + ay * cs + cs / 2;
+        spawn->bbox = (rlk_rect_t){
+            .x = l->origin_x + x0 * cs, .y = l->origin_y + y0 * cs,
+            .w = (x1 - x0 + 1) * cs, .h = (y1 - y0 + 1) * cs,
+        };
+        spawn->seed = rlk_poi_seed(ca->seed, spawn->x, spawn->y, 0, 0x5EEDULL);
+    }
+    return RLK_OK;
 }

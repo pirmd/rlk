@@ -2,19 +2,13 @@
 
 #include <assert.h>
 
-void
-rlk_wg_nf_drain_init(rlk_wg_nf_drain_t *f) {
-    assert(f);
-    assert(f->drain && f->elev);
-    assert(rlk_lattice_same(&f->drain->lattice, &f->elev->lattice));
-    if (f->acc_scale == 0.0f)
-        f->acc_scale = 1.0f;
-}
-
-void
-rlk_wg_nf_drain_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
+static void
+drain_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
     assert(ctx && data);
-    const rlk_wg_nf_drain_t *f = (const rlk_wg_nf_drain_t *)data;
+    rlk_wg_nf_drain_cfg_t fc = *(const rlk_wg_nf_drain_cfg_t *)data;
+    if (fc.acc_scale == 0.0f)
+        fc.acc_scale = 1.0f;
+    const rlk_wg_nf_drain_cfg_t *f = &fc;
     const rlk_wg_nf_t *wg = ctx->wg;
 
     int i, j;
@@ -48,9 +42,10 @@ rlk_wg_nf_drain_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
     }
 }
 
-rlk_err_t
-rlk_wg_nf_drain_add(rlk_wg_nf_t *wg, rlk_wg_nf_drain_t *f) {
-    assert(wg && f);
-    rlk_wg_nf_drain_init(f);
-    return rlk_wg_nf_add_stage(wg, rlk_wg_nf_drain_stage, f);
+rlk_wg_nf_stage_t
+rlk_wg_nf_drain(const rlk_wg_nf_drain_cfg_t *cfg) {
+    assert(cfg);
+    assert(cfg->drain && cfg->elev);
+    assert(rlk_lattice_same(&cfg->drain->lattice, &cfg->elev->lattice));
+    return (rlk_wg_nf_stage_t){ .fn = drain_stage, .data = cfg };
 }

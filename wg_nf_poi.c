@@ -3,10 +3,9 @@
 #include <assert.h>
 #include <stddef.h>
 
-void
-rlk_wg_nf_poi_init(rlk_wg_nf_poi_t *cfg) {
-    assert(cfg);
-    assert(cfg->list);
+/* Resolve zero defaults: density 0->0.001, size 0->32, min_separation 0->size. */
+static void
+poi_resolve(rlk_wg_nf_poi_cfg_t *cfg) {
     if (cfg->density == 0.0f)
         cfg->density = 0.001f;
     if (cfg->size == 0)
@@ -15,10 +14,12 @@ rlk_wg_nf_poi_init(rlk_wg_nf_poi_t *cfg) {
         cfg->min_separation = (int)cfg->size;
 }
 
-void
-rlk_wg_nf_poi_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
+static void
+poi_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
     assert(ctx && data);
-    const rlk_wg_nf_poi_t *cfg = (const rlk_wg_nf_poi_t *)data;
+    rlk_wg_nf_poi_cfg_t rc = *(const rlk_wg_nf_poi_cfg_t *)data;
+    poi_resolve(&rc);
+    const rlk_wg_nf_poi_cfg_t *cfg = &rc;
     const rlk_wg_nf_t *wg = ctx->wg;
 
     /* Field threshold. */
@@ -74,9 +75,9 @@ rlk_wg_nf_poi_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
     (void)rlk_poi_push(cfg->list, &poi);
 }
 
-rlk_err_t
-rlk_wg_nf_poi_add(rlk_wg_nf_t *wg, rlk_wg_nf_poi_t *cfg) {
-    assert(wg && cfg);
-    rlk_wg_nf_poi_init(cfg);
-    return rlk_wg_nf_add_stage(wg, rlk_wg_nf_poi_stage, cfg);
+rlk_wg_nf_stage_t
+rlk_wg_nf_poi(const rlk_wg_nf_poi_cfg_t *cfg) {
+    assert(cfg);
+    assert(cfg->list);
+    return (rlk_wg_nf_stage_t){ .fn = poi_stage, .data = cfg };
 }

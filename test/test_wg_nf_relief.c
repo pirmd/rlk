@@ -39,43 +39,13 @@ wg_min(void) {
     return wg;
 }
 
-/* init: zero defaults resolved */
-static void
-test_relief_init_defaults(void) {
-    rlk_wg_nf_relief_t r = {0};
-    r.f_cont = 0;
-    r.f_hills = RLK_WG_NF_RELIEF_NONE;
-    r.f_ridge = RLK_WG_NF_RELIEF_NONE;
-    r.f_warp_x = RLK_WG_NF_RELIEF_NONE;
-    r.f_warp_y = RLK_WG_NF_RELIEF_NONE;
-    r.f_fjord = RLK_WG_NF_RELIEF_NONE;
-    r.f_temp = RLK_WG_NF_RELIEF_NONE;
-    r.f_river = RLK_WG_NF_RELIEF_NONE;
-    r.slot_elev = 0;
-    r.slot_river = RLK_WG_NF_RELIEF_NONE;
-    r.river_carve_field = RLK_WG_NF_RELIEF_NONE;
-    rlk_wg_nf_relief_init(&r);
-    assert(r.warp == 30.0f);
-    assert(r.hills_amp == 0.30f);
-    assert(r.mountain_lo == 0.45f);
-    assert(r.mountain_hi == 0.65f);
-    assert(r.mountain_amp == 0.45f);
-    assert(r.lapse == 0.35f);
-    assert(r.fjord_stretch == 0.25f);
-    assert(r.fjord_width == 0.05f);
-    assert(r.fjord_depth == 0.45f);
-    assert(r.fjord_steep == 3.0f);
-    assert(r.fjord_reach == 0.12f);
-    assert(r.fjord_cold0 == 0.35f);
-    assert(r.fjord_cold1 == 0.55f);
-}
-
-/* Basic: stage writes elevation into derived field.
+/* Basic: stage writes elevation into derived field (all-zero params exercise
+   the defaults resolved inside the stage).
    With only f_cont, elevation should be close to the continent field. */
 static void
 test_relief_stage_basic(void) {
     rlk_wg_nf_t wg = wg_min();
-    rlk_wg_nf_relief_t r = {0};
+    rlk_wg_nf_relief_cfg_t r = {0};
     r.f_cont = 0;
     r.f_hills = RLK_WG_NF_RELIEF_NONE;
     r.f_ridge = RLK_WG_NF_RELIEF_NONE;
@@ -89,7 +59,7 @@ test_relief_stage_basic(void) {
     r.river_carve_field = RLK_WG_NF_RELIEF_NONE;
     r.sea = 0.40f;
 
-    assert(rlk_wg_nf_relief_add(&wg, &r) == RLK_OK);
+    assert(rlk_wg_nf_add(&wg, rlk_wg_nf_relief(&r)) == RLK_OK);
     rlk_wg_nf_init(&wg);
 
     rlk_tilemap_t tm;
@@ -114,7 +84,7 @@ test_relief_stage_basic(void) {
 static void
 test_relief_stage_with_hills(void) {
     rlk_wg_nf_t wg = wg_min();
-    rlk_wg_nf_relief_t r = {0};
+    rlk_wg_nf_relief_cfg_t r = {0};
     r.f_cont = 0;
     r.f_hills = 1;
     r.f_ridge = RLK_WG_NF_RELIEF_NONE;
@@ -129,7 +99,7 @@ test_relief_stage_with_hills(void) {
     r.sea = 0.40f;
     r.hills_amp = 0.30f;
 
-    assert(rlk_wg_nf_relief_add(&wg, &r) == RLK_OK);
+    assert(rlk_wg_nf_add(&wg, rlk_wg_nf_relief(&r)) == RLK_OK);
     rlk_wg_nf_init(&wg);
 
     rlk_tilemap_t tm;
@@ -145,7 +115,7 @@ test_relief_stage_with_hills(void) {
 static void
 test_relief_stage_lapse(void) {
     rlk_wg_nf_t wg = wg_min();
-    rlk_wg_nf_relief_t r = {0};
+    rlk_wg_nf_relief_cfg_t r = {0};
     r.f_cont = 0;
     r.f_hills = RLK_WG_NF_RELIEF_NONE;
     r.f_ridge = RLK_WG_NF_RELIEF_NONE;
@@ -160,7 +130,7 @@ test_relief_stage_lapse(void) {
     r.sea = 0.40f;
     r.lapse = 0.35f;
 
-    assert(rlk_wg_nf_relief_add(&wg, &r) == RLK_OK);
+    assert(rlk_wg_nf_add(&wg, rlk_wg_nf_relief(&r)) == RLK_OK);
     rlk_wg_nf_init(&wg);
 
     rlk_tilemap_t tm;
@@ -181,7 +151,7 @@ test_relief_stage_river_output(void) {
     wg.fields[3] = (rlk_wg_nf_field_t){ .kind = RLK_WG_NF_FBM, .seed = 4, .octaves = 2, .freq = 0.008f, .gain = 0.5f };
     /* nderived stays 2: slot_elev=0, slot_river=1 */
 
-    rlk_wg_nf_relief_t r = {0};
+    rlk_wg_nf_relief_cfg_t r = {0};
     r.f_cont = 0;
     r.f_hills = RLK_WG_NF_RELIEF_NONE;
     r.f_ridge = RLK_WG_NF_RELIEF_NONE;
@@ -198,7 +168,7 @@ test_relief_stage_river_output(void) {
     r.river_carve = 0.05f;
     r.relief_span = 0.40f;
 
-    assert(rlk_wg_nf_relief_add(&wg, &r) == RLK_OK);
+    assert(rlk_wg_nf_add(&wg, rlk_wg_nf_relief(&r)) == RLK_OK);
     rlk_wg_nf_init(&wg);
 
     rlk_tilemap_t tm;
@@ -216,11 +186,12 @@ test_relief_stage_river_output(void) {
     assert(has_river);
 }
 
-/* Power-user: init then add_stage manually. */
+/* Constructor builds a stage from a const config (fn is static, only the
+   data pointer is checkable). */
 static void
-test_relief_init_then_add_stage(void) {
+test_relief_constructor(void) {
     rlk_wg_nf_t wg = wg_min();
-    rlk_wg_nf_relief_t r = {0};
+    rlk_wg_nf_relief_cfg_t r = {0};
     r.f_cont = 0;
     r.f_hills = RLK_WG_NF_RELIEF_NONE;
     r.f_ridge = RLK_WG_NF_RELIEF_NONE;
@@ -233,9 +204,15 @@ test_relief_init_then_add_stage(void) {
     r.slot_river = RLK_WG_NF_RELIEF_NONE;
     r.river_carve_field = RLK_WG_NF_RELIEF_NONE;
 
-    rlk_wg_nf_relief_init(&r);
-    assert(rlk_wg_nf_add_stage(&wg, rlk_wg_nf_relief_stage, &r) == RLK_OK);
+    rlk_wg_nf_stage_t st = rlk_wg_nf_relief(&r);
+    assert(st.data == &r);
+    /* cfg is const: zero defaults resolved in the stage, not written back. */
+    assert(r.warp == 0.0f);
+    assert(r.hills_amp == 0.0f);
+
+    assert(rlk_wg_nf_add(&wg, st) == RLK_OK);
     assert(wg.nstages == 1);
+    assert(wg.stages[0].data == &r);
 
     rlk_wg_nf_init(&wg);
 
@@ -253,7 +230,7 @@ test_relief_stage_with_warp(void) {
     wg.fields[3] = (rlk_wg_nf_field_t){ .kind = RLK_WG_NF_FBM, .seed = 4, .octaves = 2, .freq = 0.010f, .gain = 0.5f };
     wg.fields[4] = (rlk_wg_nf_field_t){ .kind = RLK_WG_NF_FBM, .seed = 5, .octaves = 2, .freq = 0.010f, .gain = 0.5f };
 
-    rlk_wg_nf_relief_t r = {0};
+    rlk_wg_nf_relief_cfg_t r = {0};
     r.f_cont = 0;
     r.f_hills = 1;
     r.f_ridge = RLK_WG_NF_RELIEF_NONE;
@@ -268,7 +245,7 @@ test_relief_stage_with_warp(void) {
     r.sea = 0.40f;
     r.warp = 20.0f;
 
-    assert(rlk_wg_nf_relief_add(&wg, &r) == RLK_OK);
+    assert(rlk_wg_nf_add(&wg, rlk_wg_nf_relief(&r)) == RLK_OK);
     rlk_wg_nf_init(&wg);
 
     rlk_tilemap_t tm;
@@ -281,12 +258,11 @@ test_relief_stage_with_warp(void) {
 
 int
 main(void) {
-    test_relief_init_defaults();
     test_relief_stage_basic();
     test_relief_stage_with_hills();
     test_relief_stage_lapse();
     test_relief_stage_river_output();
-    test_relief_init_then_add_stage();
+    test_relief_constructor();
     test_relief_stage_with_warp();
     return 0;
 }

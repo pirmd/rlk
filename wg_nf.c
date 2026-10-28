@@ -36,12 +36,11 @@ assert_wg(const rlk_wg_nf_t *wg) {
 }
 
 rlk_err_t
-rlk_wg_nf_add_stage(rlk_wg_nf_t *wg, rlk_wg_nf_stage_fn fn, const void *data) {
-    assert(wg && fn);
+rlk_wg_nf_add(rlk_wg_nf_t *wg, rlk_wg_nf_stage_t stage) {
+    assert(wg && stage.fn);
     if (wg->nstages >= RLK_WG_NF_MAX_STAGES)
         return RLK_E_INVALID;
-    wg->stages[wg->nstages].fn = fn;
-    wg->stages[wg->nstages].data = data;
+    wg->stages[wg->nstages] = stage;
     wg->nstages++;
     return RLK_OK;
 }

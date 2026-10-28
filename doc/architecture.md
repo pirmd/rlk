@@ -515,9 +515,6 @@ Details:
   resolved by the lowest cell index.
 - Cumulative cost saturates at `UINT32_MAX`.
 
-*(Possible evolution, not included: `rlk_path_distance`, multi-source
-distance map for "nearest POI".)*
-
 #### fov.h/c [+] (planned, API to validate)
 
 Sketch, to check that the base is enough: `fov` consumes and produces

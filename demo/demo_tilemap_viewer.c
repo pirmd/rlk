@@ -231,17 +231,17 @@ struct world_s {
     rlk_noise_t relief_noise[F_NSAMPLED];
 
     /* wg_nf stage configs (must outlive wg) */
-    rlk_wg_nf_drain_t drain_stage;
-    rlk_wg_nf_rivers_t rivers_stage;
-    rlk_wg_nf_relief_t relief_stage;
+    rlk_wg_nf_drain_cfg_t drain_stage;
+    rlk_wg_nf_rivers_cfg_t rivers_stage;
+    rlk_wg_nf_relief_cfg_t relief_stage;
 
     /* POI detection */
     rlk_poi_t poi_buf[256];
     rlk_poi_list_t pois;
-    rlk_wg_nf_poi_t poi_cave_cfg;
-    rlk_wg_nf_poi_t poi_dungeon_cfg;
-    rlk_wg_nf_poi_t poi_village_cfg;
-    rlk_wg_nf_poi_t poi_tower_cfg;
+    rlk_wg_nf_poi_cfg_t poi_cave_cfg;
+    rlk_wg_nf_poi_cfg_t poi_dungeon_cfg;
+    rlk_wg_nf_poi_cfg_t poi_village_cfg;
+    rlk_wg_nf_poi_cfg_t poi_tower_cfg;
 
     /* Per-tile captured derived fields (for Relief/Flow display modes) */
     float final_elev[TM_W * TM_H];
@@ -658,7 +658,7 @@ world_generate(world_t *w, uint64_t seed) {
     /* --- wg_nf stages: drain + rivers + relief + POI --- */
 
     /* Stage 1: wg_nf_drain — inject accumulation + lake depth */
-    w->drain_stage = (rlk_wg_nf_drain_t){
+    w->drain_stage = (rlk_wg_nf_drain_cfg_t){
         .drain = &w->drain,
         .elev = &w->elev_grid,
         .sea = SEA_LEVEL,
@@ -667,18 +667,18 @@ world_generate(world_t *w, uint64_t seed) {
         .slot_lake = D_LAKE,
         .acc_scale = 1.0f,
     };
-    rlk_wg_nf_drain_add(wg, &w->drain_stage);
+    rlk_wg_nf_add(wg, rlk_wg_nf_drain(&w->drain_stage));
 
     /* Stage 2: wg_nf_rivers — project drainage into per-tile river masks.
-       Narrow rivers (max ~4 tiles wide), valleys 2x river width.
+       Channel width follows the drain SDF (~log2(acc), capped at cellsize);
+       mask fades 1 tile past the bank, valley reach = 2 * cellsize.
        Meanders from F_WIG_X/Y, creeks from F_CREEK, lakes from the filtered grid. */
-    w->rivers_stage = (rlk_wg_nf_rivers_t){
+    w->rivers_stage = (rlk_wg_nf_rivers_cfg_t){
         .drain = &w->drain,
         .elev = &w->elev_grid,
         .sea = SEA_LEVEL,
         .acc_min = RIVER_ACC_MIN,
-        .width_min = 0.6f,
-        .width_max = 2.0f,
+        .bank_fade = 1.0f,
         .valley_mult = 2.0f,
         .carve = 0.03f,
         .slot_mask = D_RIVER_MASK,
@@ -692,10 +692,10 @@ world_generate(world_t *w, uint64_t seed) {
         .creek_width = 1.0f,
         .creek_carve = 0.02f,
     };
-    rlk_wg_nf_rivers_add(wg, &w->rivers_stage);
+    rlk_wg_nf_add(wg, rlk_wg_nf_rivers(&w->rivers_stage));
 
     /* Stage 3: wg_nf_relief — standardised elevation (domain warp, fjords, lapse) */
-    w->relief_stage = (rlk_wg_nf_relief_t){
+    w->relief_stage = (rlk_wg_nf_relief_cfg_t){
         .f_cont = F_CONT,
         .f_hills = F_HILLS,
         .f_ridge = F_RIDGE,
@@ -726,13 +726,13 @@ world_generate(world_t *w, uint64_t seed) {
         .fjord_cold0 = 0.45f,
         .fjord_cold1 = 0.65f,
     };
-    rlk_wg_nf_relief_add(wg, &w->relief_stage);
+    rlk_wg_nf_add(wg, rlk_wg_nf_relief(&w->relief_stage));
 
     /* Stage 4-7: POI detectors */
     w->pois = (rlk_poi_list_t){ w->poi_buf, 0, 256 };
 
     /* Cave: on hills/mountains, high detail noise */
-    w->poi_cave_cfg = (rlk_wg_nf_poi_t){
+    w->poi_cave_cfg = (rlk_wg_nf_poi_cfg_t){
         .list = &w->pois,
         .type = POI_CAVE,
         .salt = 0xCAFEULL,
@@ -745,10 +745,10 @@ world_generate(world_t *w, uint64_t seed) {
         .grid_max = 0.85f,
         .min_separation = 24,
     };
-    rlk_wg_nf_poi_add(wg, &w->poi_cave_cfg);
+    rlk_wg_nf_add(wg, rlk_wg_nf_poi(&w->poi_cave_cfg));
 
     /* Dungeon: near rivers */
-    w->poi_dungeon_cfg = (rlk_wg_nf_poi_t){
+    w->poi_dungeon_cfg = (rlk_wg_nf_poi_cfg_t){
         .list = &w->pois,
         .type = POI_DUNGEON,
         .salt = 0xD0D0ULL,
@@ -760,10 +760,10 @@ world_generate(world_t *w, uint64_t seed) {
         .min_acc = 30.0f,
         .min_separation = 32,
     };
-    rlk_wg_nf_poi_add(wg, &w->poi_dungeon_cfg);
+    rlk_wg_nf_add(wg, rlk_wg_nf_poi(&w->poi_dungeon_cfg));
 
     /* Village: warm lowland plains only (temperature + altitude constraints) */
-    w->poi_village_cfg = (rlk_wg_nf_poi_t){
+    w->poi_village_cfg = (rlk_wg_nf_poi_cfg_t){
         .list = &w->pois,
         .type = POI_VILLAGE,
         .salt = 0xA11CEULL,
@@ -776,10 +776,10 @@ world_generate(world_t *w, uint64_t seed) {
         .grid_max = 0.50f,
         .min_separation = 16,
     };
-    rlk_wg_nf_poi_add(wg, &w->poi_village_cfg);
+    rlk_wg_nf_add(wg, rlk_wg_nf_poi(&w->poi_village_cfg));
 
     /* Tower: on hills and peaks */
-    w->poi_tower_cfg = (rlk_wg_nf_poi_t){
+    w->poi_tower_cfg = (rlk_wg_nf_poi_cfg_t){
         .list = &w->pois,
         .type = POI_TOWER,
         .salt = 0x70E1ULL,
@@ -792,7 +792,7 @@ world_generate(world_t *w, uint64_t seed) {
         .grid_max = 1.0f,
         .min_separation = 8,
     };
-    rlk_wg_nf_poi_add(wg, &w->poi_tower_cfg);
+    rlk_wg_nf_add(wg, rlk_wg_nf_poi(&w->poi_tower_cfg));
 
     /* Axes: elevation (relief output) + temperature (cooled by lapse) */
     wg->naxes = 2;

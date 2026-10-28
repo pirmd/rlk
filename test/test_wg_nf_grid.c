@@ -47,28 +47,17 @@ grid_setup(void) {
         grid_buf[k] = 0.5f;
 }
 
-/* init: scale 0 -> 1.0 */
-static void
-test_grid_init_defaults(void) {
-    rlk_wg_nf_grid_t g = {0};
-    g.grid = &grid;
-    g.slot = 0;
-    rlk_wg_nf_grid_init(&g);
-    assert(g.scale == 1.0f);
-    assert(g.offset == 0.0f);
-}
-
-/* Basic: sample 0.5 with scale=1, offset=0 -> field = 0.5 -> variant = 127 */
+/* Basic: sample 0.5 with scale=0 (default 1.0), offset=0 -> variant = 127 */
 static void
 test_grid_stage_basic(void) {
     grid_setup();
 
     rlk_wg_nf_t wg = wg_min();
-    rlk_wg_nf_grid_t g = {0};
+    rlk_wg_nf_grid_cfg_t g = {0};
     g.grid = &grid;
     g.slot = 0;
 
-    assert(rlk_wg_nf_grid_add(&wg, &g) == RLK_OK);
+    assert(rlk_wg_nf_add(&wg, rlk_wg_nf_grid(&g)) == RLK_OK);
     rlk_wg_nf_init(&wg);
 
     rlk_tilemap_t tm;
@@ -88,13 +77,13 @@ test_grid_stage_scale_offset(void) {
     grid_setup();
 
     rlk_wg_nf_t wg = wg_min();
-    rlk_wg_nf_grid_t g = {0};
+    rlk_wg_nf_grid_cfg_t g = {0};
     g.grid = &grid;
     g.slot = 0;
     g.scale = 2.0f;
     g.offset = 1.0f;
 
-    assert(rlk_wg_nf_grid_add(&wg, &g) == RLK_OK);
+    assert(rlk_wg_nf_add(&wg, rlk_wg_nf_grid(&g)) == RLK_OK);
     rlk_wg_nf_init(&wg);
 
     rlk_tilemap_t tm;
@@ -107,21 +96,25 @@ test_grid_stage_scale_offset(void) {
     assert(t->variant == 255);
 }
 
-/* Power-user: init then add_stage manually. */
+/* Constructor builds a stage from a const config (fn is static, only the
+   data pointer is checkable). */
 static void
-test_grid_init_then_add_stage(void) {
+test_grid_constructor(void) {
     grid_setup();
 
     rlk_wg_nf_t wg = wg_min();
-    rlk_wg_nf_grid_t g = {0};
+    rlk_wg_nf_grid_cfg_t g = {0};
     g.grid = &grid;
     g.slot = 0;
 
-    rlk_wg_nf_grid_init(&g);
-    assert(g.scale == 1.0f);
-    assert(rlk_wg_nf_add_stage(&wg, rlk_wg_nf_grid_stage, &g) == RLK_OK);
+    rlk_wg_nf_stage_t st = rlk_wg_nf_grid(&g);
+    assert(st.data == &g);
+    /* cfg is const: scale 0 -> 1.0 resolved in the stage, not written back. */
+    assert(g.scale == 0.0f);
+
+    assert(rlk_wg_nf_add(&wg, st) == RLK_OK);
     assert(wg.nstages == 1);
-    assert(wg.stages[0].fn == rlk_wg_nf_grid_stage);
+    assert(wg.stages[0].data == &g);
 
     rlk_wg_nf_init(&wg);
 
@@ -136,25 +129,20 @@ test_grid_limit_too_many_stages(void) {
     grid_setup();
 
     rlk_wg_nf_t wg = wg_min();
-    for (int i = 0; i < RLK_WG_NF_MAX_STAGES; i++) {
-        rlk_wg_nf_grid_t g = {0};
-        g.grid = &grid;
-        g.slot = 0;
-        assert(rlk_wg_nf_grid_add(&wg, &g) == RLK_OK);
-    }
-
-    rlk_wg_nf_grid_t g = {0};
+    rlk_wg_nf_grid_cfg_t g = {0};
     g.grid = &grid;
     g.slot = 0;
-    assert(rlk_wg_nf_grid_add(&wg, &g) == RLK_E_INVALID);
+    for (int i = 0; i < RLK_WG_NF_MAX_STAGES; i++)
+        assert(rlk_wg_nf_add(&wg, rlk_wg_nf_grid(&g)) == RLK_OK);
+
+    assert(rlk_wg_nf_add(&wg, rlk_wg_nf_grid(&g)) == RLK_E_INVALID);
 }
 
 int
 main(void) {
-    test_grid_init_defaults();
     test_grid_stage_basic();
     test_grid_stage_scale_offset();
-    test_grid_init_then_add_stage();
+    test_grid_constructor();
     test_grid_limit_too_many_stages();
     return 0;
 }

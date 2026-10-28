@@ -1,6 +1,8 @@
 #ifndef RLK_WG_NF_POI_H
 #define RLK_WG_NF_POI_H
 
+/* layer: 3, domain: worldgen */
+
 /*
  * Optional wg_nf stage: detect Points of Interest and populate a rlk_poi_list_t.
  *
@@ -12,7 +14,7 @@
  * Usage:
  *   rlk_poi_t poi_buf[256];
  *   rlk_poi_list_t pois = { poi_buf, 0, 256 };
- *   rlk_wg_nf_poi_t poi_cfg = {
+ *   rlk_wg_nf_poi_cfg_t poi_cfg = {
  *       .list = &pois,
  *       .type = POI_CAVE,      // game-defined type
  *       .field = 1,            // humidity field slot
@@ -23,7 +25,7 @@
  *       .min_acc = 300.0f,
  *       .salt = 0xCAFE,
  *   };
- *   rlk_wg_nf_poi_add(&nf, &poi_cfg);
+ *   rlk_wg_nf_add(&nf, rlk_wg_nf_poi(&poi_cfg));
  *   rlk_wg_nf_fill(&nf, 0, 0, &tm);  // fills tm AND pois
  */
 
@@ -32,7 +34,9 @@
 #include "drain.h"
 #include "grid.h"
 
-/* POI detector stage configuration. */
+/* POI detector stage configuration. Const after construction: zero defaults
+   (density 0->0.001, size 0->32, min_separation 0->size) are resolved inside
+   the stage, the cfg is never mutated. */
 typedef struct {
     /* --- Target --- */
     rlk_poi_list_t *list;           /* list to populate; must outlive the wg */
@@ -56,16 +60,9 @@ typedef struct {
 
     /* --- Deduplication --- */
     int min_separation;             /* min tiles between POIs of same type (0=off) */
-} rlk_wg_nf_poi_t;
+} rlk_wg_nf_poi_cfg_t;
 
-/* Stage function (use directly with rlk_wg_nf_add_stage if managing stages by hand). */
-void rlk_wg_nf_poi_stage(rlk_wg_nf_ctx_t *ctx, const void *data);
-
-/* Resolve zero defaults: density 0->0.001, size 0->32, min_separation 0->size.
- * Call once after filling. */
-void rlk_wg_nf_poi_init(rlk_wg_nf_poi_t *cfg);
-
-/* Init cfg, then register it as a stage of wg. cfg must outlive the wg. */
-rlk_err_t rlk_wg_nf_poi_add(rlk_wg_nf_t *wg, rlk_wg_nf_poi_t *cfg);
+/* Build a stage from a const config. The cfg must outlive the wg. */
+rlk_wg_nf_stage_t rlk_wg_nf_poi(const rlk_wg_nf_poi_cfg_t *cfg);
 
 #endif /* RLK_WG_NF_POI_H */

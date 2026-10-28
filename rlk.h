@@ -20,11 +20,13 @@
 #include "poi.h"
 #include "tilemap.h"
 
-/* Layer 2: terrain algorithms */
+/* Layer 2: algorithms (terrain + spatial) */
 #include "slope.h"
 #include "drain.h"
+#include "path.h"
+#include "fov.h"
 
-/* Worldgen (layers 3-4, wg_ prefix) */
+/* Layer 3: worldgen pipeline (wg_ prefix) */
 #include "wg_nf.h"
 #include "wg_nf_modulator.h"
 #include "wg_nf_grid.h"
@@ -32,7 +34,9 @@
 #include "wg_nf_relief.h"
 #include "wg_nf_rivers.h"
 #include "wg_nf_poi.h"
-#include "wg_ca.h"
-#include "wg_bsp.h"
+
+/* Layer 4: worldgen generators */
+#include "ca.h"
+#include "bsp.h"
 
 #endif /* RLK_H */

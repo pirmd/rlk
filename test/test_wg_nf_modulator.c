@@ -65,14 +65,14 @@ test_modulator_basic(void) {
     rlk_wg_nf_t wg1 = wg_min();
     rlk_wg_nf_t wg2 = wg_min();
 
-    rlk_wg_nf_modulator_t mod = {0};
+    rlk_wg_nf_modulator_cfg_t mod = {0};
     mod.ntypes = 2;
     mod.cell = 64.0f;
     mod.blend = 16.0f;
     mod.types[0].bias[0] = +0.1f;
     mod.types[1].bias[0] = -0.1f;
 
-    assert(rlk_wg_nf_modulator_add(&wg2, &mod) == RLK_OK);
+    assert(rlk_wg_nf_add(&wg2, rlk_wg_nf_modulator(&mod)) == RLK_OK);
     rlk_wg_nf_init(&wg1);
     rlk_wg_nf_init(&wg2);
 
@@ -90,12 +90,12 @@ test_modulator_neutral_noop(void) {
     rlk_wg_nf_t wg1 = wg_min();
     rlk_wg_nf_t wg2 = wg_min();
 
-    rlk_wg_nf_modulator_t mod = {0};
+    rlk_wg_nf_modulator_cfg_t mod = {0};
     mod.ntypes = 1;
     mod.cell = 64.0f;
     mod.blend = 16.0f;
 
-    assert(rlk_wg_nf_modulator_add(&wg2, &mod) == RLK_OK);
+    assert(rlk_wg_nf_add(&wg2, rlk_wg_nf_modulator(&mod)) == RLK_OK);
     rlk_wg_nf_init(&wg1);
     rlk_wg_nf_init(&wg2);
 
@@ -107,19 +107,20 @@ test_modulator_neutral_noop(void) {
     assert(!tm_differ(&tm1, &tm2));
 }
 
-/* Zero cell/blend resolve to defaults (128 / cell/4); neutral stays a no-op. */
+/* Zero cell/blend resolve to defaults (128 / cell/4) inside the stage;
+   neutral stays a no-op. */
 static void
 test_modulator_defaults(void) {
     rlk_wg_nf_t wg1 = wg_min();
     rlk_wg_nf_t wg2 = wg_min();
 
-    rlk_wg_nf_modulator_t mod = {0};
+    rlk_wg_nf_modulator_cfg_t mod = {0};
     mod.ntypes = 1;
 
-    assert(rlk_wg_nf_modulator_add(&wg2, &mod) == RLK_OK);
-    /* Defaults resolved by init inside add. */
-    assert(mod.cell == 128.0f);
-    assert(mod.blend == 32.0f);
+    assert(rlk_wg_nf_add(&wg2, rlk_wg_nf_modulator(&mod)) == RLK_OK);
+    /* cfg is const: zero defaults are resolved in the stage, not written back. */
+    assert(mod.cell == 0.0f);
+    assert(mod.blend == 0.0f);
     rlk_wg_nf_init(&wg1);
     rlk_wg_nf_init(&wg2);
 
@@ -137,13 +138,13 @@ test_modulator_with_gain(void) {
     rlk_wg_nf_t wg1 = wg_min();
     rlk_wg_nf_t wg2 = wg_min();
 
-    rlk_wg_nf_modulator_t mod = {0};
+    rlk_wg_nf_modulator_cfg_t mod = {0};
     mod.ntypes = 1;
     mod.cell = 64.0f;
     mod.blend = 16.0f;
     mod.types[0].gain[0] = 0.5f;  /* scale = 1 + 0.5 = 1.5 */
 
-    assert(rlk_wg_nf_modulator_add(&wg2, &mod) == RLK_OK);
+    assert(rlk_wg_nf_add(&wg2, rlk_wg_nf_modulator(&mod)) == RLK_OK);
     rlk_wg_nf_init(&wg1);
     rlk_wg_nf_init(&wg2);
 
@@ -169,36 +170,34 @@ test_modulator_limit_too_many_stages(void) {
     wg.zones[0] = (rlk_wg_nf_zone_t){ .lo = {0.0f, 0.0f}, .hi = {1.0f, 1.0f},
                                         .write = write_simple };
 
-    for (int i = 0; i < RLK_WG_NF_MAX_STAGES; i++) {
-        rlk_wg_nf_modulator_t mod = {0};
-        mod.ntypes = 1;
-        mod.cell = 64.0f;
-        assert(rlk_wg_nf_modulator_add(&wg, &mod) == RLK_OK);
-    }
-
-    rlk_wg_nf_modulator_t mod = {0};
+    rlk_wg_nf_modulator_cfg_t mod = {0};
     mod.ntypes = 1;
     mod.cell = 64.0f;
-    assert(rlk_wg_nf_modulator_add(&wg, &mod) == RLK_E_INVALID);
+    for (int i = 0; i < RLK_WG_NF_MAX_STAGES; i++)
+        assert(rlk_wg_nf_add(&wg, rlk_wg_nf_modulator(&mod)) == RLK_OK);
+
+    assert(rlk_wg_nf_add(&wg, rlk_wg_nf_modulator(&mod)) == RLK_E_INVALID);
 }
 
-/* Power-user pattern: init modulator, then register via generic add_stage. */
+/* Constructor builds a stage from a const config (fn is static, only the
+   data pointer is checkable). */
 static void
-test_modulator_init_then_add_stage(void) {
+test_modulator_constructor(void) {
     rlk_wg_nf_t wg = wg_min();
 
-    rlk_wg_nf_modulator_t mod = {0};
+    rlk_wg_nf_modulator_cfg_t mod = {0};
     mod.ntypes = 2;
     mod.types[0].bias[0] = +0.1f;
     mod.types[1].bias[0] = -0.1f;
 
-    rlk_wg_nf_modulator_init(&mod);
-    assert(mod.cell == 128.0f);
-    assert(mod.blend == 32.0f);
+    rlk_wg_nf_stage_t st = rlk_wg_nf_modulator(&mod);
+    assert(st.data == &mod);
+    /* cfg is const: zero defaults were NOT written back. */
+    assert(mod.cell == 0.0f);
+    assert(mod.blend == 0.0f);
 
-    assert(rlk_wg_nf_add_stage(&wg, rlk_wg_nf_modulator_stage, &mod) == RLK_OK);
+    assert(rlk_wg_nf_add(&wg, st) == RLK_OK);
     assert(wg.nstages == 1);
-    assert(wg.stages[0].fn == rlk_wg_nf_modulator_stage);
     assert(wg.stages[0].data == &mod);
 
     rlk_wg_nf_init(&wg);
@@ -215,6 +214,6 @@ main(void) {
     test_modulator_defaults();
     test_modulator_with_gain();
     test_modulator_limit_too_many_stages();
-    test_modulator_init_then_add_stage();
+    test_modulator_constructor();
     return 0;
 }

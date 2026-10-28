@@ -14,9 +14,13 @@ smoothstep_between(float lo, float hi, float t) {
     return u * u * (3.0f - 2.0f * u);
 }
 
-void
-rlk_wg_nf_relief_init(rlk_wg_nf_relief_t *r) {
-    assert(r);
+/* Resolve zero defaults (warp 0->30, hills_amp 0->0.30, mountain_lo/hi
+   0.45/0.65, mountain_amp 0->0.45, lapse 0->0.35, river_width_tiles 0->2.0,
+   relief_span 0->0.40, fjord_stretch 0->0.25, fjord_width 0->0.05,
+   fjord_depth 0->0.45, fjord_steep 0->3.0, fjord_reach 0->0.12,
+   fjord_cold0/1 0.35/0.55). */
+static void
+relief_resolve(rlk_wg_nf_relief_cfg_t *r) {
     assert(r->f_cont != RLK_WG_NF_RELIEF_NONE);
     assert(r->slot_elev != RLK_WG_NF_RELIEF_NONE);
     /* Warp fields must be paired */
@@ -56,7 +60,7 @@ rlk_wg_nf_relief_init(rlk_wg_nf_relief_t *r) {
 
 /* Noise-based river: level line of the river field, distance in tiles. */
 static void
-river_noise(const rlk_wg_nf_t *wg, const rlk_wg_nf_relief_t *r,
+river_noise(const rlk_wg_nf_t *wg, const rlk_wg_nf_relief_cfg_t *r,
             float qx, float qy, float h0, float hum,
             float *out_mask, float *out_carve) {
     assert(r->f_river != RLK_WG_NF_RELIEF_NONE);
@@ -89,7 +93,7 @@ river_noise(const rlk_wg_nf_t *wg, const rlk_wg_nf_relief_t *r,
 
 /* Fjord carve at (px, py): straight, deep valley near cold coasts. */
 static float
-fjord_carve(const rlk_wg_nf_t *wg, const rlk_wg_nf_relief_t *r,
+fjord_carve(const rlk_wg_nf_t *wg, const rlk_wg_nf_relief_cfg_t *r,
             float px, float py, float cont, float temp) {
     if (r->f_fjord == RLK_WG_NF_RELIEF_NONE)
         return 0.0f;
@@ -123,10 +127,12 @@ fjord_carve(const rlk_wg_nf_t *wg, const rlk_wg_nf_relief_t *r,
     return r->fjord_depth * coast * cold * profile;
 }
 
-void
-rlk_wg_nf_relief_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
+static void
+relief_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
     assert(ctx && data);
-    const rlk_wg_nf_relief_t *r = (const rlk_wg_nf_relief_t *)data;
+    rlk_wg_nf_relief_cfg_t rc = *(const rlk_wg_nf_relief_cfg_t *)data;
+    relief_resolve(&rc);
+    const rlk_wg_nf_relief_cfg_t *r = &rc;
     const rlk_wg_nf_t *wg = ctx->wg;
 
     const float px = (float)ctx->wx;
@@ -202,9 +208,12 @@ rlk_wg_nf_relief_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
     }
 }
 
-rlk_err_t
-rlk_wg_nf_relief_add(rlk_wg_nf_t *wg, rlk_wg_nf_relief_t *r) {
-    assert(wg && r);
-    rlk_wg_nf_relief_init(r);
-    return rlk_wg_nf_add_stage(wg, rlk_wg_nf_relief_stage, r);
+rlk_wg_nf_stage_t
+rlk_wg_nf_relief(const rlk_wg_nf_relief_cfg_t *cfg) {
+    assert(cfg);
+    assert(cfg->f_cont != RLK_WG_NF_RELIEF_NONE);
+    assert(cfg->slot_elev != RLK_WG_NF_RELIEF_NONE);
+    /* Warp fields must be paired */
+    assert((cfg->f_warp_x == RLK_WG_NF_RELIEF_NONE) == (cfg->f_warp_y == RLK_WG_NF_RELIEF_NONE));
+    return (rlk_wg_nf_stage_t){ .fn = relief_stage, .data = cfg };
 }

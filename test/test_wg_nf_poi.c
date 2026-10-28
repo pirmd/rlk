@@ -40,20 +40,38 @@ wg_min(void) {
     return wg;
 }
 
-/* init: density 0->0.001, size 0->32, min_separation 0->size. */
+/* Zero defaults resolved in the stage: size 0->32, min_separation 0->size. */
 static void
-test_poi_init_defaults(void) {
+test_poi_stage_defaults(void) {
+    rlk_wg_nf_t wg = wg_min();
     rlk_poi_t poi_buf[POI_CAP];
     rlk_poi_list_t list = { poi_buf, 0, POI_CAP };
-    rlk_wg_nf_poi_t cfg = {0};
+
+    rlk_wg_nf_poi_cfg_t cfg = {0};
     cfg.list = &list;
     cfg.type = POI_CAVE;
     cfg.field = 0;
-    cfg.threshold = 0.5f;
-    rlk_wg_nf_poi_init(&cfg);
-    assert(cfg.density == 0.001f);
-    assert(cfg.size == 32);
-    assert(cfg.min_separation == 32);
+    cfg.threshold = 0.0f;
+    cfg.density = 1.0f;     /* trigger every tile */
+    /* size and min_separation left at 0 */
+
+    assert(rlk_wg_nf_add(&wg, rlk_wg_nf_poi(&cfg)) == RLK_OK);
+    /* cfg is const: defaults resolved in the stage, not written back. */
+    assert(cfg.size == 0);
+    assert(cfg.min_separation == 0);
+    rlk_wg_nf_init(&wg);
+
+    rlk_tilemap_t tm;
+    rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
+    rlk_wg_nf_fill(&wg, 0, 0, &tm);
+
+    /* size 0 -> default 32: bbox side is 32. */
+    assert(list.n > 0);
+    assert(list.v[0].bbox.w == 32);
+    assert(list.v[0].bbox.h == 32);
+    /* min_separation 0 -> default = size = 32: on a 16x16 map the first POI
+       blocks every other tile -> exactly one POI. */
+    assert(list.n == 1);
 }
 
 /* Basic: density=1.0, threshold=0.0 -> every tile creates a POI
@@ -64,7 +82,7 @@ test_poi_stage_basic(void) {
     rlk_poi_t poi_buf[POI_CAP];
     rlk_poi_list_t list = { poi_buf, 0, POI_CAP };
 
-    rlk_wg_nf_poi_t cfg = {0};
+    rlk_wg_nf_poi_cfg_t cfg = {0};
     cfg.list = &list;
     cfg.type = POI_CAVE;
     cfg.field = 0;
@@ -74,7 +92,7 @@ test_poi_stage_basic(void) {
     cfg.min_separation = 0; /* disable dedup for this test */
     cfg.salt = 0xABC;
 
-    assert(rlk_wg_nf_poi_add(&wg, &cfg) == RLK_OK);
+    assert(rlk_wg_nf_add(&wg, rlk_wg_nf_poi(&cfg)) == RLK_OK);
     rlk_wg_nf_init(&wg);
 
     rlk_tilemap_t tm;
@@ -102,7 +120,7 @@ test_poi_stage_below_threshold(void) {
     rlk_poi_t poi_buf[POI_CAP];
     rlk_poi_list_t list = { poi_buf, 0, POI_CAP };
 
-    rlk_wg_nf_poi_t cfg = {0};
+    rlk_wg_nf_poi_cfg_t cfg = {0};
     cfg.list = &list;
     cfg.type = POI_CAVE;
     cfg.field = 0;
@@ -110,7 +128,7 @@ test_poi_stage_below_threshold(void) {
     cfg.density = 1.0f;
     cfg.min_separation = 0;
 
-    assert(rlk_wg_nf_poi_add(&wg, &cfg) == RLK_OK);
+    assert(rlk_wg_nf_add(&wg, rlk_wg_nf_poi(&cfg)) == RLK_OK);
     rlk_wg_nf_init(&wg);
 
     rlk_tilemap_t tm;
@@ -127,7 +145,7 @@ test_poi_stage_dedup(void) {
     rlk_poi_t poi_buf[POI_CAP];
     rlk_poi_list_t list = { poi_buf, 0, POI_CAP };
 
-    rlk_wg_nf_poi_t cfg = {0};
+    rlk_wg_nf_poi_cfg_t cfg = {0};
     cfg.list = &list;
     cfg.type = POI_CAVE;
     cfg.field = 0;
@@ -137,7 +155,7 @@ test_poi_stage_dedup(void) {
     cfg.min_separation = 8;  /* at least 8 tiles apart */
     cfg.salt = 0xDEF;
 
-    assert(rlk_wg_nf_poi_add(&wg, &cfg) == RLK_OK);
+    assert(rlk_wg_nf_add(&wg, rlk_wg_nf_poi(&cfg)) == RLK_OK);
     rlk_wg_nf_init(&wg);
 
     rlk_tilemap_t tm;
@@ -167,7 +185,7 @@ test_poi_stage_deterministic(void) {
     rlk_poi_list_t list1 = { buf1, 0, POI_CAP };
     rlk_poi_list_t list2 = { buf2, 0, POI_CAP };
 
-    rlk_wg_nf_poi_t cfg1 = {0};
+    rlk_wg_nf_poi_cfg_t cfg1 = {0};
     cfg1.list = &list1;
     cfg1.type = POI_CAVE;
     cfg1.field = 0;
@@ -177,10 +195,10 @@ test_poi_stage_deterministic(void) {
     cfg1.min_separation = 4;
     cfg1.salt = 0x123;
 
-    rlk_wg_nf_poi_t cfg2 = cfg1;
+    rlk_wg_nf_poi_cfg_t cfg2 = cfg1;
     cfg2.list = &list2;
 
-    rlk_wg_nf_poi_add(&wg, &cfg1);
+    rlk_wg_nf_add(&wg, rlk_wg_nf_poi(&cfg1));
     rlk_wg_nf_init(&wg);
 
     rlk_tilemap_t tm;
@@ -189,7 +207,7 @@ test_poi_stage_deterministic(void) {
 
     /* Reset wg and list, re-run with same config. */
     wg = wg_min();
-    rlk_wg_nf_poi_add(&wg, &cfg2);
+    rlk_wg_nf_add(&wg, rlk_wg_nf_poi(&cfg2));
     rlk_wg_nf_init(&wg);
     rlk_wg_nf_fill(&wg, 0, 0, &tm);
 
@@ -235,7 +253,7 @@ test_poi_stage_drain_constraint(void) {
     rlk_poi_t poi_buf[POI_CAP];
     rlk_poi_list_t list = { poi_buf, 0, POI_CAP };
 
-    rlk_wg_nf_poi_t cfg = {0};
+    rlk_wg_nf_poi_cfg_t cfg = {0};
     cfg.list = &list;
     cfg.type = POI_CAVE;
     cfg.field = 0;
@@ -247,7 +265,7 @@ test_poi_stage_drain_constraint(void) {
     cfg.min_acc = 1.0f;  /* all cells have acc >= 1 */
     cfg.salt = 0xF10;
 
-    assert(rlk_wg_nf_poi_add(&wg, &cfg) == RLK_OK);
+    assert(rlk_wg_nf_add(&wg, rlk_wg_nf_poi(&cfg)) == RLK_OK);
     rlk_wg_nf_init(&wg);
 
     rlk_tilemap_t tm;
@@ -261,11 +279,11 @@ test_poi_stage_drain_constraint(void) {
     rlk_wg_nf_t wg2 = wg_min();
     rlk_poi_t poi_buf2[POI_CAP];
     rlk_poi_list_t list2 = { poi_buf2, 0, POI_CAP };
-    rlk_wg_nf_poi_t cfg2 = cfg;
+    rlk_wg_nf_poi_cfg_t cfg2 = cfg;
     cfg2.list = &list2;
     cfg2.min_acc = 1000.0f;  /* higher than total cells (16) */
 
-    assert(rlk_wg_nf_poi_add(&wg2, &cfg2) == RLK_OK);
+    assert(rlk_wg_nf_add(&wg2, rlk_wg_nf_poi(&cfg2)) == RLK_OK);
     rlk_wg_nf_init(&wg2);
     rlk_wg_nf_fill(&wg2, 0, 0, &tm);
 
@@ -299,7 +317,7 @@ test_poi_stage_grid_constraint(void) {
     rlk_poi_t poi_buf[POI_CAP];
     rlk_poi_list_t list = { poi_buf, 0, POI_CAP };
 
-    rlk_wg_nf_poi_t cfg = {0};
+    rlk_wg_nf_poi_cfg_t cfg = {0};
     cfg.list = &list;
     cfg.type = POI_DUNGEON;
     cfg.field = 0;
@@ -312,7 +330,7 @@ test_poi_stage_grid_constraint(void) {
     cfg.grid_max = 0.75f;
     cfg.salt = 0x9D;
 
-    assert(rlk_wg_nf_poi_add(&wg, &cfg) == RLK_OK);
+    assert(rlk_wg_nf_add(&wg, rlk_wg_nf_poi(&cfg)) == RLK_OK);
     rlk_wg_nf_init(&wg);
 
     rlk_tilemap_t tm;
@@ -325,26 +343,30 @@ test_poi_stage_grid_constraint(void) {
     assert(list.n < MAP * MAP);
 }
 
-/* Power-user: init then add_stage manually. */
+/* Constructor builds a stage from a const config (fn is static, only the
+   data pointer is checkable). */
 static void
-test_poi_init_then_add_stage(void) {
+test_poi_constructor(void) {
     rlk_wg_nf_t wg = wg_min();
     rlk_poi_t poi_buf[POI_CAP];
     rlk_poi_list_t list = { poi_buf, 0, POI_CAP };
 
-    rlk_wg_nf_poi_t cfg = {0};
+    rlk_wg_nf_poi_cfg_t cfg = {0};
     cfg.list = &list;
     cfg.type = POI_CAVE;
     cfg.field = 0;
     cfg.threshold = 0.5f;
 
-    rlk_wg_nf_poi_init(&cfg);
-    assert(cfg.density == 0.001f);
-    assert(cfg.size == 32);
-    assert(cfg.min_separation == 32);
-    assert(rlk_wg_nf_add_stage(&wg, rlk_wg_nf_poi_stage, &cfg) == RLK_OK);
+    rlk_wg_nf_stage_t st = rlk_wg_nf_poi(&cfg);
+    assert(st.data == &cfg);
+    /* cfg is const: zero defaults resolved in the stage, not written back. */
+    assert(cfg.density == 0.0f);
+    assert(cfg.size == 0);
+    assert(cfg.min_separation == 0);
+
+    assert(rlk_wg_nf_add(&wg, st) == RLK_OK);
     assert(wg.nstages == 1);
-    assert(wg.stages[0].fn == rlk_wg_nf_poi_stage);
+    assert(wg.stages[0].data == &cfg);
 }
 
 /* Stage table full -> RLK_E_INVALID. */
@@ -354,33 +376,27 @@ test_poi_limit_too_many_stages(void) {
     rlk_poi_t poi_buf[POI_CAP];
     rlk_poi_list_t list = { poi_buf, 0, POI_CAP };
 
-    for (int i = 0; i < RLK_WG_NF_MAX_STAGES; i++) {
-        rlk_wg_nf_poi_t cfg = {0};
-        cfg.list = &list;
-        cfg.type = POI_CAVE;
-        cfg.field = 0;
-        cfg.threshold = 0.5f;
-        assert(rlk_wg_nf_poi_add(&wg, &cfg) == RLK_OK);
-    }
-
-    rlk_wg_nf_poi_t cfg = {0};
+    rlk_wg_nf_poi_cfg_t cfg = {0};
     cfg.list = &list;
     cfg.type = POI_CAVE;
     cfg.field = 0;
     cfg.threshold = 0.5f;
-    assert(rlk_wg_nf_poi_add(&wg, &cfg) == RLK_E_INVALID);
+    for (int i = 0; i < RLK_WG_NF_MAX_STAGES; i++)
+        assert(rlk_wg_nf_add(&wg, rlk_wg_nf_poi(&cfg)) == RLK_OK);
+
+    assert(rlk_wg_nf_add(&wg, rlk_wg_nf_poi(&cfg)) == RLK_E_INVALID);
 }
 
 int
 main(void) {
-    test_poi_init_defaults();
+    test_poi_stage_defaults();
     test_poi_stage_basic();
     test_poi_stage_below_threshold();
     test_poi_stage_dedup();
     test_poi_stage_deterministic();
     test_poi_stage_drain_constraint();
     test_poi_stage_grid_constraint();
-    test_poi_init_then_add_stage();
+    test_poi_constructor();
     test_poi_limit_too_many_stages();
     return 0;
 }

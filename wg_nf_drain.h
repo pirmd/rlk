@@ -1,6 +1,8 @@
 #ifndef RLK_WG_NF_DRAIN_H
 #define RLK_WG_NF_DRAIN_H
 
+/* layer: 3, domain: worldgen */
+
 /*
  * Optional wg_nf stage: reads a pre-built rlk_drain_t into derived fields.
  *
@@ -19,7 +21,8 @@
 
 #define RLK_WG_NF_DRAIN_NONE 255  /* slot value: do not write this output */
 
-/* Drain reader stage configuration. */
+/* Drain reader stage configuration. Const after construction: acc_scale
+   0 -> 1.0 is resolved inside the stage, the cfg is never mutated. */
 typedef struct {
     const rlk_drain_t *drain;  /* pre-built drain; must outlive the wg */
     const rlk_grid_t *elev;    /* elevation grid (for lake_depth); must outlive the wg */
@@ -28,15 +31,9 @@ typedef struct {
     uint8_t slot_dir;          /* derived field for direction, or NONE */
     uint8_t slot_lake;         /* derived field for lake depth, or NONE */
     float acc_scale;           /* accumulation divisor; 0 -> 1.0 */
-} rlk_wg_nf_drain_t;
+} rlk_wg_nf_drain_cfg_t;
 
-/* Stage function (use directly with rlk_wg_nf_add_stage if managing stages by hand). */
-void rlk_wg_nf_drain_stage(rlk_wg_nf_ctx_t *ctx, const void *data);
-
-/* Resolve zero defaults: acc_scale 0->1.0. Call once after filling. */
-void rlk_wg_nf_drain_init(rlk_wg_nf_drain_t *f);
-
-/* Init f, then register it as a stage of wg. f must outlive the wg. */
-rlk_err_t rlk_wg_nf_drain_add(rlk_wg_nf_t *wg, rlk_wg_nf_drain_t *f);
+/* Build a stage from a const config. The cfg must outlive the wg. */
+rlk_wg_nf_stage_t rlk_wg_nf_drain(const rlk_wg_nf_drain_cfg_t *cfg);
 
 #endif /* RLK_WG_NF_DRAIN_H */

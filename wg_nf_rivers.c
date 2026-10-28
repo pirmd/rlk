@@ -3,24 +3,18 @@
 #include <assert.h>
 #include <math.h>
 
-/* Water half-width for a cell draining `acc` cells: ~ sqrt(acc / acc_min) * width_min, capped. */
-static inline float
-river_width(const rlk_wg_nf_rivers_t *r, uint32_t acc) {
-    float w = r->width_min * sqrtf((float)acc / (float)r->acc_min);
-    return w < r->width_max ? w : r->width_max;
-}
+#include "fmath.h"
 
-void
-rlk_wg_nf_rivers_init(rlk_wg_nf_rivers_t *r) {
-    assert(r);
+/* Resolve zero defaults: acc_min 0->1, bank_fade<=0->1.0, valley_mult<1->1.0,
+   wig_tiles<=0 disables meanders, creek_width<=0 disables creeks. */
+static void
+rivers_resolve(rlk_wg_nf_rivers_cfg_t *r) {
     assert(r->drain && r->elev);
     assert(rlk_lattice_same(&r->drain->lattice, &r->elev->lattice));
     if (r->acc_min == 0)
         r->acc_min = 1;
-    if (r->width_min <= 0.0f)
-        r->width_min = 1.0f;
-    if (r->width_max < r->width_min)
-        r->width_max = r->width_min;
+    if (r->bank_fade <= 0.0f)
+        r->bank_fade = 1.0f;
     if (r->valley_mult < 1.0f)
         r->valley_mult = 1.0f;
     /* Meanders and creeks are opt-in: disable if amplitude is zero */
@@ -32,14 +26,19 @@ rlk_wg_nf_rivers_init(rlk_wg_nf_rivers_t *r) {
         r->f_creek = RLK_WG_NF_RIVERS_NONE;
 }
 
-void
-rlk_wg_nf_rivers_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
+static void
+rivers_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
     assert(ctx && data);
-    const rlk_wg_nf_rivers_t *r = (const rlk_wg_nf_rivers_t *)data;
+    rlk_wg_nf_rivers_cfg_t rc = *(const rlk_wg_nf_rivers_cfg_t *)data;
+    rivers_resolve(&rc);
+    const rlk_wg_nf_rivers_cfg_t *r = &rc;
     const rlk_wg_nf_t *wg = ctx->wg;
 
-    const int w = r->drain->lattice.w;
-    const int h = r->drain->lattice.h;
+    /* Slots are validated against the wg's derived field count here
+       (the constructor does not know the wg). */
+    assert(r->slot_mask == RLK_WG_NF_RIVERS_NONE || (int)r->slot_mask < wg->nderived);
+    assert(r->slot_carve == RLK_WG_NF_RIVERS_NONE || (int)r->slot_carve < wg->nderived);
+
     const float cell = (float)r->elev->lattice.cellsize;
 
     /* Tile centre in world coords, displaced by optional meanders */
@@ -50,82 +49,19 @@ rlk_wg_nf_rivers_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
         py += (ctx->field[r->f_wig_y] - 0.5f) * 2.0f * r->wig_tiles;
     }
 
-    /* Grid coords of the tile centre */
-    const float gx = (px - (float)r->elev->lattice.origin_x) / cell;
-    const float gy = (py - (float)r->elev->lattice.origin_y) / cell;
-
+    /* River network as a signed distance field (constant cost per tile).
+       Meanders are quantized to whole tiles: the sdf is tile-granular. */
     float mask = 0.0f;
     float carve = 0.0f;
-
-    if (gx >= 0.0f && gx < (float)w && gy >= 0.0f && gy < (float)h) {
-        const int ci = (int)gx;
-        const int cj = (int)gy;
-
-        /* Search radius: enough cells to cover the widest valley */
-        const int k = (int)(r->valley_mult * r->width_max / cell) + 3;
-        const int i0 = ci - k < 0 ? 0 : ci - k;
-        const int i1 = ci + k >= w ? w - 1 : ci + k;
-        const int j0 = cj - k < 0 ? 0 : cj - k;
-        const int j1 = cj + k >= h ? h - 1 : cj + k;
-
-        for (int j = j0; j <= j1; j++) {
-            for (int i = i0; i <= i1; i++) {
-                const size_t c = (size_t)j * (size_t)w + (size_t)i;
-                const uint32_t acc = r->drain->acc[c];
-                if (acc < r->acc_min)
-                    continue;
-                if (r->drain->dir[c] == RLK_DRAIN_OUTLET)
-                    continue;
-
-                /* Skip underwater cells */
-                const float e = r->elev->v[c];
-                if (e < r->sea)
-                    continue;
-
-                /* Segment from this cell's centre to its downstream cell's centre */
-                int dx, dy;
-                rlk_drain_step(r->drain->dir[c], &dx, &dy);
-                const int ni = i + dx;
-                const int nj = j + dy;
-                if (ni < 0 || ni >= w || nj < 0 || nj >= h)
-                    continue;
-                const size_t nc = (size_t)nj * (size_t)w + (size_t)ni;
-
-                const float ax = (float)r->elev->lattice.origin_x + ((float)i + 0.5f) * cell;
-                const float ay = (float)r->elev->lattice.origin_y + ((float)j + 0.5f) * cell;
-                const float vx = (float)dx * cell;
-                const float vy = (float)dy * cell;
-
-                /* Project (px,py) onto the segment */
-                const float ex = px - ax;
-                const float ey = py - ay;
-                const float vv = vx * vx + vy * vy;
-                float t = vv > 0.0f ? (ex * vx + ey * vy) / vv : 0.0f;
-                t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
-
-                const float ox = ax + t * vx - px;
-                const float oy = ay + t * vy - py;
-                const float dist = sqrtf(ox * ox + oy * oy);
-
-                /* Interpolated width along the segment */
-                const float w0 = river_width(r, acc);
-                const float w1 = river_width(r, r->drain->acc[nc]);
-                const float wd = w0 + (w1 - w0) * t;
-                if (wd <= 1e-3f)
-                    continue;
-
-                const float m = 1.0f - dist / wd;
-                if (m > mask)
-                    mask = m > 0.0f ? m : 0.0f;
-
-                const float vall = 1.0f - dist / (r->valley_mult * wd);
-                if (vall > 0.0f) {
-                    const float cv = r->carve * vall * vall;
-                    if (cv > carve)
-                        carve = cv;
-                }
-            }
-        }
+    const float d = rlk_drain_river_sdf(r->drain, (int)floorf(px), (int)floorf(py),
+                                        r->acc_min);
+    if (d < RLK_DRAIN_FAR) {
+        /* Water: full mask in the channel, fading over bank_fade tiles. */
+        mask = rlk_clampf(1.0f - d / r->bank_fade, 0.0f, 1.0f);
+        /* Valley: quadratic profile, reach = valley_mult * cellsize. */
+        const float reach = r->valley_mult * cell;
+        const float vall = rlk_clampf(1.0f - d / reach, 0.0f, 1.0f);
+        carve = r->carve * vall * vall;
     }
 
     /* Creeks: noise level-line streams on top of the drainage network */
@@ -162,10 +98,10 @@ rlk_wg_nf_rivers_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
        Uses the original tile position (not the wiggle-displaced one):
        a lake is a property of the terrain, not of the meander. */
     if (r->lake_depth && r->lake_min_depth > 0.0f) {
-        const float d = rlk_grid_sample(r->lake_depth, (float)ctx->wx + 0.5f, (float)ctx->wy + 0.5f);
-        if (d >= r->lake_min_depth) {
+        const float depth = rlk_grid_sample(r->lake_depth, (float)ctx->wx + 0.5f, (float)ctx->wy + 0.5f);
+        if (depth >= r->lake_min_depth) {
             /* Smooth threshold */
-            const float lm = (d - 0.5f * r->lake_min_depth) / (0.5f * r->lake_min_depth);
+            const float lm = (depth - 0.5f * r->lake_min_depth) / (0.5f * r->lake_min_depth);
             const float lc = lm < 0.0f ? 0.0f : (lm > 1.0f ? 1.0f : lm);
             if (lc > mask)
                 mask = lc;
@@ -185,14 +121,10 @@ rlk_wg_nf_rivers_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
     }
 }
 
-rlk_err_t
-rlk_wg_nf_rivers_add(rlk_wg_nf_t *wg, rlk_wg_nf_rivers_t *r) {
-    assert(wg && r);
-    rlk_wg_nf_rivers_init(r);
-    /* Validate slots against the declared derived field count */
-    if (r->slot_mask != RLK_WG_NF_RIVERS_NONE && r->slot_mask >= wg->nderived)
-        return RLK_E_INVALID;
-    if (r->slot_carve != RLK_WG_NF_RIVERS_NONE && r->slot_carve >= wg->nderived)
-        return RLK_E_INVALID;
-    return rlk_wg_nf_add_stage(wg, rlk_wg_nf_rivers_stage, r);
+rlk_wg_nf_stage_t
+rlk_wg_nf_rivers(const rlk_wg_nf_rivers_cfg_t *cfg) {
+    assert(cfg);
+    assert(cfg->drain && cfg->elev);
+    assert(rlk_lattice_same(&cfg->drain->lattice, &cfg->elev->lattice));
+    return (rlk_wg_nf_stage_t){ .fn = rivers_stage, .data = cfg };
 }

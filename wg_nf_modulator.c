@@ -7,22 +7,21 @@
 
 #define NEIGHBORHOOD 25  /* 5x5 cells */
 
-void
-rlk_wg_nf_modulator_init(rlk_wg_nf_modulator_t *m) {
-    assert(m);
-    assert(m->ntypes >= 1 && m->ntypes <= RLK_WG_NF_MODULATOR_MAX_TYPES);
+/* Resolve zero defaults (cell 0->128, blend 0->cell/4). */
+static void
+modulator_resolve(rlk_wg_nf_modulator_cfg_t *m) {
     if (m->cell == 0.0f)
         m->cell = 128.0f;
     if (m->blend == 0.0f)
         m->blend = 0.25f * m->cell;
-    assert(m->cell >= 16.0f);
-    assert(m->blend <= 0.5f * m->cell);
 }
 
-void
-rlk_wg_nf_modulator_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
+static void
+modulator_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
     assert(ctx && data);
-    const rlk_wg_nf_modulator_t *m = (const rlk_wg_nf_modulator_t *)data;
+    rlk_wg_nf_modulator_cfg_t mc = *(const rlk_wg_nf_modulator_cfg_t *)data;
+    modulator_resolve(&mc);
+    const rlk_wg_nf_modulator_cfg_t *m = &mc;
     const rlk_wg_nf_t *wg = ctx->wg;
 
     const float cell = m->cell;
@@ -74,9 +73,13 @@ rlk_wg_nf_modulator_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
         ctx->field[f] = (ctx->field[f] + bias[f] * inv) * (1.0f + gain[f] * inv);
 }
 
-rlk_err_t
-rlk_wg_nf_modulator_add(rlk_wg_nf_t *wg, rlk_wg_nf_modulator_t *m) {
-    assert(wg && m);
-    rlk_wg_nf_modulator_init(m);
-    return rlk_wg_nf_add_stage(wg, rlk_wg_nf_modulator_stage, m);
+rlk_wg_nf_stage_t
+rlk_wg_nf_modulator(const rlk_wg_nf_modulator_cfg_t *cfg) {
+    assert(cfg);
+    assert(cfg->ntypes >= 1 && cfg->ntypes <= RLK_WG_NF_MODULATOR_MAX_TYPES);
+    rlk_wg_nf_modulator_cfg_t m = *cfg;
+    modulator_resolve(&m);
+    assert(m.cell >= 16.0f);
+    assert(m.blend <= 0.5f * m.cell);
+    return (rlk_wg_nf_stage_t){ .fn = modulator_stage, .data = cfg };
 }

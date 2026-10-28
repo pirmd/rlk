@@ -85,22 +85,6 @@ drain_setup(void) {
     assert(rlk_drain_build(&drain, &elev, -1.0f, scratch) == RLK_OK);
 }
 
-/* init: zero defaults resolved */
-static void
-test_rivers_init_defaults(void) {
-    drain_setup();
-    rlk_wg_nf_rivers_t r = {0};
-    r.drain = &drain;
-    r.elev = &elev;
-    r.sea = 0.0f;
-    r.slot_mask = 0;
-    rlk_wg_nf_rivers_init(&r);
-    assert(r.acc_min == 1);
-    assert(r.width_min == 1.0f);
-    assert(r.width_max == 1.0f);
-    assert(r.valley_mult == 1.0f);
-}
-
 /* Basic: stage writes mask and carve into derived fields.
    East-sloping grid: rivers flow west, acc increases westward.
    Tiles near the western edge should have higher mask (more accumulation). */
@@ -109,19 +93,18 @@ test_rivers_stage_basic(void) {
     drain_setup();
 
     rlk_wg_nf_t wg = wg_min();
-    rlk_wg_nf_rivers_t r = {0};
+    rlk_wg_nf_rivers_cfg_t r = {0};
     r.drain = &drain;
     r.elev = &elev;
     r.sea = 0.0f;
     r.acc_min = 1;
-    r.width_min = 2.0f;
-    r.width_max = 4.0f;
+    r.bank_fade = 1.0f;
     r.valley_mult = 3.0f;
     r.carve = 0.05f;
     r.slot_mask = 0;
     r.slot_carve = 1;
 
-    assert(rlk_wg_nf_rivers_add(&wg, &r) == RLK_OK);
+    assert(rlk_wg_nf_add(&wg, rlk_wg_nf_rivers(&r)) == RLK_OK);
     rlk_wg_nf_init(&wg);
 
     rlk_tilemap_t tm;
@@ -154,7 +137,7 @@ test_rivers_stage_none_slots(void) {
     drain_setup();
 
     rlk_wg_nf_t wg = wg_min();
-    rlk_wg_nf_rivers_t r = {0};
+    rlk_wg_nf_rivers_cfg_t r = {0};
     r.drain = &drain;
     r.elev = &elev;
     r.sea = 0.0f;
@@ -162,7 +145,7 @@ test_rivers_stage_none_slots(void) {
     r.slot_mask = 0;
     r.slot_carve = RLK_WG_NF_RIVERS_NONE;
 
-    assert(rlk_wg_nf_rivers_add(&wg, &r) == RLK_OK);
+    assert(rlk_wg_nf_add(&wg, rlk_wg_nf_rivers(&r)) == RLK_OK);
     rlk_wg_nf_init(&wg);
 
     rlk_tilemap_t tm;
@@ -180,18 +163,16 @@ test_rivers_stage_high_acc_min(void) {
     drain_setup();
 
     rlk_wg_nf_t wg = wg_min();
-    rlk_wg_nf_rivers_t r = {0};
+    rlk_wg_nf_rivers_cfg_t r = {0};
     r.drain = &drain;
     r.elev = &elev;
     r.sea = 0.0f;
     r.acc_min = 1000;  /* higher than total cells (16) */
-    r.width_min = 2.0f;
-    r.width_max = 4.0f;
     r.valley_mult = 3.0f;
     r.slot_mask = 0;
     r.slot_carve = 1;
 
-    assert(rlk_wg_nf_rivers_add(&wg, &r) == RLK_OK);
+    assert(rlk_wg_nf_add(&wg, rlk_wg_nf_rivers(&r)) == RLK_OK);
     rlk_wg_nf_init(&wg);
 
     rlk_tilemap_t tm;
@@ -208,13 +189,14 @@ test_rivers_stage_high_acc_min(void) {
         }
 }
 
-/* Power-user: init then add_stage manually. */
+/* Constructor builds a stage from a const config (fn is static, only the
+   data pointer is checkable). */
 static void
-test_rivers_init_then_add_stage(void) {
+test_rivers_constructor(void) {
     drain_setup();
 
     rlk_wg_nf_t wg = wg_min();
-    rlk_wg_nf_rivers_t r = {0};
+    rlk_wg_nf_rivers_cfg_t r = {0};
     r.drain = &drain;
     r.elev = &elev;
     r.sea = 0.0f;
@@ -222,9 +204,15 @@ test_rivers_init_then_add_stage(void) {
     r.slot_mask = 0;
     r.slot_carve = 1;
 
-    rlk_wg_nf_rivers_init(&r);
-    assert(rlk_wg_nf_add_stage(&wg, rlk_wg_nf_rivers_stage, &r) == RLK_OK);
+    rlk_wg_nf_stage_t st = rlk_wg_nf_rivers(&r);
+    assert(st.data == &r);
+    /* cfg is const: zero defaults resolved in the stage, not written back. */
+    assert(r.bank_fade == 0.0f);
+    assert(r.valley_mult == 0.0f);
+
+    assert(rlk_wg_nf_add(&wg, st) == RLK_OK);
     assert(wg.nstages == 1);
+    assert(wg.stages[0].data == &r);
 
     rlk_wg_nf_init(&wg);
 
@@ -239,18 +227,16 @@ test_rivers_stage_all_underwater(void) {
     drain_setup();
 
     rlk_wg_nf_t wg = wg_min();
-    rlk_wg_nf_rivers_t r = {0};
+    rlk_wg_nf_rivers_cfg_t r = {0};
     r.drain = &drain;
     r.elev = &elev;
     r.sea = 100.0f;  /* everything underwater */
     r.acc_min = 1;
-    r.width_min = 2.0f;
-    r.width_max = 4.0f;
     r.valley_mult = 3.0f;
     r.slot_mask = 0;
     r.slot_carve = 1;
 
-    assert(rlk_wg_nf_rivers_add(&wg, &r) == RLK_OK);
+    assert(rlk_wg_nf_add(&wg, rlk_wg_nf_rivers(&r)) == RLK_OK);
     rlk_wg_nf_init(&wg);
 
     rlk_tilemap_t tm;
@@ -266,43 +252,24 @@ test_rivers_stage_all_underwater(void) {
         }
 }
 
-/* init: wig_tiles=0 disables wiggle fields, creek_width=0 disables creek */
-static void
-test_rivers_init_wiggle_creek_defaults(void) {
-    drain_setup();
-    rlk_wg_nf_rivers_t r = {0};
-    r.drain = &drain;
-    r.elev = &elev;
-    r.sea = 0.0f;
-    r.slot_mask = 0;
-    /* wig_tiles = 0 (default) -> f_wig_x/y should be NONE */
-    /* creek_width = 0 (default) -> f_creek should be NONE */
-    rlk_wg_nf_rivers_init(&r);
-    assert(r.f_wig_x == RLK_WG_NF_RIVERS_NONE);
-    assert(r.f_wig_y == RLK_WG_NF_RIVERS_NONE);
-    assert(r.f_creek == RLK_WG_NF_RIVERS_NONE);
-}
-
 /* Wiggle: with wiggle fields active, rivers are still detected (mask > 0 somewhere) */
 static void
 test_rivers_stage_wiggle(void) {
     drain_setup();
 
     rlk_wg_nf_t wg = wg_wiggle();
-    rlk_wg_nf_rivers_t r = {0};
+    rlk_wg_nf_rivers_cfg_t r = {0};
     r.drain = &drain;
     r.elev = &elev;
     r.sea = 0.0f;
     r.acc_min = 1;
-    r.width_min = 2.0f;
-    r.width_max = 4.0f;
     r.valley_mult = 3.0f;
     r.slot_mask = 0;
     r.slot_carve = 1;
     r.f_wig_x = 1;
     r.f_wig_y = 2;
     r.wig_tiles = 3.0f;
-    assert(rlk_wg_nf_rivers_add(&wg, &r) == RLK_OK);
+    assert(rlk_wg_nf_add(&wg, rlk_wg_nf_rivers(&r)) == RLK_OK);
     rlk_wg_nf_init(&wg);
 
     rlk_tilemap_t tm;
@@ -326,20 +293,18 @@ test_rivers_stage_creeks(void) {
     drain_setup();
 
     rlk_wg_nf_t wg = wg_wiggle();
-    rlk_wg_nf_rivers_t r = {0};
+    rlk_wg_nf_rivers_cfg_t r = {0};
     r.drain = &drain;
     r.elev = &elev;
     r.sea = 0.0f;
     r.acc_min = 1000;  /* no drainage rivers */
-    r.width_min = 2.0f;
-    r.width_max = 4.0f;
     r.valley_mult = 3.0f;
     r.slot_mask = 0;
     r.slot_carve = 1;
     r.f_creek = 3;
     r.creek_width = 3.0f;  /* wide creeks for reliable detection */
     r.creek_carve = 0.02f;
-    assert(rlk_wg_nf_rivers_add(&wg, &r) == RLK_OK);
+    assert(rlk_wg_nf_add(&wg, rlk_wg_nf_rivers(&r)) == RLK_OK);
     rlk_wg_nf_init(&wg);
 
     rlk_tilemap_t tm;
@@ -359,13 +324,11 @@ test_rivers_stage_creeks(void) {
 
 int
 main(void) {
-    test_rivers_init_defaults();
     test_rivers_stage_basic();
     test_rivers_stage_none_slots();
     test_rivers_stage_high_acc_min();
-    test_rivers_init_then_add_stage();
+    test_rivers_constructor();
     test_rivers_stage_all_underwater();
-    test_rivers_init_wiggle_creek_defaults();
     test_rivers_stage_wiggle();
     test_rivers_stage_creeks();
     return 0;

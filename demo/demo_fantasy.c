@@ -3,7 +3,7 @@
  *
  * Pipeline: elevation grid -> drain (rivers) -> wg_nf terrain
  *           -> POI detection (caves near rivers, dungeons on hills)
- *           -> local generation (wg_ca for caves, wg_bsp for dungeons)
+ *           -> local generation (ca for caves, bsp for dungeons)
  *
  * Terminal-only: no PXL dependency. Prints an ASCII map.
  */
@@ -92,7 +92,7 @@ main(void) {
     static uint8_t ca_grid[MAX_POI_SZ * MAX_POI_SZ];
     static int ca_regions[MAX_POI_SZ * MAX_POI_SZ];
     static uint8_t bsp_grid[MAX_POI_SZ * MAX_POI_SZ];
-    static rlk_wg_bsp_node_t bsp_nodes[RLK_WG_BSP_MAX_NODES];
+    static rlk_bsp_node_t bsp_nodes[RLK_BSP_MAX_NODES];
 
     /* Tilemap. */
     rlk_tilemap_t tm;
@@ -177,16 +177,16 @@ main(void) {
     };
 
     /* Stage 1: coarse elevation grid -> field[3]. */
-    rlk_wg_nf_grid_t grid_stage = {
+    rlk_wg_nf_grid_cfg_t grid_stage = {
         .grid = &elev,
         .slot = 0,
         .scale = 1.0f,
         .offset = 0.0f,
     };
-    rlk_wg_nf_grid_add(&nf, &grid_stage);
+    rlk_wg_nf_add(&nf, rlk_wg_nf_grid(&grid_stage));
 
     /* Stage 2: drain accumulation -> field[4], lake depth -> field[5]. */
-    rlk_wg_nf_drain_t drain_stage = {
+    rlk_wg_nf_drain_cfg_t drain_stage = {
         .drain = &drain,
         .elev = &elev,
         .sea = SEA_LEVEL,
@@ -195,10 +195,10 @@ main(void) {
         .slot_lake = 2,
         .acc_scale = 500.0f,
     };
-    rlk_wg_nf_drain_add(&nf, &drain_stage);
+    rlk_wg_nf_add(&nf, rlk_wg_nf_drain(&drain_stage));
 
     /* Stage 3: detect caves (high humidity = wet areas). */
-    rlk_wg_nf_poi_t poi_cave = {
+    rlk_wg_nf_poi_cfg_t poi_cave = {
         .list = &pois,
         .type = POI_CAVE,
         .salt = 0xCAFEULL,
@@ -207,10 +207,10 @@ main(void) {
         .density = 0.015f,
         .size = 32,
     };
-    rlk_wg_nf_poi_add(&nf, &poi_cave);
+    rlk_wg_nf_add(&nf, rlk_wg_nf_poi(&poi_cave));
 
     /* Stage 4: detect dungeons (coarse elevation grid = hills). */
-    rlk_wg_nf_poi_t poi_dungeon = {
+    rlk_wg_nf_poi_cfg_t poi_dungeon = {
         .list = &pois,
         .type = POI_DUNGEON,
         .salt = 0xD06EULL,
@@ -219,51 +219,58 @@ main(void) {
         .density = 0.015f,
         .size = 40,
     };
-    rlk_wg_nf_poi_add(&nf, &poi_dungeon);
+    rlk_wg_nf_add(&nf, rlk_wg_nf_poi(&poi_dungeon));
 
     /* Init and fill: generates terrain AND populates POI list. */
     rlk_wg_nf_init(&nf);
     rlk_wg_nf_fill(&nf, 0, 0, &tm);
 
-    /* Generate local content for each detected POI. */
+    /* Generate local content for each detected POI. Already-generated POIs
+       are reserved: a later POI overlapping an earlier bbox writes nothing
+       inside it (overlap rule of poi.h). */
+    static float win_buf[MAX_POI_SZ * MAX_POI_SZ];
+    static rlk_poi_t done_buf[256];
+    rlk_poi_list_t done = { done_buf, 0, 256 };
     for (int i = 0; i < pois.n; i++) {
         const rlk_poi_t *poi = &pois.v[i];
-        int sz = poi->bbox.w;
-        int ox = poi->bbox.x;
-        int oy = poi->bbox.y;
+        /* Window over the POI bbox (g->v is not read by fill). */
+        rlk_grid_t win = { .lattice = { .w = poi->bbox.w, .h = poi->bbox.h,
+                                        .cellsize = 1,
+                                        .origin_x = poi->bbox.x,
+                                        .origin_y = poi->bbox.y },
+                           .v = win_buf };
 
         if (poi->type == (uint32_t)POI_CAVE) {
-            static const rlk_wg_ca_wallfloor_t wf = {
+            static const rlk_ca_wallfloor_t wf = {
                 .wall_type = T_CAVE_WALL, .floor_type = T_CAVE_FLOOR,
             };
-            rlk_wg_ca_t ca = {
-                .width = sz, .height = sz,
+            rlk_ca_t ca = {
                 .seed = poi->seed,
                 .fill_prob = 0.45f,
                 .iterations = 5,
                 .connect = 1,
-                .write = rlk_wg_ca_write_wallfloor,
+                .write = rlk_ca_write_wallfloor,
                 .write_data = &wf,
                 .grid = ca_grid,
                 .region_ids = ca_regions,
             };
-            rlk_wg_ca_init(&ca);
-            rlk_wg_ca_fill(&ca, ox, oy, &tm);
+            rlk_ca_init(&ca);
+            rlk_ca_fill(&ca, &win, &tm, NULL, &done, NULL);
         } else if (poi->type == (uint32_t)POI_DUNGEON) {
-            static const rlk_wg_bsp_wallfloor_t wf = {
+            static const rlk_bsp_wallfloor_t wf = {
                 .wall_type = T_DUNGEON_WALL, .floor_type = T_DUNGEON_FLOOR,
             };
-            rlk_wg_bsp_t bsp = {
-                .width = sz, .height = sz,
+            rlk_bsp_t bsp = {
                 .seed = poi->seed,
-                .write = rlk_wg_bsp_write_wallfloor,
+                .write = rlk_bsp_write_wallfloor,
                 .write_data = &wf,
                 .grid = bsp_grid,
                 .nodes = bsp_nodes,
             };
-            rlk_wg_bsp_init(&bsp);
-            rlk_wg_bsp_fill(&bsp, ox, oy, &tm);
+            rlk_bsp_init(&bsp);
+            rlk_bsp_fill(&bsp, &win, &tm, NULL, &done, NULL);
         }
+        rlk_poi_push(&done, poi);  /* reserve this bbox for later POIs */
     }
 
     /* Output. */

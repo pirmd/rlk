@@ -1,14 +1,18 @@
 #ifndef RLK_WG_NF_RIVERS_H
 #define RLK_WG_NF_RIVERS_H
 
+/* layer: 3, domain: worldgen */
+
 /*
  * Optional wg_nf stage: project a pre-built rlk_drain_t drainage network
  * into per-tile river masks and valley carves.
  *
- * For each tile, scans nearby drain cells with accumulation >= acc_min and
- * computes the distance to the drainage segment (cell centre -> downstream
- * cell centre). The river mask is 1 at the segment, fading to 0 at `width`
- * tiles away. Width follows hydraulic geometry: ~ sqrt(acc), capped.
+ * The network is queried as a signed distance field (rlk_drain_river_sdf,
+ * constant cost per tile): < 0 in the channel, 0 on the bank, > 0 outside.
+ * The channel width follows hydraulic geometry inside the drain module
+ * (~ log2(acc), capped at cellsize tiles wide). The river mask is 1 in the
+ * channel, fading to 0 over `bank_fade` tiles past the bank. The valley
+ * carve is a quadratic profile with reach = valley_mult * cellsize.
  *
  * Outputs (derived fields):
  *   slot_mask  -> river mask [0,1] (0 = no river, 1 = river centre)
@@ -38,15 +42,16 @@
 
 #define RLK_WG_NF_RIVERS_NONE 255  /* slot value: do not write this output */
 
+/* Rivers stage configuration. Const after construction: zero defaults are
+   resolved inside the stage, the cfg is never mutated. */
 typedef struct {
     const rlk_drain_t *drain; /* pre-built drainage; must outlive the wg */
     const rlk_grid_t *elev;   /* elevation grid matching drain; must outlive the wg */
     float sea;                /* sea level (rivers only on land) */
 
     uint32_t acc_min;           /* min drainage area (cells) for a river segment */
-    float width_min;            /* water half-width at acc_min, tiles */
-    float width_max;            /* cap on half-width, tiles */
-    float valley_mult;          /* valley half-width = valley_mult * width (>= 1) */
+    float bank_fade;            /* mask fade width past the bank, tiles (0 -> 1.0) */
+    float valley_mult;          /* valley reach = valley_mult * cellsize (>= 1) */
     float carve;                /* valley depth at centre, elevation units (>= 0) */
 
     uint8_t slot_mask;          /* derived field for river mask [0,1] */
@@ -65,15 +70,9 @@ typedef struct {
     uint8_t f_creek;            /* sampled noise field for creeks, or NONE */
     float   creek_width;        /* creek half-width in tiles */
     float   creek_carve;        /* creek valley depth, elevation units */
-} rlk_wg_nf_rivers_t;
+} rlk_wg_nf_rivers_cfg_t;
 
-/* Stage function (use directly with rlk_wg_nf_add_stage if managing stages by hand). */
-void rlk_wg_nf_rivers_stage(rlk_wg_nf_ctx_t *ctx, const void *data);
-
-/* Resolve zero defaults. Call once after filling. */
-void rlk_wg_nf_rivers_init(rlk_wg_nf_rivers_t *r);
-
-/* Init r, then register it as a stage of wg. r must outlive the wg. */
-rlk_err_t rlk_wg_nf_rivers_add(rlk_wg_nf_t *wg, rlk_wg_nf_rivers_t *r);
+/* Build a stage from a const config. The cfg must outlive the wg. */
+rlk_wg_nf_stage_t rlk_wg_nf_rivers(const rlk_wg_nf_rivers_cfg_t *cfg);
 
 #endif /* RLK_WG_NF_RIVERS_H */

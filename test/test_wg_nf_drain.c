@@ -63,25 +63,13 @@ drain_setup(void) {
     assert(rlk_drain_build(&drain, &elev, -1.0f, scratch) == RLK_OK);
 }
 
-/* init: acc_scale 0 -> 1.0 */
-static void
-test_drain_init_defaults(void) {
-    drain_setup();
-    rlk_wg_nf_drain_t f = {0};
-    f.drain = &drain;
-    f.elev = &elev;
-    f.sea = 0.0f;
-    rlk_wg_nf_drain_init(&f);
-    assert(f.acc_scale == 1.0f);
-}
-
 /* Basic: stage writes acc/dir/lake into derived fields. */
 static void
 test_drain_stage_basic(void) {
     drain_setup();
 
     rlk_wg_nf_t wg = wg_min();
-    rlk_wg_nf_drain_t f = {0};
+    rlk_wg_nf_drain_cfg_t f = {0};
     f.drain = &drain;
     f.elev = &elev;
     f.sea = -1.0f;
@@ -90,7 +78,7 @@ test_drain_stage_basic(void) {
     f.slot_lake = 2;
     f.acc_scale = (float)(FW * FH);
 
-    assert(rlk_wg_nf_drain_add(&wg, &f) == RLK_OK);
+    assert(rlk_wg_nf_add(&wg, rlk_wg_nf_drain(&f)) == RLK_OK);
     rlk_wg_nf_init(&wg);
 
     rlk_tilemap_t tm;
@@ -120,7 +108,7 @@ test_drain_stage_none_slots(void) {
     drain_setup();
 
     rlk_wg_nf_t wg = wg_min();
-    rlk_wg_nf_drain_t f = {0};
+    rlk_wg_nf_drain_cfg_t f = {0};
     f.drain = &drain;
     f.elev = &elev;
     f.sea = -1.0f;
@@ -128,7 +116,7 @@ test_drain_stage_none_slots(void) {
     f.slot_dir = RLK_WG_NF_DRAIN_NONE;
     f.slot_lake = RLK_WG_NF_DRAIN_NONE;
 
-    assert(rlk_wg_nf_drain_add(&wg, &f) == RLK_OK);
+    assert(rlk_wg_nf_add(&wg, rlk_wg_nf_drain(&f)) == RLK_OK);
     rlk_wg_nf_init(&wg);
 
     rlk_tilemap_t tm;
@@ -140,13 +128,14 @@ test_drain_stage_none_slots(void) {
     assert(t);
 }
 
-/* Power-user: init then add_stage manually. */
+/* Constructor builds a stage from a const config (fn is static, only the
+   data pointer is checkable). */
 static void
-test_drain_init_then_add_stage(void) {
+test_drain_constructor(void) {
     drain_setup();
 
     rlk_wg_nf_t wg = wg_min();
-    rlk_wg_nf_drain_t f = {0};
+    rlk_wg_nf_drain_cfg_t f = {0};
     f.drain = &drain;
     f.elev = &elev;
     f.sea = -1.0f;
@@ -154,11 +143,14 @@ test_drain_init_then_add_stage(void) {
     f.slot_dir = 1;
     f.slot_lake = 2;
 
-    rlk_wg_nf_drain_init(&f);
-    assert(f.acc_scale == 1.0f);
-    assert(rlk_wg_nf_add_stage(&wg, rlk_wg_nf_drain_stage, &f) == RLK_OK);
+    rlk_wg_nf_stage_t st = rlk_wg_nf_drain(&f);
+    assert(st.data == &f);
+    /* cfg is const: acc_scale 0 -> 1.0 resolved in the stage, not written back. */
+    assert(f.acc_scale == 0.0f);
+
+    assert(rlk_wg_nf_add(&wg, st) == RLK_OK);
     assert(wg.nstages == 1);
-    assert(wg.stages[0].fn == rlk_wg_nf_drain_stage);
+    assert(wg.stages[0].data == &f);
 
     rlk_wg_nf_init(&wg);
 
@@ -173,31 +165,23 @@ test_drain_limit_too_many_stages(void) {
     drain_setup();
 
     rlk_wg_nf_t wg = wg_min();
-    for (int i = 0; i < RLK_WG_NF_MAX_STAGES; i++) {
-        rlk_wg_nf_drain_t f = {0};
-        f.drain = &drain;
-        f.elev = &elev;
-        f.slot_acc = 0;
-        f.slot_dir = 1;
-        f.slot_lake = 2;
-        assert(rlk_wg_nf_drain_add(&wg, &f) == RLK_OK);
-    }
-
-    rlk_wg_nf_drain_t f = {0};
+    rlk_wg_nf_drain_cfg_t f = {0};
     f.drain = &drain;
     f.elev = &elev;
     f.slot_acc = 0;
     f.slot_dir = 1;
     f.slot_lake = 2;
-    assert(rlk_wg_nf_drain_add(&wg, &f) == RLK_E_INVALID);
+    for (int i = 0; i < RLK_WG_NF_MAX_STAGES; i++)
+        assert(rlk_wg_nf_add(&wg, rlk_wg_nf_drain(&f)) == RLK_OK);
+
+    assert(rlk_wg_nf_add(&wg, rlk_wg_nf_drain(&f)) == RLK_E_INVALID);
 }
 
 int
 main(void) {
-    test_drain_init_defaults();
     test_drain_stage_basic();
     test_drain_stage_none_slots();
-    test_drain_init_then_add_stage();
+    test_drain_constructor();
     test_drain_limit_too_many_stages();
     return 0;
 }

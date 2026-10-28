@@ -39,6 +39,8 @@ Headers:
   tilemap.h            # 2D grid with occupancy
   slope.h              # Slope from an elevation grid (Horn 3x3)
   drain.h              # Drainage: depression filling, D8 flow, accumulation, river SDF
+  path.h               # A* pathfinding (integer costs, lattice window)
+  fov.h                # Field of view (recursive shadowcasting)
 
 World generation:
   wg_nf.h              # Noise-field world generation (infinite terrain)
@@ -48,21 +50,11 @@ World generation:
   wg_nf_rivers.h       # Project drain network into per-tile river masks
   wg_nf_relief.h       # Standardised elevation (domain warp, fjords, lapse)
   wg_nf_poi.h          # Detect Points of Interest during wg_nf fill
-  wg_flow.h            # Hydrology on a coarse grid: pits, D8 drainage, accumulation
-  wg_poi.h             # Points of interest (fixed-capacity list, no allocation)
-  wg_ca.h              # Cellular Automata (caves, organic structures)
-  wg_bsp.h             # Binary Space Partitioning (rooms + corridors)
+  ca.h                 # Cellular Automata (caves, organic structures)
+  bsp.h                # Binary Space Partitioning (rooms + corridors)
 
 Demos:
   demo/demo_tilemap_viewer.c  # Interactive terrain viewer (PXL)
-
-Documentation:
-  doc/architecture.md  # Target architecture (layers, modules, migration state)
-  doc/conventions.md   # Naming rules, determinism contract, GIS glossary
-  doc/worldgen.md      # World generation overview (all modules)
-  doc/wg_nf.md         # Noise-field world generation guide
-  doc/ca.md            # Cellular Automata guide
-  doc/bsp.md           # BSP dungeon generation guide
 
 License:
   MIT. See LICENSE.

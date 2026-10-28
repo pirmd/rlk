@@ -1,6 +1,8 @@
 #ifndef RLK_WG_NF_H
 #define RLK_WG_NF_H
 
+/* layer: 3, domain: worldgen */
+
 /*
  * Deterministic, chunked world generation via noise fields.
  *
@@ -155,8 +157,11 @@ float rlk_wg_nf_sample_field(const rlk_wg_nf_t *wg, int idx, float x, float y);
 /* --- PUBLIC API ---------------------------------------------------------- */
 
 /* Register a pipeline stage. Returns RLK_E_INVALID if the stage table is full.
- * `data` must outlive the wg. Call before rlk_wg_nf_init(). */
-rlk_err_t rlk_wg_nf_add_stage(rlk_wg_nf_t *wg, rlk_wg_nf_stage_fn fn, const void *data);
+ * The stage's `data` must outlive the wg. Call before rlk_wg_nf_init().
+ * Ready-made stages: rlk_wg_nf_<module>(&cfg) builds a stage from a const
+ * config. A custom stage is registered as
+ * rlk_wg_nf_add(&wg, (rlk_wg_nf_stage_t){ .fn = my_fn, .data = &cfg }). */
+rlk_err_t rlk_wg_nf_add(rlk_wg_nf_t *wg, rlk_wg_nf_stage_t stage);
 
 /* Initialize: resolves zero defaults (octaves->3, gain->0.5), validates
    (safety asserts), and seeds the noise generators.

@@ -227,7 +227,7 @@ test_classify_depth_edge(void) {
         wg.zones[1] = (rlk_wg_nf_zone_t){ .lo = {0.5f, -RLK_WG_NF_OPEN},
                                            .hi = {1.0f, RLK_WG_NF_OPEN},
                                            .write = write_capture };
-        assert(rlk_wg_nf_add_stage(&wg, stage_const_field0, &cs[i]) == RLK_OK);
+        assert(rlk_wg_nf_add(&wg, (rlk_wg_nf_stage_t){ .fn = stage_const_field0, .data = &cs[i] }) == RLK_OK);
         rlk_wg_nf_init(&wg);
 
         g_ctx_count = 0;
@@ -270,7 +270,7 @@ static void
 test_single_zone_edge_zero(void) {
     rlk_wg_nf_t wg = wg_min();
     float c = 0.5f;
-    assert(rlk_wg_nf_add_stage(&wg, stage_const_field0, &c) == RLK_OK);
+    assert(rlk_wg_nf_add(&wg, (rlk_wg_nf_stage_t){ .fn = stage_const_field0, .data = &c }) == RLK_OK);
     wg.zones[0].write = write_capture;
     rlk_wg_nf_init(&wg);
 
@@ -311,7 +311,7 @@ test_zone3_classification(void) {
         wg.zones[1] = (rlk_wg_nf_zone_t){ .lo = {-RLK_WG_NF_OPEN, -RLK_WG_NF_OPEN, 0.5f},
                                            .hi = { RLK_WG_NF_OPEN,  RLK_WG_NF_OPEN, 1.0f},
                                            .write = write_capture };
-        assert(rlk_wg_nf_add_stage(&wg, stage_const_field2, &cs[i]) == RLK_OK);
+        assert(rlk_wg_nf_add(&wg, (rlk_wg_nf_stage_t){ .fn = stage_const_field2, .data = &cs[i] }) == RLK_OK);
         rlk_wg_nf_init(&wg);
 
         g_ctx_count = 0;
@@ -391,7 +391,7 @@ test_stages_derive(void) {
     wg.nsampled = 2;
     wg.fields[1] = (rlk_wg_nf_field_t){ .freq = 0.02f };
     wg.nderived = 1;
-    assert(rlk_wg_nf_add_stage(&wg, stage_derive_avg, NULL) == RLK_OK);
+    assert(rlk_wg_nf_add(&wg, (rlk_wg_nf_stage_t){ .fn = stage_derive_avg, .data = NULL }) == RLK_OK);
     wg.zones[0].write = write_fields012;
     rlk_wg_nf_init(&wg);
 
@@ -428,7 +428,7 @@ test_derived_slot_axis(void) {
     wg.zones[1] = (rlk_wg_nf_zone_t){ .lo = {-RLK_WG_NF_OPEN, 0.5f},
                                        .hi = { RLK_WG_NF_OPEN, 1.0f},
                                        .write = write_field0 };
-    assert(rlk_wg_nf_add_stage(&wg, stage_derive_complement, NULL) == RLK_OK);
+    assert(rlk_wg_nf_add(&wg, (rlk_wg_nf_stage_t){ .fn = stage_derive_complement, .data = NULL }) == RLK_OK);
     rlk_wg_nf_init(&wg);
 
     rlk_tilemap_t tm;
@@ -489,24 +489,25 @@ test_zone_classification_2d(void) {
         assert(zone_count[i] > 0);
 }
 
-/* rlk_wg_nf_add_stage appends stages and rejects overflow. */
+/* rlk_wg_nf_add appends stages and rejects overflow. */
 static void
-test_rlk_wg_nf_add_stage(void) {
+test_rlk_wg_nf_add(void) {
     rlk_wg_nf_t wg = wg_min();
     float c = 0.5f;
+    rlk_wg_nf_stage_t st = { .fn = stage_const_field0, .data = &c };
 
-    assert(rlk_wg_nf_add_stage(&wg, stage_const_field0, &c) == RLK_OK);
+    assert(rlk_wg_nf_add(&wg, st) == RLK_OK);
     assert(wg.nstages == 1);
-    assert(wg.stages[0].fn == stage_const_field0);
+    assert(wg.stages[0].fn == st.fn);
     assert(wg.stages[0].data == &c);
 
     /* Fill remaining slots. */
     for (int i = 1; i < RLK_WG_NF_MAX_STAGES; i++)
-        assert(rlk_wg_nf_add_stage(&wg, stage_const_field0, &c) == RLK_OK);
+        assert(rlk_wg_nf_add(&wg, st) == RLK_OK);
     assert(wg.nstages == RLK_WG_NF_MAX_STAGES);
 
     /* Table full. */
-    assert(rlk_wg_nf_add_stage(&wg, stage_const_field0, &c) == RLK_E_INVALID);
+    assert(rlk_wg_nf_add(&wg, st) == RLK_E_INVALID);
     assert(wg.nstages == RLK_WG_NF_MAX_STAGES);
 }
 
@@ -529,6 +530,6 @@ main(void) {
     test_rlk_wg_nf_rand_deterministic();
     test_rlk_wg_nf_rand_different_salt();
     test_zone_classification_2d();
-    test_rlk_wg_nf_add_stage();
+    test_rlk_wg_nf_add();
     return 0;
 }

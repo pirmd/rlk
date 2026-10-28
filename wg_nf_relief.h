@@ -1,6 +1,8 @@
 #ifndef RLK_WG_NF_RELIEF_H
 #define RLK_WG_NF_RELIEF_H
 
+/* layer: 3, domain: worldgen */
+
 /*
  * Optional wg_nf stage: compute a standardised elevation field from sampled
  * noise fields, with domain warp, mountains, rivers, fjords and altitudinal
@@ -35,6 +37,8 @@
 /* Smallest noise slope used to turn a noise difference into a distance. */
 #define RLK_WG_NF_RELIEF_MIN_GRAD 0.004f
 
+/* Relief stage configuration. Const after construction: zero defaults are
+   resolved inside the stage, the cfg is never mutated. */
 typedef struct {
     /* --- Sampled field indices (0..nsampled-1, or NONE) --- */
     uint8_t f_cont;       /* continent field (required, low freq ~0.004) */
@@ -76,15 +80,9 @@ typedef struct {
     float fjord_reach;    /* only within this much cont above sea */
     float fjord_cold0;    /* fully active below temp = cold0 */
     float fjord_cold1;    /* off above temp = cold1 */
-} rlk_wg_nf_relief_t;
+} rlk_wg_nf_relief_cfg_t;
 
-/* Stage function (use directly with rlk_wg_nf_add_stage if managing stages by hand). */
-void rlk_wg_nf_relief_stage(rlk_wg_nf_ctx_t *ctx, const void *data);
-
-/* Resolve zero defaults. Call once after filling. */
-void rlk_wg_nf_relief_init(rlk_wg_nf_relief_t *r);
-
-/* Init r, then register it as a stage of wg. r must outlive the wg. */
-rlk_err_t rlk_wg_nf_relief_add(rlk_wg_nf_t *wg, rlk_wg_nf_relief_t *r);
+/* Build a stage from a const config. The cfg must outlive the wg. */
+rlk_wg_nf_stage_t rlk_wg_nf_relief(const rlk_wg_nf_relief_cfg_t *cfg);
 
 #endif /* RLK_WG_NF_RELIEF_H */
