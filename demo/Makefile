@@ -44,6 +44,11 @@ lint:
 	$(CC) -Werror -fsyntax-only $(CFLAGS) $(CFLAGS_LINT) $(d).c
 .endfor
 
+lint:
+.for d in $(DEMO_PXL) $(DEMO_TXT) tilemap_gen
+	$(CC) -Werror -fsyntax-only $(CFLAGS) $(CFLAGS_LINT) $(d).c
+.endfor
+
 clean:
 	rm -f $(DEMO)
 

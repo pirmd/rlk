@@ -55,7 +55,6 @@ static inline int
 rlk_rng_next_range(rlk_rng_t *rng, int lo, int hi) {
     assert(lo <= hi);
     uint64_t span = (uint64_t)hi - (uint64_t)lo;
-    assert(span <= UINT32_MAX);
 
     if (span == 0) return lo;
     uint64_t threshold = UINT64_MAX - (UINT64_MAX % (span + 1));

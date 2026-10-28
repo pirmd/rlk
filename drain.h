@@ -48,12 +48,9 @@
 #include "grid.h"
 #include "mask.h"
 
-#define RLK_DRAIN_MAX_CELLS  (1 << 20)  /* Maximum cells for single-pass processing */
 #define RLK_DRAIN_OUTLET     8          /* dir value: drains out of the domain */
 #define RLK_DRAIN_SCALE      256.0f     /* quantization: 1/256 elevation units */
 #define RLK_DRAIN_FAR        1.0e9f     /* river_sdf: no network segment nearby */
-/* number of uint64_t elements to provide in scratch (remove_pits and build) */
-#define RLK_DRAIN_SCRATCH(w, h)  ((size_t)(w) * (size_t)(h))
 
 /* Drainage data: caller-owned buffers. */
 typedef struct {

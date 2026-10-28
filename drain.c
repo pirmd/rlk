@@ -10,6 +10,9 @@
    Unreachable through rlk_drain_quant() (clamped to 65534). */
 #define RLK_DRAIN_UNVISITED  ((uint16_t)0xFFFF)
 
+/* Maximum cells for single-pass processing. */
+#define RLK_DRAIN_MAX_CELLS  (1 << 20)
+
 /* Binary min-heap of packed 64-bit keys.
    key = level << 40 | serial << 20 | cell : ordered by level, then FIFO. */
 

@@ -26,14 +26,6 @@ rlk_rect_contains(const rlk_rect_t *r, int x, int y) {
     return x >= r->x && x < r->x + r->w && y >= r->y && y < r->y + r->h;
 }
 
-/* 1 if a and b share at least one tile. */
-static inline int
-rlk_rect_overlaps(const rlk_rect_t *a, const rlk_rect_t *b) {
-    assert(a && b);
-    return a->x < b->x + b->w && b->x < a->x + a->w
-        && a->y < b->y + b->h && b->y < a->y + a->h;
-}
-
 /* Intersection of a and b. Returns 1 and sets *out if non-empty, else 0. */
 static inline int
 rlk_rect_intersect(rlk_rect_t *out, const rlk_rect_t *a, const rlk_rect_t *b) {
@@ -74,15 +66,6 @@ rlk_lattice_same(const rlk_lattice_t *a, const rlk_lattice_t *b) {
     assert(a && b);
     return a->w == b->w && a->h == b->h
         && a->cellsize == b->cellsize && a->origin_x == b->origin_x && a->origin_y == b->origin_y;
-}
-
-/* Tile-aligned lattice (cellsize = 1) covering the rect. */
-static inline rlk_lattice_t
-rlk_lattice_from_rect(const rlk_rect_t *r) {
-    assert(r);
-    rlk_lattice_t l = { .w = r->w, .h = r->h, .cellsize = 1,
-                        .origin_x = r->x, .origin_y = r->y };
-    return l;
 }
 
 #endif /* RLK_GEOM_H */

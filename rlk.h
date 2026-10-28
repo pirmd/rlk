@@ -2,8 +2,9 @@
 #define RLK_H
 
 /*
- * Umbrella header - includes all public API headers.
- * For finer granularity, include individual headers directly.
+ * Umbrella header - includes all public API headers, grouped by layer
+ * (see doc/architecture.md). For finer granularity, include individual
+ * headers directly.
  */
 
 /* Layer 0: core */
@@ -20,7 +21,7 @@
 #include "poi.h"
 #include "tilemap.h"
 
-/* Layer 2: algorithms (terrain + spatial) */
+/* Layer 2: terrain (slope, drain) + spatial (path, fov) */
 #include "slope.h"
 #include "drain.h"
 #include "path.h"

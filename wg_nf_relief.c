@@ -5,6 +5,9 @@
 
 #include "fmath.h"
 
+/* Smallest noise slope used to turn a noise difference into a distance. */
+#define RLK_WG_NF_RELIEF_MIN_GRAD 0.004f
+
 /* Smoothstep between lo and hi (t in [0,1] mapped to [lo,hi]). */
 static inline float
 smoothstep_between(float lo, float hi, float t) {

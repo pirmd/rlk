@@ -29,7 +29,6 @@
 #include "tilemap.h"
 
 #define RLK_PATH_BLOCKED   0        /* enter cost: the cell cannot be entered */
-#define RLK_PATH_MAX_CELLS (1 << 20) /* window size limit (scratch is ~17 B/cell) */
 
 /* Cost source: a per-cell table OR a callback, exactly one must be set.
    Costs are 0..255: RLK_PATH_BLOCKED (0) = blocked, 1..255 = enter cost. */
@@ -54,7 +53,7 @@ typedef struct {
    tile coordinates, start first, goal last (*out_len >= 1).
    RLK_E_NOTFOUND if the goal is unreachable or blocked.
    RLK_E_INVALID if a coordinate is outside the window, the window exceeds
-   RLK_PATH_MAX_CELLS, no cost source is set, or cap < *out_len. */
+   the built-in limit (1<<20 cells), no cost source is set, or cap < *out_len. */
 rlk_err_t rlk_path_find(const rlk_path_cost_t *cost, rlk_path_scratch_t *scr,
                         int sx, int sy, int gx, int gy,
                         int *out, int cap, int *out_len);

@@ -73,6 +73,91 @@ test_rlk_tilemap_get_const(void) {
 	fixture_teardown();
 }
 
+/* rlk_tilemap_set tests ------------------------------------------------------- */
+
+static void
+test_rlk_tilemap_set_writes(void) {
+	fixture_setup();
+	memset(g_buf, 0, sizeof(g_buf));
+	rlk_tile_t t = { .type = 7, .flags = RLK_TILE_WALKABLE, .biome = 2,
+	                 .variant = 3, .depth = 1 };
+	rlk_tilemap_set(&g_tm, 1, 1, t);
+	const rlk_tile_t *back = rlk_tilemap_get(&g_tm, 1, 1);
+	assert(back != NULL);
+	assert(back->type == 7 && back->flags == RLK_TILE_WALKABLE
+	       && back->biome == 2 && back->variant == 3 && back->depth == 1);
+	fixture_teardown();
+}
+
+static void
+test_rlk_tilemap_set_outside_ignored(void) {
+	fixture_setup();
+	memset(g_buf, 0, sizeof(g_buf));
+	rlk_tile_t t = { .type = 9 };
+	rlk_tilemap_set(&g_tm, -1, 0, t); /* no effect, no crash */
+	rlk_tilemap_set(&g_tm, FIXTURE_W, FIXTURE_H, t);
+	assert(rlk_tilemap_get(&g_tm, 0, 0)->type == 0);
+	fixture_teardown();
+}
+
+/* rlk_tilemap_line tests ------------------------------------------------------ */
+
+static void
+test_rlk_tilemap_line_horizontal(void) {
+	fixture_setup();
+	memset(g_buf, 0, sizeof(g_buf));
+	rlk_tile_t t = { .type = 5 };
+	rlk_tilemap_line(&g_tm, 0, 1, 3, 1, 1, t);
+	for (int x = 0; x < FIXTURE_W; x++)
+		assert(rlk_tilemap_get(&g_tm, x, 1)->type == 5);
+	assert(rlk_tilemap_get(&g_tm, 0, 0)->type == 0);
+	assert(rlk_tilemap_get(&g_tm, 0, 2)->type == 0);
+	fixture_teardown();
+}
+
+static void
+test_rlk_tilemap_line_diagonal(void) {
+	fixture_setup();
+	memset(g_buf, 0, sizeof(g_buf));
+	rlk_tile_t t = { .type = 5 };
+	rlk_tilemap_line(&g_tm, 0, 0, 3, 2, 1, t);
+	/* Bresenham pixels: (0,0) (1,1) (2,1) (3,2) */
+	assert(rlk_tilemap_get(&g_tm, 0, 0)->type == 5);
+	assert(rlk_tilemap_get(&g_tm, 1, 1)->type == 5);
+	assert(rlk_tilemap_get(&g_tm, 2, 1)->type == 5);
+	assert(rlk_tilemap_get(&g_tm, 3, 2)->type == 5);
+	assert(rlk_tilemap_get(&g_tm, 0, 1)->type == 0);
+	assert(rlk_tilemap_get(&g_tm, 3, 1)->type == 0);
+	assert(rlk_tilemap_get(&g_tm, 2, 2)->type == 0);
+	fixture_teardown();
+}
+
+static void
+test_rlk_tilemap_line_brush_width3(void) {
+	fixture_setup();
+	memset(g_buf, 0, sizeof(g_buf));
+	rlk_tile_t t = { .type = 5 };
+	rlk_tilemap_line(&g_tm, 1, 1, 1, 1, 3, t); /* single point, 3x3 brush */
+	for (int y = 0; y <= 2; y++)
+		for (int x = 0; x <= 2; x++)
+			assert(rlk_tilemap_get(&g_tm, x, y)->type == 5);
+	assert(rlk_tilemap_get(&g_tm, 3, 1)->type == 0); /* outside the brush */
+	fixture_teardown();
+}
+
+static void
+test_rlk_tilemap_line_clipped(void) {
+	fixture_setup();
+	memset(g_buf, 0, sizeof(g_buf));
+	rlk_tile_t t = { .type = 5 };
+	rlk_tilemap_line(&g_tm, -2, 0, 1, 0, 1, t); /* clipped to the tilemap */
+	assert(rlk_tilemap_get(&g_tm, 0, 0)->type == 5);
+	assert(rlk_tilemap_get(&g_tm, 1, 0)->type == 5);
+	assert(rlk_tilemap_get(&g_tm, 2, 0)->type == 0);
+	assert(rlk_tilemap_get(&g_tm, 3, 0)->type == 0);
+	fixture_teardown();
+}
+
 /* Edge case tests ------------------------------------------------------ */
 
 static void
@@ -97,6 +182,14 @@ main(void) {
 	test_rlk_tilemap_get_valid();
 	test_rlk_tilemap_get_invalid();
 	test_rlk_tilemap_get_const();
+
+	/* rlk_tilemap_set / rlk_tilemap_line tests */
+	test_rlk_tilemap_set_writes();
+	test_rlk_tilemap_set_outside_ignored();
+	test_rlk_tilemap_line_horizontal();
+	test_rlk_tilemap_line_diagonal();
+	test_rlk_tilemap_line_brush_width3();
+	test_rlk_tilemap_line_clipped();
 
 	/* Edge cases */
 	test_rlk_tilemap_init_buffer_exact_size();

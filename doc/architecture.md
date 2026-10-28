@@ -159,7 +159,7 @@ Header-only (`static inline` functions).
 | `poi.h` (ex `wg_poi.h`) | `rlk_poi_t`, `rlk_poi_list_t`: points of interest | worldgen, ecs spawners, region regen |
 | `tilemap.h` | `rlk_tilemap_t`, `rlk_tile_t`, [+] `rlk_tile_props_t`, [+] `rlk_tilemap_line` | everything |
 
-### geom.h [+]
+Modules:
 
 Two cross-cutting types: `rlk_rect_t` (region / window / footprint) and
 `rlk_lattice_t` (lattice laid over the world). Same layout as pxl rects
@@ -677,6 +677,7 @@ for (int i = 0; i < q.n; i++) {            /* q.n may grow during the loop */
     case POI_DUNGEON: rlk_bsp_fill(&bsp, tm, &p, &q); break;
     case POI_CAVE:    rlk_ca_fill (&ca,  tm, &p, &q); break;
     }
+    rlk_poi_push(&done, p);   /* reserve the bbox for the next POIs */
 }
 ```
 
@@ -783,12 +784,14 @@ for (int j = 0; j < GH; j++)
         cost_buf[j * GW + i] = elev.v[j * GW + i] < SEA_LEVEL ? 0
             : (uint16_t)rlk_clampf(
                   1.0f + 20.0f * rlk_slope_at(&elev, i, j, ELEV_ZSCALE),
-                  1.0f, 65535.0f);
+                  1.0f, 255.0f);
+    }
 
-static uint32_t path_scratch[RLK_PATH_SCRATCH(GW, GH)];
-int cells[512], n;
-if (rlk_path_find(cells, 512, &n, &cost, vx0, vy0, vx1, vy1, path_scratch) == RLK_OK)
-    rlk_path_draw(&tm, &cost.lattice, cells, n, 1, (rlk_tile_t){ .type = TILE_ROAD });
+/* Caller-owned scratch, w*h each (declaration: path.h) */
+rlk_path_scratch_t scr = { g, parent, heap, heap_pos, closed };
+int path[2 * 512], n;   /* 512 points max, as (x,y) pairs */
+if (rlk_path_find(&cost, &scr, vx0, vy0, vx1, vy1, path, 512, &n) == RLK_OK)
+    rlk_path_draw(&tm, path, n, 1, (rlk_tile_t){ .type = TILE_ROAD });
 ```
 
 ### Level 2c - In-game navigation (base + spatial)
@@ -819,10 +822,10 @@ rlk_mask_from_tilemap(&walkable, &tm, &props, RLK_TILE_WALKABLE, &dirty);
 
 /* Dynamic cost: terrain + blocking entities */
 typedef struct { const rlk_mask_t *walk; const void *ecs; } nav_t;
-static uint16_t nav_cost(void *user, int x, int y) {
+static int nav_cost(void *user, int x, int y) {
     const nav_t *nav = user;
-    if (!rlk_mask_allows(nav->walk, x, y)) return 0;
-    return entity_blocks(nav->ecs, x, y) ? 0 : 1;
+    if (!rlk_mask_allows(nav->walk, x, y)) return RLK_PATH_BLOCKED;
+    return entity_blocks(nav->ecs, x, y) ? RLK_PATH_BLOCKED : 1;
 }
 
 /* Search bounded to 64x64 tiles around the player */
@@ -830,22 +833,18 @@ rlk_rect_t area = { px - 32, py - 32, 64, 64 };
 rlk_lattice_t win = rlk_lattice_from_rect(&area);
 static uint32_t nav_scratch[RLK_PATH_SCRATCH(64, 64)];
 nav_t nav = { &walkable, ecs };
-int cells[256], n;
-rlk_err_t e = rlk_path_find_fn(cells, 256, &n, &win, nav_cost, &nav,
-                               px, py, tx, ty, nav_scratch);
+rlk_path_cost_t cost = { .lattice = win, .fn = nav_cost, .ctx = &nav };
+/* Caller-owned scratch, w*h each (declaration: path.h) */
+rlk_path_scratch_t scr = { g, parent, heap, heap_pos, closed };
+int path[2 * 256], n;   /* 256 points max, as (x,y) pairs */
+rlk_err_t e = rlk_path_find(&cost, &scr, px, py, tx, ty, path, 256, &n);
 ```
 
 ### Level 3 - Full `wg_nf` pipeline (base + worldgen)
 
 "I want relief + rivers + lakes + POIs, automatically."
 
-```c
-#include "wg_nf.h"
-#include "wg_nf_grid.h"
-#include "wg_nf_drain.h"
-#include "wg_nf_relief.h"
-#include "wg_nf_rivers.h"
-#include "wg_nf_poi.h"
+### Level 4: Composition (base + worldgen + spatial)
 
 rlk_wg_nf_t wg;
 rlk_wg_nf_init(&wg, seed, nsampled, nderived);
@@ -905,15 +904,3 @@ migration plan.
 - Golden tests (tilemap hash for fixed seeds; paths for fixed grids)
 - `RLK_*_SCRATCH` macros in each concerned module
 - CI script: checks `#include`s per layer and domain independence
-
----
-
-## Analogy with pxl
-
-| pxl | rlk |
-|-----|-----|
-| Core (`pxl.h`): window, events, input | Base (layers 0-1): `err`, `hash`, `fmath`, `noise`, `rng`, `geom`, `grid`, `mask`, `poi`, `tilemap` |
-| Optionals (`app.h`, `layout.h`, `ui.h`) | Domains: terrain (`slope`, `drain`), spatial (`path`, `fov`), worldgen (`wg_nf`, `ca`, `bsp`) |
-
-The user picks their base then their domains: the base alone is enough
-for a custom variant, each domain adds on without pulling the others.

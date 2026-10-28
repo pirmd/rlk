@@ -34,9 +34,6 @@
 
 #define RLK_WG_NF_RELIEF_NONE 255  /* field index: disabled */
 
-/* Smallest noise slope used to turn a noise difference into a distance. */
-#define RLK_WG_NF_RELIEF_MIN_GRAD 0.004f
-
 /* Relief stage configuration. Const after construction: zero defaults are
    resolved inside the stage, the cfg is never mutated. */
 typedef struct {

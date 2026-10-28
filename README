@@ -27,31 +27,41 @@ Documentation:
 
 Headers:
   rlk.h                # Umbrella header (includes all of the below)
-  err.h                # Error handling
-  hash.h               # Seed/coordinate hashing
-  fmath.h              # Math helpers
-  noise.h              # Noise generation (value, perlin, fbm)
-  rng.h                # Deterministic PRNG (splitmix64)
-  geom.h               # Rect (region) + lattice (grid geometry on world)
-  grid.h               # Coarse float grid with bilinear sampling
-  mask.h               # Uint8 mask (weight, density, visibility) + constructors
-  poi.h                # Points of Interest (anchor, bbox, type, seed)
-  tilemap.h            # 2D grid with occupancy
-  slope.h              # Slope from an elevation grid (Horn 3x3)
-  drain.h              # Drainage: depression filling, D8 flow, accumulation, river SDF
-  path.h               # A* pathfinding (integer costs, lattice window)
-  fov.h                # Field of view (recursive shadowcasting)
 
-World generation:
-  wg_nf.h              # Noise-field world generation (infinite terrain)
-  wg_nf_modulator.h    # Voronoi modulation stage for wg_nf
-  wg_nf_grid.h         # Sample a coarse grid into wg_nf fields
-  wg_nf_drain.h        # Read drain data into wg_nf fields
-  wg_nf_rivers.h       # Project drain network into per-tile river masks
-  wg_nf_relief.h       # Standardised elevation (domain warp, fjords, lapse)
-  wg_nf_poi.h          # Detect Points of Interest during wg_nf fill
-  ca.h                 # Cellular Automata (caves, organic structures)
-  bsp.h                # Binary Space Partitioning (rooms + corridors)
+  Layer 0 — core:
+    err.h              # Error codes (RLK_OK, RLK_E_INVALID, RLK_E_NOTFOUND)
+    hash.h             # Deterministic 64-bit hashing
+    fmath.h            # Math helpers (clamp, lerp, smoothstep, distances)
+    noise.h            # Noise generation (value, perlin, fbm)
+    rng.h              # Deterministic PRNG (splitmix64)
+
+  Layer 1 — base data (POD, caller-owned):
+    geom.h             # Rect (region) + lattice (grid geometry on world)
+    grid.h             # Coarse float grid with bilinear sampling
+    mask.h             # Uint8 mask (weight, density, visibility) + constructors
+    poi.h              # Points of Interest (anchor, bbox, type, seed)
+    tilemap.h          # Tile grid + tile props + line drawing
+
+  Layer 2 — terrain:
+    slope.h            # Slope from an elevation grid (Horn 3x3)
+    drain.h            # Drainage: fill, D8 flow, accumulation, river SDF
+
+  Layer 2 — spatial:
+    path.h             # A* pathfinding (integer costs, lattice window)
+    fov.h              # Field of view (recursive shadowcasting)
+
+  Layer 3 — worldgen pipeline (wg_nf):
+    wg_nf.h            # Noise-field terrain generation
+    wg_nf_modulator.h  # Voronoi modulation stage
+    wg_nf_grid.h       # Grid sampling stage
+    wg_nf_drain.h      # Drain reading stage
+    wg_nf_relief.h     # Standardised elevation stage
+    wg_nf_rivers.h     # River projection stage
+    wg_nf_poi.h        # POI detection stage
+
+  Layer 4 — worldgen generators:
+    ca.h               # Cellular Automata (caves)
+    bsp.h              # Binary Space Partitioning (dungeons)
 
 Demos:
   demo/demo_tilemap_viewer.c  # Interactive terrain viewer (PXL)

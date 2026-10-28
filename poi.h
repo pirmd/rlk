@@ -20,8 +20,8 @@
  * POI. Such a list is never reordered nor compacted.
  *
  * Overlap rule: a generator writes only inside the bbox of its POI. If two
- * bboxes overlap (rlk_rect_overlaps), the first POI processed wins and the
- * second is ignored; processing order is deterministic (emission order).
+ * bboxes overlap, the first POI processed wins and the second is ignored;
+ * processing order is deterministic (emission order).
  */
 
 #include <assert.h>

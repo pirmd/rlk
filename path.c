@@ -4,6 +4,8 @@
 
 #include "fmath.h"
 
+#define RLK_PATH_MAX_CELLS (1 << 20) /* window size limit (scratch is ~17 B/cell) */
+
 /* Unreachable g-score sentinel. Real costs stay below it: a path visits
    each cell at most once and a step costs at most (3*255+1)/2 = 383, so
    g < RLK_PATH_MAX_CELLS * 383 < INT_MAX/4. */

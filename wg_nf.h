@@ -108,7 +108,7 @@ struct rlk_wg_nf_s {
     int nsampled;                /* 1..MAX_FIELDS: fields [0,nsampled) are noise-sampled */
     int nderived;                /* user sets: fields [nsampled, nsampled+nderived) are stage-written */
 
-    /* STAGES (run in order). nstages is managed by rlk_wg_nf_add_stage(). */
+    /* STAGES (run in order). nstages is managed by rlk_wg_nf_add(). */
     rlk_wg_nf_stage_t stages[RLK_WG_NF_MAX_STAGES];
     int nstages;
 
