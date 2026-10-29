@@ -64,7 +64,16 @@ Headers:
     bsp.h              # Binary Space Partitioning (dungeons)
 
 Demos:
-  demo/demo_tilemap_viewer.c  # Interactive terrain viewer (PXL)
+  demo/demo_viewer.c         # Generic PXL viewer: demo_viewer [world|ca|bsp|nav] [seed]
+  demo/demo_world.c          # World composition: tilemap_gen + POI loop (ca/bsp) + roads (terminal)
+  demo/tilemap_gen.h/c       # Reusable fantasy map generator (noise + drain + wg_nf + POI)
+  demo/widget.h              # UI elements (text, button, menu, legend; header-only)
+  demo/viewer.h              # View bricks (camera, minimap, input snapshot; header-only)
+  demo/source.h              # Viewer source interface (POD + callbacks; header-only)
+  demo/viewer_app.h          # Generic PXL viewer shell over a source (header-only)
+  demo/src_world.h           # World source: tilemap_gen + modes/probes/overlays (header-only)
+  demo/src_dungeon.h         # ca/bsp sources (header-only)
+  demo/src_nav.h             # nav scenario source (header-only)
 
 License:
   MIT. See LICENSE.

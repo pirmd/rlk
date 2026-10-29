@@ -20,9 +20,9 @@
 #include "tilemap.h"
 
 /* --- CONSTANTS ----------------------------------------------------------- */
-#define RLK_WG_NF_MAX_FIELDS      16
+#define RLK_WG_NF_MAX_FIELDS      20
 #define RLK_WG_NF_MAX_ZONES       16
-#define RLK_WG_NF_MAX_STAGES      8
+#define RLK_WG_NF_MAX_STAGES      12
 #define RLK_WG_NF_MAX_AXES        3
 #define RLK_WG_NF_OPEN        1000.0f  /* Unbound axis range (-OPEN, +OPEN) */
 

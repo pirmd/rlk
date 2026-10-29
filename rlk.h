@@ -21,9 +21,10 @@
 #include "poi.h"
 #include "tilemap.h"
 
-/* Layer 2: terrain (slope, drain) + spatial (path, fov) */
+/* Layer 2: terrain (slope, drain, hydro) + spatial (path, fov) */
 #include "slope.h"
 #include "drain.h"
+#include "wg_hydro.h"
 #include "path.h"
 #include "fov.h"
 
@@ -32,6 +33,7 @@
 #include "wg_nf_modulator.h"
 #include "wg_nf_grid.h"
 #include "wg_nf_drain.h"
+#include "wg_nf_hydro.h"
 #include "wg_nf_relief.h"
 #include "wg_nf_rivers.h"
 #include "wg_nf_poi.h"
