@@ -60,7 +60,7 @@ test_relief_stage_basic(void) {
     r.sea = 0.40f;
 
     assert(rlk_wg_add(&wg, rlk_wg_relief(&r)) == RLK_OK);
-    rlk_wg_init(&wg);
+    assert(rlk_wg_init(&wg) == RLK_OK);
 
     rlk_tilemap_t tm;
     rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
@@ -100,7 +100,7 @@ test_relief_stage_with_hills(void) {
     r.hills_amp = 0.30f;
 
     assert(rlk_wg_add(&wg, rlk_wg_relief(&r)) == RLK_OK);
-    rlk_wg_init(&wg);
+    assert(rlk_wg_init(&wg) == RLK_OK);
 
     rlk_tilemap_t tm;
     rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
@@ -131,7 +131,7 @@ test_relief_stage_lapse(void) {
     r.lapse = 0.35f;
 
     assert(rlk_wg_add(&wg, rlk_wg_relief(&r)) == RLK_OK);
-    rlk_wg_init(&wg);
+    assert(rlk_wg_init(&wg) == RLK_OK);
 
     rlk_tilemap_t tm;
     rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
@@ -169,7 +169,7 @@ test_relief_stage_river_output(void) {
     r.relief_span = 0.40f;
 
     assert(rlk_wg_add(&wg, rlk_wg_relief(&r)) == RLK_OK);
-    rlk_wg_init(&wg);
+    assert(rlk_wg_init(&wg) == RLK_OK);
 
     rlk_tilemap_t tm;
     rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
@@ -214,7 +214,7 @@ test_relief_constructor(void) {
     assert(wg.nstages == 1);
     assert(wg.stages[0].data == &r);
 
-    rlk_wg_init(&wg);
+    assert(rlk_wg_init(&wg) == RLK_OK);
 
     rlk_tilemap_t tm;
     rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
@@ -246,7 +246,7 @@ test_relief_stage_with_warp(void) {
     r.warp = 20.0f;
 
     assert(rlk_wg_add(&wg, rlk_wg_relief(&r)) == RLK_OK);
-    rlk_wg_init(&wg);
+    assert(rlk_wg_init(&wg) == RLK_OK);
 
     rlk_tilemap_t tm;
     rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));

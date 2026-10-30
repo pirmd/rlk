@@ -38,6 +38,13 @@ Per-tile engine, pure in world coordinates `(wx, wy)`:
   └ nsampled noise fields (FBM/RIDGE) sampled into ctx->field[]
 ```
 
+Each stage declares the slots it reads and writes (`rlk_wg_stage_t.reads` /
+`.writes`, bitmasks over the sampled fields and the derived slots).
+`rlk_wg_init()` validates the declarations in registration order and returns
+`RLK_E_INVALID` if a stage reads a derived slot that no earlier stage writes
+(or references a slot out of range; same check for the axes, against all
+stages). Stage order is therefore explicit and checked, not implicit.
+
 ---
 
 ## User land: composition recipes

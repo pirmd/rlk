@@ -105,7 +105,7 @@ test_rivers_stage_basic(void) {
     r.slot_carve = 1;
 
     assert(rlk_wg_add(&wg, rlk_wg_rivers(&r)) == RLK_OK);
-    rlk_wg_init(&wg);
+    assert(rlk_wg_init(&wg) == RLK_OK);
 
     rlk_tilemap_t tm;
     rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
@@ -146,7 +146,7 @@ test_rivers_stage_none_slots(void) {
     r.slot_carve = RLK_WG_RIVERS_NONE;
 
     assert(rlk_wg_add(&wg, rlk_wg_rivers(&r)) == RLK_OK);
-    rlk_wg_init(&wg);
+    assert(rlk_wg_init(&wg) == RLK_OK);
 
     rlk_tilemap_t tm;
     rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
@@ -173,7 +173,7 @@ test_rivers_stage_high_acc_min(void) {
     r.slot_carve = 1;
 
     assert(rlk_wg_add(&wg, rlk_wg_rivers(&r)) == RLK_OK);
-    rlk_wg_init(&wg);
+    assert(rlk_wg_init(&wg) == RLK_OK);
 
     rlk_tilemap_t tm;
     rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
@@ -214,7 +214,7 @@ test_rivers_constructor(void) {
     assert(wg.nstages == 1);
     assert(wg.stages[0].data == &r);
 
-    rlk_wg_init(&wg);
+    assert(rlk_wg_init(&wg) == RLK_OK);
 
     rlk_tilemap_t tm;
     rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
@@ -237,7 +237,7 @@ test_rivers_stage_all_underwater(void) {
     r.slot_carve = 1;
 
     assert(rlk_wg_add(&wg, rlk_wg_rivers(&r)) == RLK_OK);
-    rlk_wg_init(&wg);
+    assert(rlk_wg_init(&wg) == RLK_OK);
 
     rlk_tilemap_t tm;
     rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
@@ -270,7 +270,7 @@ test_rivers_stage_wiggle(void) {
     r.f_wig_y = 2;
     r.wig_tiles = 3.0f;
     assert(rlk_wg_add(&wg, rlk_wg_rivers(&r)) == RLK_OK);
-    rlk_wg_init(&wg);
+    assert(rlk_wg_init(&wg) == RLK_OK);
 
     rlk_tilemap_t tm;
     rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
@@ -305,7 +305,7 @@ test_rivers_stage_creeks(void) {
     r.creek_width = 3.0f;  /* wide creeks for reliable detection */
     r.creek_carve = 0.02f;
     assert(rlk_wg_add(&wg, rlk_wg_rivers(&r)) == RLK_OK);
-    rlk_wg_init(&wg);
+    assert(rlk_wg_init(&wg) == RLK_OK);
 
     rlk_tilemap_t tm;
     rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));

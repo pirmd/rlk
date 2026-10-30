@@ -45,8 +45,52 @@ rlk_wg_add(rlk_wg_t *wg, rlk_wg_stage_t stage) {
     return RLK_OK;
 }
 
+/* Expand RLK_WG_SLOTS_ALL to all n bits; reject masks with bits >= n. */
+static rlk_err_t
+slot_mask(uint32_t m, int n, uint32_t *out) {
+    if (m == RLK_WG_SLOTS_ALL) {
+        *out = n >= 32 ? ~0u : ((1u << n) - 1u);
+        return RLK_OK;
+    }
+    if (n < 32 && (m >> n) != 0u)
+        return RLK_E_INVALID;
+    *out = m;
+    return RLK_OK;
+}
+
+/* Validate the slot declarations, in registration order: a derived slot read
+   by a stage must have been written by an earlier stage (sampled slots are
+   sources, always readable). The axes are read by classify after all stages:
+   an axis on a derived slot requires that slot to be written by some stage. */
+static rlk_err_t
+check_stage_slots(const rlk_wg_t *wg) {
+    uint32_t written = 0;   /* derived bits written so far */
+    for (int i = 0; i < wg->nstages; i++) {
+        const rlk_wg_stage_t *st = &wg->stages[i];
+        uint32_t rs, rd, ws, wd;
+        if (slot_mask(st->reads.sampled, wg->nsampled, &rs) != RLK_OK ||
+            slot_mask(st->reads.derived, wg->nderived, &rd) != RLK_OK ||
+            slot_mask(st->writes.sampled, wg->nsampled, &ws) != RLK_OK ||
+            slot_mask(st->writes.derived, wg->nderived, &wd) != RLK_OK)
+            return RLK_E_INVALID;
+        if (rd & ~written)
+            return RLK_E_INVALID;
+        written |= wd;
+    }
+    for (int a = 0; a < wg->naxes; a++) {
+        const rlk_wg_axis_t *ax = &wg->axes[a];
+        if (ax->field >= wg->nsampled &&
+            ((written >> (ax->field - wg->nsampled)) & 1u) == 0u)
+            return RLK_E_INVALID;
+        if (ax->jitter_amp > 0.0f && ax->jitter_field >= wg->nsampled &&
+            ((written >> (ax->jitter_field - wg->nsampled)) & 1u) == 0u)
+            return RLK_E_INVALID;
+    }
+    return RLK_OK;
+}
+
 /* Resolve zero defaults (octaves->3, gain->0.5), validate, and seed noise. */
-void
+rlk_err_t
 rlk_wg_init(rlk_wg_t *wg) {
     assert(wg);
 
@@ -62,11 +106,17 @@ rlk_wg_init(rlk_wg_t *wg) {
     /* Safety checks. */
     assert_wg(wg);
 
+    /* Slot declaration checks (stage order, axes). */
+    rlk_err_t e = check_stage_slots(wg);
+    if (e != RLK_OK)
+        return e;
+
     /* Seed noise generators: world seed + index + field seed. */
     for (int i = 0; i < wg->nsampled; i++) {
         uint64_t s = rlk_hash_sub(wg->seed, 0xF1E1D000ULL + (uint64_t)i);
         rlk_noise_seed(&wg->noise[i], rlk_hash_sub(s, wg->fields[i].seed));
     }
+    return RLK_OK;
 }
 
 /* --- FIELDS -------------------------------------------------------------- */

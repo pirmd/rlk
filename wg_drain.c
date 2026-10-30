@@ -47,5 +47,12 @@ rlk_wg_drain(const rlk_wg_drain_cfg_t *cfg) {
     assert(cfg);
     assert(cfg->drain && cfg->elev);
     assert(rlk_lattice_same(&cfg->drain->lattice, &cfg->elev->lattice));
-    return (rlk_wg_stage_t){ .fn = drain_stage, .data = cfg };
+    rlk_wg_stage_t st = { .fn = drain_stage, .data = cfg };
+    if (cfg->slot_acc != RLK_WG_DRAIN_NONE)
+        st.writes.derived |= RLK_WG_SLOT(cfg->slot_acc);
+    if (cfg->slot_dir != RLK_WG_DRAIN_NONE)
+        st.writes.derived |= RLK_WG_SLOT(cfg->slot_dir);
+    if (cfg->slot_lake != RLK_WG_DRAIN_NONE)
+        st.writes.derived |= RLK_WG_SLOT(cfg->slot_lake);
+    return st;
 }

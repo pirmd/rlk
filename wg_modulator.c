@@ -81,5 +81,8 @@ rlk_wg_modulator(const rlk_wg_modulator_cfg_t *cfg) {
     modulator_resolve(&m);
     assert(m.cell >= 16.0f);
     assert(m.blend <= 0.5f * m.cell);
-    return (rlk_wg_stage_t){ .fn = modulator_stage, .data = cfg };
+    /* The modulator reads and writes every sampled field in place. */
+    return (rlk_wg_stage_t){ .fn = modulator_stage, .data = cfg,
+                             .reads = { .sampled = RLK_WG_SLOTS_ALL },
+                             .writes = { .sampled = RLK_WG_SLOTS_ALL } };
 }

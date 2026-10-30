@@ -23,9 +23,9 @@
  * derived fields are [nsampled, nsampled+nderived). Use RLK_WG_RELIEF_NONE
  * (255) to disable an optional input.
  *
- * STAGE ORDER: if river_carve_field is set (e.g. from wg_rivers), this stage
- * must run AFTER wg_rivers so the carve is already computed. Adding stages
- * in the wrong order silently skips river valley carving.
+ * If river_carve_field is set (e.g. from wg_rivers), this stage must be
+ * registered AFTER the stage writing that slot: rlk_wg_init() validates the
+ * order and returns RLK_E_INVALID otherwise.
  */
 
 #include "wg.h"

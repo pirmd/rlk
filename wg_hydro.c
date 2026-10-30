@@ -40,5 +40,12 @@ rlk_wg_stage_t
 rlk_wg_hydro(const rlk_wg_hydro_cfg_t *cfg) {
     assert(cfg);
     assert(cfg->hydro);
-    return (rlk_wg_stage_t){ .fn = hydro_stage, .data = cfg };
+    rlk_wg_stage_t st = { .fn = hydro_stage, .data = cfg };
+    if (cfg->slot_slope != RLK_WG_HYDRO_NONE)
+        st.writes.derived |= RLK_WG_SLOT(cfg->slot_slope);
+    if (cfg->slot_strahler != RLK_WG_HYDRO_NONE)
+        st.writes.derived |= RLK_WG_SLOT(cfg->slot_strahler);
+    if (cfg->slot_speed != RLK_WG_HYDRO_NONE)
+        st.writes.derived |= RLK_WG_SLOT(cfg->slot_speed);
+    return st;
 }

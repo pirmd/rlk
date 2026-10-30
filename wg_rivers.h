@@ -29,9 +29,9 @@
  * The drain and elevation grid must be built before rlk_wg_init() and must
  * outlive the wg.
  *
- * STAGE ORDER: this stage must run BEFORE wg_relief (which reads slot_carve
- * via river_carve_field). Adding stages in the wrong order silently produces
- * rivers without valley carving.
+ * Stage order is validated by rlk_wg_init(): a consumer of slot_carve
+ * (e.g. wg_relief via river_carve_field) must be registered AFTER this
+ * stage, otherwise rlk_wg_init() returns RLK_E_INVALID.
  */
 
 #include "wg.h"

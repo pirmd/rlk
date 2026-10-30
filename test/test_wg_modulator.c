@@ -73,8 +73,8 @@ test_modulator_basic(void) {
     mod.types[1].bias[0] = -0.1f;
 
     assert(rlk_wg_add(&wg2, rlk_wg_modulator(&mod)) == RLK_OK);
-    rlk_wg_init(&wg1);
-    rlk_wg_init(&wg2);
+    assert(rlk_wg_init(&wg1) == RLK_OK);
+    assert(rlk_wg_init(&wg2) == RLK_OK);
 
     rlk_tilemap_t tm1, tm2;
     rlk_tilemap_init(&tm1, MAP, MAP, tilebuf1, sizeof(tilebuf1));
@@ -96,8 +96,8 @@ test_modulator_neutral_noop(void) {
     mod.blend = 16.0f;
 
     assert(rlk_wg_add(&wg2, rlk_wg_modulator(&mod)) == RLK_OK);
-    rlk_wg_init(&wg1);
-    rlk_wg_init(&wg2);
+    assert(rlk_wg_init(&wg1) == RLK_OK);
+    assert(rlk_wg_init(&wg2) == RLK_OK);
 
     rlk_tilemap_t tm1, tm2;
     rlk_tilemap_init(&tm1, MAP, MAP, tilebuf1, sizeof(tilebuf1));
@@ -121,8 +121,8 @@ test_modulator_defaults(void) {
     /* cfg is const: zero defaults are resolved in the stage, not written back. */
     assert(mod.cell == 0.0f);
     assert(mod.blend == 0.0f);
-    rlk_wg_init(&wg1);
-    rlk_wg_init(&wg2);
+    assert(rlk_wg_init(&wg1) == RLK_OK);
+    assert(rlk_wg_init(&wg2) == RLK_OK);
 
     rlk_tilemap_t tm1, tm2;
     rlk_tilemap_init(&tm1, MAP, MAP, tilebuf1, sizeof(tilebuf1));
@@ -145,8 +145,8 @@ test_modulator_with_gain(void) {
     mod.types[0].gain[0] = 0.5f;  /* scale = 1 + 0.5 = 1.5 */
 
     assert(rlk_wg_add(&wg2, rlk_wg_modulator(&mod)) == RLK_OK);
-    rlk_wg_init(&wg1);
-    rlk_wg_init(&wg2);
+    assert(rlk_wg_init(&wg1) == RLK_OK);
+    assert(rlk_wg_init(&wg2) == RLK_OK);
 
     rlk_tilemap_t tm1, tm2;
     rlk_tilemap_init(&tm1, MAP, MAP, tilebuf1, sizeof(tilebuf1));
@@ -200,7 +200,7 @@ test_modulator_constructor(void) {
     assert(wg.nstages == 1);
     assert(wg.stages[0].data == &mod);
 
-    rlk_wg_init(&wg);
+    assert(rlk_wg_init(&wg) == RLK_OK);
 
     rlk_tilemap_t tm;
     rlk_tilemap_init(&tm, MAP, MAP, tilebuf1, sizeof(tilebuf1));

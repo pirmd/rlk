@@ -1028,8 +1028,11 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
 
     /* --- wg stages: provinces + drain + hydro + rivers + strahler + relief + POI --- */
 
-    /* Stage 0: provinces (F_HUM offset decorrelation + Voronoi modulator) */
-    rlk_wg_add(wg, (rlk_wg_stage_t){ .fn = province_stage, .data = gen });
+    /* Stage 0: provinces (F_HUM offset decorrelation + Voronoi modulator).
+       Reads/writes all sampled fields (the modulator part). */
+    rlk_wg_add(wg, (rlk_wg_stage_t){ .fn = province_stage, .data = gen,
+                                      .reads = { .sampled = RLK_WG_SLOTS_ALL },
+                                      .writes = { .sampled = RLK_WG_SLOTS_ALL } });
 
     /* Stage 1: wg_drain — inject accumulation + lake depth */
     gen->drain_stage = (rlk_wg_drain_cfg_t){
@@ -1078,7 +1081,9 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
     rlk_wg_add(wg, rlk_wg_rivers(&gen->rivers_stage));
 
     /* Stage 4: Strahler width — narrow headwaters, wide big rivers */
-    rlk_wg_add(wg, (rlk_wg_stage_t){ .fn = strahler_stage, .data = gen });
+    rlk_wg_add(wg, (rlk_wg_stage_t){ .fn = strahler_stage, .data = gen,
+                                      .reads = { .derived = RLK_WG_SLOT(D_RIVER_MASK) | RLK_WG_SLOT(D_STRAHLER) },
+                                      .writes = { .derived = RLK_WG_SLOT(D_RIVER_MASK) } });
 
     /* Stage 5: wg_relief — standardised elevation (domain warp, fjords, lapse) */
     gen->relief_stage = (rlk_wg_relief_cfg_t){
@@ -1113,10 +1118,17 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
         .fjord_cold1 = 0.65f,
     };
     gen->relief_mod = rlk_wg_relief(&gen->relief_stage);
-    rlk_wg_add(wg, (rlk_wg_stage_t){ .fn = relief_rain_stage, .data = gen });
+    /* Wrapper around the stock relief stage, adding the rain shadow on F_HUM. */
+    rlk_wg_stage_t rain = gen->relief_mod;
+    rain.fn = relief_rain_stage;
+    rain.reads.sampled |= RLK_WG_SLOT(F_HUM);
+    rain.writes.sampled |= RLK_WG_SLOT(F_HUM);
+    rlk_wg_add(wg, rain);
 
     /* Stage 6: geology — structural bias on the final elevation + lithology */
-    rlk_wg_add(wg, (rlk_wg_stage_t){ .fn = geology_stage, .data = gen });
+    rlk_wg_add(wg, (rlk_wg_stage_t){ .fn = geology_stage, .data = gen,
+                                      .reads = { .derived = RLK_WG_SLOT(D_ELEV) },
+                                      .writes = { .derived = RLK_WG_SLOT(D_ELEV) } });
 
     /* Stage 7-10: POI detectors */
     gen->pois = (rlk_poi_list_t){ gen->poi_buf, 0, 256 };
@@ -1126,7 +1138,7 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
         .list = &gen->pois,
         .type = POI_CAVE,
         .salt = 0xCAFEULL,
-        .field = F_DETAIL,
+        .f_sampled = F_DETAIL,
         .threshold = 0.70f,
         .density = 0.003f,
         .size = 24,
@@ -1142,7 +1154,7 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
         .list = &gen->pois,
         .type = POI_DUNGEON,
         .salt = 0xD0D0ULL,
-        .field = F_DETAIL,
+        .f_sampled = F_DETAIL,
         .threshold = 0.50f,
         .density = 0.002f,
         .size = 32,
@@ -1157,7 +1169,7 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
         .list = &gen->pois,
         .type = POI_VILLAGE,
         .salt = 0xA11CEULL,
-        .field = F_TEMP,
+        .f_sampled = F_TEMP,
         .threshold = 0.45f,
         .density = 0.006f,
         .size = 16,
@@ -1173,7 +1185,7 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
         .list = &gen->pois,
         .type = POI_TOWER,
         .salt = 0x70E1ULL,
-        .field = F_DETAIL,
+        .f_sampled = F_DETAIL,
         .threshold = 0.60f,
         .density = 0.002f,
         .size = 8,
@@ -1185,7 +1197,9 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
     rlk_wg_add(wg, rlk_wg_poi(&gen->poi_tower_cfg));
 
     /* Stage 11: terrain-constrained POI kinds (zone/slope/river/geology) */
-    rlk_wg_add(wg, (rlk_wg_stage_t){ .fn = poi_terrain_stage, .data = gen });
+    rlk_wg_add(wg, (rlk_wg_stage_t){ .fn = poi_terrain_stage, .data = gen,
+                                      .reads = { .sampled = RLK_WG_SLOT(F_TEMP) | RLK_WG_SLOT(F_HUM),
+                                                 .derived = RLK_WG_SLOT(D_ELEV) | RLK_WG_SLOT(D_RIVER_MASK) | RLK_WG_SLOT(D_SLOPE) } });
 
     /* Axes: elevation (relief output), temperature (lapse-cooled), humidity */
     wg->naxes = 3;
@@ -1230,7 +1244,7 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
     wg->depth_scale = 0.15f;
     wg->transition_width = 0.10f;
 
-    rlk_wg_init(wg);
+    assert(rlk_wg_init(wg) == RLK_OK);
     rlk_wg_fill(wg, 0, 0, &gen->tm);
 
     /* Multi-tile content inside each POI bbox (first POI wins on overlap) */

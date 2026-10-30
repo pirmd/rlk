@@ -2,6 +2,7 @@
 
 #include <assert.h>
 #include <math.h>
+#include <stddef.h>
 
 #include "fmath.h"
 
@@ -218,5 +219,19 @@ rlk_wg_relief(const rlk_wg_relief_cfg_t *cfg) {
     assert(cfg->slot_elev != RLK_WG_RELIEF_NONE);
     /* Warp fields must be paired */
     assert((cfg->f_warp_x == RLK_WG_RELIEF_NONE) == (cfg->f_warp_y == RLK_WG_RELIEF_NONE));
-    return (rlk_wg_stage_t){ .fn = relief_stage, .data = cfg };
+    rlk_wg_stage_t st = { .fn = relief_stage, .data = cfg };
+    const uint8_t f[] = { cfg->f_cont, cfg->f_hills, cfg->f_ridge, cfg->f_warp_x,
+                          cfg->f_warp_y, cfg->f_fjord, cfg->f_temp, cfg->f_river };
+    for (size_t i = 0; i < sizeof f / sizeof f[0]; i++)
+        if (f[i] != RLK_WG_RELIEF_NONE)
+            st.reads.sampled |= RLK_WG_SLOT(f[i]);
+    if (cfg->river_carve_field != RLK_WG_RELIEF_NONE)
+        st.reads.derived |= RLK_WG_SLOT(cfg->river_carve_field);
+    /* Altitudinal cooling edits the temperature field in place. */
+    if (cfg->f_temp != RLK_WG_RELIEF_NONE)
+        st.writes.sampled |= RLK_WG_SLOT(cfg->f_temp);
+    st.writes.derived |= RLK_WG_SLOT(cfg->slot_elev);
+    if (cfg->slot_river != RLK_WG_RELIEF_NONE)
+        st.writes.derived |= RLK_WG_SLOT(cfg->slot_river);
+    return st;
 }

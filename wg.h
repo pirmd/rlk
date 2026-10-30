@@ -72,10 +72,27 @@ typedef struct {
  */
 typedef void (*rlk_wg_stage_fn)(rlk_wg_ctx_t *ctx, const void *data);
 
-/* Stage: edits ctx->field[]. `data` must outlive the wg. */
+/* Slot set declared by a stage, in the two cfg index spaces:
+ *   .sampled bit i = sampled field i (ctx->field[i], i < nsampled)
+ *   .derived bit d = derived slot d  (ctx->field[nsampled + d], d < nderived)
+ * RLK_WG_SLOTS_ALL selects every slot of the space (e.g. the modulator,
+ * which reads and writes all sampled fields in place). */
+#define RLK_WG_SLOTS_ALL  0xFFFFFFFFu
+#define RLK_WG_SLOT(i)    (1u << (i))
+
+typedef struct {
+    uint32_t sampled;
+    uint32_t derived;
+} rlk_wg_slots_t;
+
+/* Stage: edits ctx->field[]. `data` must outlive the wg.
+ * reads/writes declare the slots the stage touches; rlk_wg_init() validates
+ * them (see below). Custom stages fill them with RLK_WG_SLOT()/RLK_WG_SLOTS_ALL. */
 typedef struct {
     rlk_wg_stage_fn fn;
     const void *data;
+    rlk_wg_slots_t reads;   /* slots read by the stage */
+    rlk_wg_slots_t writes;  /* slots written by the stage */
 } rlk_wg_stage_t;
 
 typedef struct rlk_wg_s rlk_wg_t;
@@ -158,13 +175,19 @@ float rlk_wg_sample_field(const rlk_wg_t *wg, int idx, float x, float y);
  * The stage's `data` must outlive the wg. Call before rlk_wg_init().
  * Ready-made stages: rlk_wg_<module>(&cfg) builds a stage from a const
  * config. A custom stage is registered as
- * rlk_wg_add(&wg, (rlk_wg_stage_t){ .fn = my_fn, .data = &cfg }). */
+ * rlk_wg_add(&wg, (rlk_wg_stage_t){ .fn = my_fn, .data = &cfg,
+ *                                    .reads = ..., .writes = ... }). */
 rlk_err_t rlk_wg_add(rlk_wg_t *wg, rlk_wg_stage_t stage);
 
-/* Initialize: resolves zero defaults (octaves->3, gain->0.5), validates
-   (safety asserts), and seeds the noise generators.
-   Call once after filling the config fields and registering stages. */
-void rlk_wg_init(rlk_wg_t *wg);
+/* Initialize: resolves zero defaults (octaves->3, gain->0.5), runs safety
+   asserts, validates the stage slot declarations, and seeds the noise
+   generators. Call once after filling the config fields and registering
+   stages.
+   Slot validation: a stage reading a derived slot that no earlier stage
+   writes, any referenced slot out of range, or an axis reading a derived
+   slot that no stage writes -> RLK_E_INVALID (stage order is explicit).
+   Returns RLK_OK on success. */
+rlk_err_t rlk_wg_init(rlk_wg_t *wg);
 
 /* Fill tm with the world rect (tm->w x tm->h tiles) at world origin
    (origin_x, origin_y). General primitive; origin may be any tile (incl. negative). */

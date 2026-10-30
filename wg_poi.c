@@ -22,10 +22,12 @@ poi_stage(rlk_wg_ctx_t *ctx, const void *data) {
     const rlk_wg_poi_cfg_t *cfg = &rc;
     const rlk_wg_t *wg = ctx->wg;
 
-    /* Field threshold. */
-    if (cfg->field >= (uint8_t)(wg->nsampled + wg->nderived))
-        return;
-    if (ctx->field[cfg->field] <= cfg->threshold)
+    /* Field threshold (slot range validated by rlk_wg_init). */
+    const int idx = cfg->f_sampled != RLK_WG_POI_NONE
+        ? (int)cfg->f_sampled
+        : wg->nsampled + (int)cfg->slot_derived;
+    assert(idx >= 0 && idx < wg->nsampled + wg->nderived);
+    if (ctx->field[idx] <= cfg->threshold)
         return;
 
     /* Density: deterministic per-tile random. */
@@ -35,10 +37,10 @@ poi_stage(rlk_wg_ctx_t *ctx, const void *data) {
 
     /* Drain constraint: near river. */
     if (cfg->drain) {
-        const int idx = rlk_lattice_index(&cfg->drain->lattice, ctx->wx, ctx->wy);
-        if (idx < 0)
+        const int c = rlk_lattice_index(&cfg->drain->lattice, ctx->wx, ctx->wy);
+        if (c < 0)
             return;
-        if ((float)cfg->drain->acc[(size_t)idx] < cfg->min_acc)
+        if ((float)cfg->drain->acc[(size_t)c] < cfg->min_acc)
             return;
     }
 
@@ -79,5 +81,12 @@ rlk_wg_stage_t
 rlk_wg_poi(const rlk_wg_poi_cfg_t *cfg) {
     assert(cfg);
     assert(cfg->list);
-    return (rlk_wg_stage_t){ .fn = poi_stage, .data = cfg };
+    /* Exactly one of the two slot spaces must be set. */
+    assert(cfg->f_sampled != RLK_WG_POI_NONE || cfg->slot_derived != RLK_WG_POI_NONE);
+    rlk_wg_stage_t st = { .fn = poi_stage, .data = cfg };
+    if (cfg->f_sampled != RLK_WG_POI_NONE)
+        st.reads.sampled = RLK_WG_SLOT(cfg->f_sampled);
+    else
+        st.reads.derived = RLK_WG_SLOT(cfg->slot_derived);
+    return st;
 }

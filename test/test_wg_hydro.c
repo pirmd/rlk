@@ -86,7 +86,7 @@ test_hydro_stage_basic(void) {
     f.slot_speed = 2;
 
     assert(rlk_wg_add(&wg, rlk_wg_hydro(&f)) == RLK_OK);
-    rlk_wg_init(&wg);
+    assert(rlk_wg_init(&wg) == RLK_OK);
 
     rlk_tilemap_t tm;
     rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
@@ -120,7 +120,7 @@ test_hydro_stage_none_slots(void) {
     f.slot_speed = RLK_WG_HYDRO_NONE;
 
     assert(rlk_wg_add(&wg, rlk_wg_hydro(&f)) == RLK_OK);
-    rlk_wg_init(&wg);
+    assert(rlk_wg_init(&wg) == RLK_OK);
 
     rlk_tilemap_t tm;
     rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
@@ -144,7 +144,7 @@ test_hydro_stage_outside(void) {
     f.slot_speed = 2;
 
     assert(rlk_wg_add(&wg, rlk_wg_hydro(&f)) == RLK_OK);
-    rlk_wg_init(&wg);
+    assert(rlk_wg_init(&wg) == RLK_OK);
 
     rlk_tilemap_t tm;
     rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));

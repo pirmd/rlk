@@ -15,7 +15,7 @@
  *   rlk_wg_poi_cfg_t poi_cfg = {
  *       .list = &pois,
  *       .type = POI_CAVE,      // game-defined type
- *       .field = 1,            // humidity field slot
+ *       .f_sampled = 1,        // humidity sampled field
  *       .threshold = 0.6f,
  *       .density = 0.002f,
  *       .size = 48,
@@ -32,6 +32,8 @@
 #include "drain.h"
 #include "grid.h"
 
+#define RLK_WG_POI_NONE 255  /* slot value: none */
+
 /* POI detector stage configuration. Const after construction: zero defaults
    (density 0->0.001, size 0->32, min_separation 0->size) are resolved inside
    the stage, the cfg is never mutated. */
@@ -41,9 +43,11 @@ typedef struct {
     uint32_t type;                  /* POI type to create (game-defined) */
     uint64_t salt;                  /* decorrelates multiple detectors */
 
-    /* --- Field condition (required) --- */
-    uint8_t field;                  /* field slot to test (0..nsampled+nderived-1) */
-    float threshold;                /* create POI if field[field] > threshold */
+    /* --- Field condition (required) ---
+       f_sampled is used if != RLK_WG_POI_NONE, else slot_derived. */
+    uint8_t f_sampled;              /* sampled field to test, or RLK_WG_POI_NONE */
+    uint8_t slot_derived;           /* derived slot to test (fallback), or RLK_WG_POI_NONE */
+    float threshold;                /* create POI if the slot value > threshold */
     float density;                  /* probability per eligible tile (0..1) */
     uint16_t size;                  /* suggested footprint side in tiles (-> bbox) */
 

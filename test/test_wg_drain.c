@@ -79,7 +79,7 @@ test_drain_stage_basic(void) {
     f.acc_scale = (float)(FW * FH);
 
     assert(rlk_wg_add(&wg, rlk_wg_drain(&f)) == RLK_OK);
-    rlk_wg_init(&wg);
+    assert(rlk_wg_init(&wg) == RLK_OK);
 
     rlk_tilemap_t tm;
     rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
@@ -117,7 +117,7 @@ test_drain_stage_none_slots(void) {
     f.slot_lake = RLK_WG_DRAIN_NONE;
 
     assert(rlk_wg_add(&wg, rlk_wg_drain(&f)) == RLK_OK);
-    rlk_wg_init(&wg);
+    assert(rlk_wg_init(&wg) == RLK_OK);
 
     rlk_tilemap_t tm;
     rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
@@ -152,7 +152,7 @@ test_drain_constructor(void) {
     assert(wg.nstages == 1);
     assert(wg.stages[0].data == &f);
 
-    rlk_wg_init(&wg);
+    assert(rlk_wg_init(&wg) == RLK_OK);
 
     rlk_tilemap_t tm;
     rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));

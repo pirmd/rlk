@@ -126,5 +126,16 @@ rlk_wg_rivers(const rlk_wg_rivers_cfg_t *cfg) {
     assert(cfg);
     assert(cfg->drain && cfg->elev);
     assert(rlk_lattice_same(&cfg->drain->lattice, &cfg->elev->lattice));
-    return (rlk_wg_stage_t){ .fn = rivers_stage, .data = cfg };
+    rlk_wg_stage_t st = { .fn = rivers_stage, .data = cfg };
+    if (cfg->slot_mask != RLK_WG_RIVERS_NONE)
+        st.writes.derived |= RLK_WG_SLOT(cfg->slot_mask);
+    if (cfg->slot_carve != RLK_WG_RIVERS_NONE)
+        st.writes.derived |= RLK_WG_SLOT(cfg->slot_carve);
+    if (cfg->f_wig_x != RLK_WG_RIVERS_NONE)
+        st.reads.sampled |= RLK_WG_SLOT(cfg->f_wig_x);
+    if (cfg->f_wig_y != RLK_WG_RIVERS_NONE)
+        st.reads.sampled |= RLK_WG_SLOT(cfg->f_wig_y);
+    if (cfg->f_creek != RLK_WG_RIVERS_NONE)
+        st.reads.sampled |= RLK_WG_SLOT(cfg->f_creek);
+    return st;
 }

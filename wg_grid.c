@@ -22,5 +22,6 @@ rlk_wg_stage_t
 rlk_wg_grid(const rlk_wg_grid_cfg_t *cfg) {
     assert(cfg);
     assert(cfg->grid);
-    return (rlk_wg_stage_t){ .fn = grid_stage, .data = cfg };
+    return (rlk_wg_stage_t){ .fn = grid_stage, .data = cfg,
+                            .writes.derived = RLK_WG_SLOT(cfg->slot) };
 }

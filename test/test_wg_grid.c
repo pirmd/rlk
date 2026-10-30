@@ -58,7 +58,7 @@ test_grid_stage_basic(void) {
     g.slot = 0;
 
     assert(rlk_wg_add(&wg, rlk_wg_grid(&g)) == RLK_OK);
-    rlk_wg_init(&wg);
+    assert(rlk_wg_init(&wg) == RLK_OK);
 
     rlk_tilemap_t tm;
     rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
@@ -84,7 +84,7 @@ test_grid_stage_scale_offset(void) {
     g.offset = 1.0f;
 
     assert(rlk_wg_add(&wg, rlk_wg_grid(&g)) == RLK_OK);
-    rlk_wg_init(&wg);
+    assert(rlk_wg_init(&wg) == RLK_OK);
 
     rlk_tilemap_t tm;
     rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
@@ -116,7 +116,7 @@ test_grid_constructor(void) {
     assert(wg.nstages == 1);
     assert(wg.stages[0].data == &g);
 
-    rlk_wg_init(&wg);
+    assert(rlk_wg_init(&wg) == RLK_OK);
 
     rlk_tilemap_t tm;
     rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));

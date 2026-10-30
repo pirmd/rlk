@@ -75,6 +75,12 @@ stage_derive_complement(rlk_wg_ctx_t *ctx, const void *data) {
     ctx->field[1] = 1.0f - ctx->field[0];
 }
 
+/* No-op stage: only used to declare slot reads/writes in init tests. */
+static void
+stage_noop(rlk_wg_ctx_t *ctx, const void *data) {
+    (void)ctx; (void)data;
+}
+
 /* Config fixtures --------------------------------------------------------------- */
 
 /* Minimal valid config: 1 FBM field, 1 full-coverage zone. */
@@ -136,7 +142,7 @@ tm_differ(const rlk_tilemap_t *a, const rlk_tilemap_t *b) {
 static void
 test_rlk_wg_init_defaults(void) {
     rlk_wg_t wg = wg_min();
-    rlk_wg_init(&wg);
+    assert(rlk_wg_init(&wg) == RLK_OK);
     assert(wg.nsampled == 1);
     assert(wg.fields[0].octaves == 3);        /* 0 -> 3 */
     assert(wg.fields[0].gain == 0.5f);       /* 0 -> 0.5 */
@@ -151,7 +157,7 @@ test_rlk_wg_init_defaults(void) {
 static void
 test_chunk_generation_minimal(void) {
     rlk_wg_t wg = wg_min();
-    rlk_wg_init(&wg);
+    assert(rlk_wg_init(&wg) == RLK_OK);
     rlk_tilemap_t tm;
     rlk_tilemap_init(&tm, 16, 16, tilebuf1, sizeof(tilebuf1));
     rlk_wg_chunk(&wg, 0, 0, &tm);
@@ -165,8 +171,8 @@ static void
 test_chunk_generation_deterministic(void) {
     rlk_wg_t wg1 = wg_quad(0.05f);
     rlk_wg_t wg2 = wg_quad(0.05f);
-    rlk_wg_init(&wg1);
-    rlk_wg_init(&wg2);
+    assert(rlk_wg_init(&wg1) == RLK_OK);
+    assert(rlk_wg_init(&wg2) == RLK_OK);
     rlk_tilemap_t tm1, tm2;
     rlk_tilemap_init(&tm1, MAP, MAP, tilebuf1, sizeof(tilebuf1));
     rlk_tilemap_init(&tm2, MAP, MAP, tilebuf2, sizeof(tilebuf2));
@@ -179,7 +185,7 @@ test_chunk_generation_deterministic(void) {
 static void
 test_chunk_fill_equivalence(void) {
     rlk_wg_t wg = wg_quad(0.05f);
-    rlk_wg_init(&wg);
+    assert(rlk_wg_init(&wg) == RLK_OK);
     rlk_tilemap_t tm1, tm2;
     rlk_tilemap_init(&tm1, 16, 16, tilebuf1, sizeof(tilebuf1));
     rlk_tilemap_init(&tm2, 16, 16, tilebuf2, sizeof(tilebuf2));
@@ -195,8 +201,8 @@ test_chunk_different_seed(void) {
     wg2.seed = 54321ULL;
     wg1.zones[0].write = write_field0;
     wg2.zones[0].write = write_field0;
-    rlk_wg_init(&wg1);
-    rlk_wg_init(&wg2);
+    assert(rlk_wg_init(&wg1) == RLK_OK);
+    assert(rlk_wg_init(&wg2) == RLK_OK);
     rlk_tilemap_t tm1, tm2;
     rlk_tilemap_init(&tm1, MAP, MAP, tilebuf1, sizeof(tilebuf1));
     rlk_tilemap_init(&tm2, MAP, MAP, tilebuf2, sizeof(tilebuf2));
@@ -227,8 +233,9 @@ test_classify_depth_edge(void) {
         wg.zones[1] = (rlk_wg_zone_t){ .lo = {0.5f, -RLK_WG_OPEN},
                                            .hi = {1.0f, RLK_WG_OPEN},
                                            .write = write_capture };
-        assert(rlk_wg_add(&wg, (rlk_wg_stage_t){ .fn = stage_const_field0, .data = &cs[i] }) == RLK_OK);
-        rlk_wg_init(&wg);
+        assert(rlk_wg_add(&wg, (rlk_wg_stage_t){ .fn = stage_const_field0, .data = &cs[i],
+                                                  .writes = { .sampled = RLK_WG_SLOT(0) } }) == RLK_OK);
+        assert(rlk_wg_init(&wg) == RLK_OK);
 
         g_ctx_count = 0;
         rlk_tile_t buf;
@@ -270,9 +277,10 @@ static void
 test_single_zone_edge_zero(void) {
     rlk_wg_t wg = wg_min();
     float c = 0.5f;
-    assert(rlk_wg_add(&wg, (rlk_wg_stage_t){ .fn = stage_const_field0, .data = &c }) == RLK_OK);
+    assert(rlk_wg_add(&wg, (rlk_wg_stage_t){ .fn = stage_const_field0, .data = &c,
+                                              .writes = { .sampled = RLK_WG_SLOT(0) } }) == RLK_OK);
     wg.zones[0].write = write_capture;
-    rlk_wg_init(&wg);
+    assert(rlk_wg_init(&wg) == RLK_OK);
 
     g_ctx_count = 0;
     rlk_tile_t buf;
@@ -311,8 +319,9 @@ test_zone3_classification(void) {
         wg.zones[1] = (rlk_wg_zone_t){ .lo = {-RLK_WG_OPEN, -RLK_WG_OPEN, 0.5f},
                                            .hi = { RLK_WG_OPEN,  RLK_WG_OPEN, 1.0f},
                                            .write = write_capture };
-        assert(rlk_wg_add(&wg, (rlk_wg_stage_t){ .fn = stage_const_field2, .data = &cs[i] }) == RLK_OK);
-        rlk_wg_init(&wg);
+        assert(rlk_wg_add(&wg, (rlk_wg_stage_t){ .fn = stage_const_field2, .data = &cs[i],
+                                                  .writes = { .sampled = RLK_WG_SLOT(2) } }) == RLK_OK);
+        assert(rlk_wg_init(&wg) == RLK_OK);
 
         g_ctx_count = 0;
         rlk_tile_t buf;
@@ -330,7 +339,7 @@ test_rlk_wg_write_const(void) {
     rlk_wg_t wg = wg_min();
     wg.zones[0].write = rlk_wg_write_const;
     wg.zones[0].data = &k_tile;
-    rlk_wg_init(&wg);
+    assert(rlk_wg_init(&wg) == RLK_OK);
 
     rlk_tilemap_t tm;
     rlk_tilemap_init(&tm, 8, 8, tilebuf1, sizeof(tilebuf1));
@@ -354,8 +363,8 @@ test_chunk_ridge_field(void) {
     wg2.fields[0].kind = RLK_WG_RIDGE;
     wg1.zones[0].write = write_field0;
     wg2.zones[0].write = write_field0;
-    rlk_wg_init(&wg1);
-    rlk_wg_init(&wg2);
+    assert(rlk_wg_init(&wg1) == RLK_OK);
+    assert(rlk_wg_init(&wg2) == RLK_OK);
 
     rlk_tilemap_t tm1, tm2;
     rlk_tilemap_init(&tm1, MAP, MAP, tilebuf1, sizeof(tilebuf1));
@@ -372,8 +381,8 @@ test_axis_jitter(void) {
     rlk_wg_t wg2 = wg_quad(0.05f);
     wg2.axes[0].jitter_field = 1;
     wg2.axes[0].jitter_amp = 0.04f;
-    rlk_wg_init(&wg1);
-    rlk_wg_init(&wg2);
+    assert(rlk_wg_init(&wg1) == RLK_OK);
+    assert(rlk_wg_init(&wg2) == RLK_OK);
 
     rlk_tilemap_t tm1, tm2;
     rlk_tilemap_init(&tm1, MAP, MAP, tilebuf1, sizeof(tilebuf1));
@@ -391,9 +400,11 @@ test_stages_derive(void) {
     wg.nsampled = 2;
     wg.fields[1] = (rlk_wg_field_t){ .freq = 0.02f };
     wg.nderived = 1;
-    assert(rlk_wg_add(&wg, (rlk_wg_stage_t){ .fn = stage_derive_avg, .data = NULL }) == RLK_OK);
+    assert(rlk_wg_add(&wg, (rlk_wg_stage_t){ .fn = stage_derive_avg, .data = NULL,
+                                              .reads = { .sampled = RLK_WG_SLOT(0) | RLK_WG_SLOT(1) },
+                                              .writes = { .derived = RLK_WG_SLOT(0) } }) == RLK_OK);
     wg.zones[0].write = write_fields012;
-    rlk_wg_init(&wg);
+    assert(rlk_wg_init(&wg) == RLK_OK);
 
     rlk_tilemap_t tm;
     rlk_tilemap_init(&tm, MAP, MAP, tilebuf1, sizeof(tilebuf1));
@@ -428,8 +439,10 @@ test_derived_slot_axis(void) {
     wg.zones[1] = (rlk_wg_zone_t){ .lo = {-RLK_WG_OPEN, 0.5f},
                                        .hi = { RLK_WG_OPEN, 1.0f},
                                        .write = write_field0 };
-    assert(rlk_wg_add(&wg, (rlk_wg_stage_t){ .fn = stage_derive_complement, .data = NULL }) == RLK_OK);
-    rlk_wg_init(&wg);
+    assert(rlk_wg_add(&wg, (rlk_wg_stage_t){ .fn = stage_derive_complement, .data = NULL,
+                                              .reads = { .sampled = RLK_WG_SLOT(0) },
+                                              .writes = { .derived = RLK_WG_SLOT(0) } }) == RLK_OK);
+    assert(rlk_wg_init(&wg) == RLK_OK);
 
     rlk_tilemap_t tm;
     rlk_tilemap_init(&tm, MAP, MAP, tilebuf1, sizeof(tilebuf1));
@@ -449,7 +462,7 @@ test_derived_slot_axis(void) {
 static void
 test_rlk_wg_rand_basic(void) {
     rlk_wg_t wg = wg_min();
-    rlk_wg_init(&wg);
+    assert(rlk_wg_init(&wg) == RLK_OK);
     float v = rlk_wg_rand(&wg, 10, 20, 0);
     assert(v >= 0.0f && v < 1.0f);
 }
@@ -457,21 +470,21 @@ test_rlk_wg_rand_basic(void) {
 static void
 test_rlk_wg_rand_deterministic(void) {
     rlk_wg_t wg = wg_min();
-    rlk_wg_init(&wg);
+    assert(rlk_wg_init(&wg) == RLK_OK);
     assert(rlk_wg_rand(&wg, 10, 20, 0) == rlk_wg_rand(&wg, 10, 20, 0));
 }
 
 static void
 test_rlk_wg_rand_different_salt(void) {
     rlk_wg_t wg = wg_min();
-    rlk_wg_init(&wg);
+    assert(rlk_wg_init(&wg) == RLK_OK);
     assert(rlk_wg_rand(&wg, 10, 20, 0) != rlk_wg_rand(&wg, 10, 20, 1));
 }
 
 static void
 test_zone_classification_2d(void) {
     rlk_wg_t wg = wg_quad(0.01f);
-    rlk_wg_init(&wg);
+    assert(rlk_wg_init(&wg) == RLK_OK);
 
     rlk_tilemap_t tm;
     rlk_tilemap_init(&tm, MAP, MAP, tilebuf1, sizeof(tilebuf1));
@@ -511,6 +524,68 @@ test_rlk_wg_add(void) {
     assert(wg.nstages == RLK_WG_MAX_STAGES);
 }
 
+/* init accepts a stage reading a derived slot written by an earlier stage. */
+static void
+test_init_accepts_ordered_slots(void) {
+    rlk_wg_t wg = wg_min();
+    wg.nderived = 1;
+    assert(rlk_wg_add(&wg, (rlk_wg_stage_t){ .fn = stage_noop, .data = NULL,
+                                              .writes = { .derived = RLK_WG_SLOT(0) } }) == RLK_OK);
+    assert(rlk_wg_add(&wg, (rlk_wg_stage_t){ .fn = stage_noop, .data = NULL,
+                                              .reads = { .derived = RLK_WG_SLOT(0) } }) == RLK_OK);
+    assert(rlk_wg_init(&wg) == RLK_OK);
+}
+
+/* init rejects a stage reading a derived slot that no earlier stage writes. */
+static void
+test_init_rejects_unwritten_read(void) {
+    rlk_wg_t wg = wg_min();
+    wg.nderived = 1;
+    assert(rlk_wg_add(&wg, (rlk_wg_stage_t){ .fn = stage_noop, .data = NULL,
+                                              .reads = { .derived = RLK_WG_SLOT(0) } }) == RLK_OK);
+    assert(rlk_wg_init(&wg) == RLK_E_INVALID);
+}
+
+/* init rejects the same read when the writer is registered later. */
+static void
+test_init_rejects_wrong_order(void) {
+    rlk_wg_t wg = wg_min();
+    wg.nderived = 1;
+    assert(rlk_wg_add(&wg, (rlk_wg_stage_t){ .fn = stage_noop, .data = NULL,
+                                              .reads = { .derived = RLK_WG_SLOT(0) } }) == RLK_OK);
+    assert(rlk_wg_add(&wg, (rlk_wg_stage_t){ .fn = stage_noop, .data = NULL,
+                                              .writes = { .derived = RLK_WG_SLOT(0) } }) == RLK_OK);
+    assert(rlk_wg_init(&wg) == RLK_E_INVALID);
+}
+
+/* init rejects a slot reference out of range. */
+static void
+test_init_rejects_out_of_range(void) {
+    rlk_wg_t wg = wg_min();   /* nsampled = 1, nderived = 0 */
+    assert(rlk_wg_add(&wg, (rlk_wg_stage_t){ .fn = stage_noop, .data = NULL,
+                                              .reads = { .sampled = RLK_WG_SLOT(5) } }) == RLK_OK);
+    assert(rlk_wg_init(&wg) == RLK_E_INVALID);
+}
+
+/* init rejects an axis reading a derived slot that no stage writes. */
+static void
+test_init_rejects_axis_on_unwritten_slot(void) {
+    rlk_wg_t wg = wg_min();
+    wg.nderived = 1;
+    wg.axes[1] = (rlk_wg_axis_t){ .field = 1 };   /* derived slot 0, never written */
+    assert(rlk_wg_init(&wg) == RLK_E_INVALID);
+}
+
+/* RLK_WG_SLOTS_ALL expands to the existing slots only. */
+static void
+test_init_accepts_slots_all(void) {
+    rlk_wg_t wg = wg_min();
+    assert(rlk_wg_add(&wg, (rlk_wg_stage_t){ .fn = stage_noop, .data = NULL,
+                                              .reads = { .sampled = RLK_WG_SLOTS_ALL },
+                                              .writes = { .sampled = RLK_WG_SLOTS_ALL } }) == RLK_OK);
+    assert(rlk_wg_init(&wg) == RLK_OK);
+}
+
 int
 main(void) {
     test_rlk_wg_init_defaults();
@@ -531,5 +606,11 @@ main(void) {
     test_rlk_wg_rand_different_salt();
     test_zone_classification_2d();
     test_rlk_wg_add();
+    test_init_accepts_ordered_slots();
+    test_init_rejects_unwritten_read();
+    test_init_rejects_wrong_order();
+    test_init_rejects_out_of_range();
+    test_init_rejects_axis_on_unwritten_slot();
+    test_init_accepts_slots_all();
     return 0;
 }
