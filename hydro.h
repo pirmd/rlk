@@ -37,9 +37,6 @@
 #include "drain.h"
 #include "geom.h"
 
-/* Manning roughness coefficient used by the speed estimate. */
-#define RLK_HYDRO_MANNING_N 0.03f
-
 /* Hydrology data: caller-owned buffers, each optional (NULL = skip). */
 typedef struct {
     rlk_lattice_t lattice;  /* same geometry as the drain it is built from */

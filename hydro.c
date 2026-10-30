@@ -2,6 +2,9 @@
 
 #include <math.h>
 
+/* Manning roughness coefficient used by the speed estimate. */
+#define RLK_HYDRO_MANNING_N 0.03f
+
 /* Downstream cell index of c, or -1 for an outlet. */
 static inline int
 downstream_cell(const rlk_drain_t *d, int c) {
