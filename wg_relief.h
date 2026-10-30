@@ -1,10 +1,8 @@
-#ifndef RLK_WG_NF_RELIEF_H
-#define RLK_WG_NF_RELIEF_H
-
-/* layer: 3, domain: worldgen */
+#ifndef RLK_WG_RELIEF_H
+#define RLK_WG_RELIEF_H
 
 /*
- * Optional wg_nf stage: compute a standardised elevation field from sampled
+ * Optional wg stage: compute a standardised elevation field from sampled
  * noise fields, with domain warp, mountains, rivers, fjords and altitudinal
  * cooling.
  *
@@ -12,7 +10,7 @@
  *   1. Domain warp: displace (wx,wy) using two warp fields
  *   2. Base elevation: cont + hills_amp*(hills-0.5) + mountain_amp*smoothstep*ridge
  *   3. Rivers: either noise-based (level line of f_river field) or from a
- *      pre-computed derived field (e.g. produced by wg_nf_rivers)
+ *      pre-computed derived field (e.g. produced by wg_rivers)
  *   4. Fjords: straight, deep valleys near cold coasts
  *   5. Subtract river and fjord carves
  *   6. Altitudinal cooling: temp -= lapse * (elev - sea)
@@ -22,17 +20,17 @@
  *   slot_river -> river mask [0,1] (optional)
  *
  * Field indices refer to ctx->field[]: sampled fields are [0, nsampled),
- * derived fields are [nsampled, nsampled+nderived). Use RLK_WG_NF_RELIEF_NONE
+ * derived fields are [nsampled, nsampled+nderived). Use RLK_WG_RELIEF_NONE
  * (255) to disable an optional input.
  *
- * STAGE ORDER: if river_carve_field is set (e.g. from wg_nf_rivers), this stage
- * must run AFTER wg_nf_rivers so the carve is already computed. Adding stages
+ * STAGE ORDER: if river_carve_field is set (e.g. from wg_rivers), this stage
+ * must run AFTER wg_rivers so the carve is already computed. Adding stages
  * in the wrong order silently skips river valley carving.
  */
 
-#include "wg_nf.h"
+#include "wg.h"
 
-#define RLK_WG_NF_RELIEF_NONE 255  /* field index: disabled */
+#define RLK_WG_RELIEF_NONE 255  /* field index: disabled */
 
 /* Relief stage configuration. Const after construction: zero defaults are
    resolved inside the stage, the cfg is never mutated. */
@@ -51,7 +49,7 @@ typedef struct {
     uint8_t slot_elev;    /* output: final elevation */
     uint8_t slot_river;   /* output: river mask [0,1] (NONE = skip) */
 
-    /* --- Derived field input (optional, e.g. from wg_nf_rivers) --- */
+    /* --- Derived field input (optional, e.g. from wg_rivers) --- */
     uint8_t river_carve_field; /* derived field with valley carve (NONE = use noise) */
 
     /* --- Relief parameters --- */
@@ -77,9 +75,9 @@ typedef struct {
     float fjord_reach;    /* only within this much cont above sea */
     float fjord_cold0;    /* fully active below temp = cold0 */
     float fjord_cold1;    /* off above temp = cold1 */
-} rlk_wg_nf_relief_cfg_t;
+} rlk_wg_relief_cfg_t;
 
 /* Build a stage from a const config. The cfg must outlive the wg. */
-rlk_wg_nf_stage_t rlk_wg_nf_relief(const rlk_wg_nf_relief_cfg_t *cfg);
+rlk_wg_stage_t rlk_wg_relief(const rlk_wg_relief_cfg_t *cfg);
 
-#endif /* RLK_WG_NF_RELIEF_H */
+#endif /* RLK_WG_RELIEF_H */

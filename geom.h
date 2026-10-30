@@ -1,8 +1,6 @@
 #ifndef RLK_GEOM_H
 #define RLK_GEOM_H
 
-/* layer: 1, domain: base */
-
 /*
  * Geometric primitives of the tile world: regions (rect) and lattices.
  * Pure types, no data, no allocation. Header-only.

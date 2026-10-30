@@ -2,10 +2,10 @@
 #define TILEMAP_GEN_H
 
 /*
- * tilemap_gen - reusable fantasy map generator (demo component, layer 5).
+ * tilemap_gen - reusable fantasy map generator (demo component).
  *
  * Composes the whole library into one call: noise fields -> coarse
- * elevation grid -> drain (Priority-Flood + D8 + accumulation) -> wg_nf
+ * elevation grid -> drain (Priority-Flood + D8 + accumulation) -> wg
  * pipeline (drain, rivers, relief stages + POI detection) -> tilemap.
  *
  *   static tilemap_gen_t gen;            <- ~340 KB: static or global
@@ -26,16 +26,16 @@
 #include "tilemap.h"
 #include "grid.h"
 #include "drain.h"
-#include "wg_hydro.h"
+#include "hydro.h"
 #include "poi.h"
 #include "noise.h"
-#include "wg_nf.h"
-#include "wg_nf_drain.h"
-#include "wg_nf_hydro.h"
-#include "wg_nf_modulator.h"
-#include "wg_nf_rivers.h"
-#include "wg_nf_relief.h"
-#include "wg_nf_poi.h"
+#include "wg.h"
+#include "wg_drain.h"
+#include "wg_hydro.h"
+#include "wg_modulator.h"
+#include "wg_rivers.h"
+#include "wg_relief.h"
+#include "wg_poi.h"
 
 /* --- Map geometry -------------------------------------------------------- */
 
@@ -57,7 +57,7 @@ enum {
     TILE_VOID = 0,
     TILE_GRASS,
     TILE_WATER,
-    TILE_RIVER,   /* river: wg_nf_rivers mask > 0.5 */
+    TILE_RIVER,   /* river: wg_rivers mask > 0.5 */
     TILE_LAKE,    /* lake: filled depression */
     TILE_ROCK,
     TILE_SAND,
@@ -73,7 +73,7 @@ enum {
     TILE_COUNT
 };
 
-/* --- wg_nf field slots --------------------------------------------------- */
+/* --- wg field slots --------------------------------------------------- */
 
 /* Sampled field slots (noise fields) */
 enum {
@@ -94,13 +94,13 @@ enum {
 
 /* Derived field slots (stage-written) */
 enum {
-    D_ELEV = 0,       /* final elevation (wg_nf_relief) */
-    D_RIVER_MASK,    /* river mask [0,1] (wg_nf_rivers) */
-    D_RIVER_CARVE,   /* valley carve depth (wg_nf_rivers) */
-    D_LAKE,          /* lake depth (wg_nf_drain) */
-    D_SLOPE,         /* D8 downslope, elev units/tile (wg_nf_hydro) */
-    D_STRAHLER,      /* Strahler stream order (wg_nf_hydro) */
-    D_SPEED,         /* Manning speed estimate (wg_nf_hydro) */
+    D_ELEV = 0,       /* final elevation (wg_relief) */
+    D_RIVER_MASK,    /* river mask [0,1] (wg_rivers) */
+    D_RIVER_CARVE,   /* valley carve depth (wg_rivers) */
+    D_LAKE,          /* lake depth (wg_drain) */
+    D_SLOPE,         /* D8 downslope, elev units/tile (wg_hydro) */
+    D_STRAHLER,      /* Strahler stream order (wg_hydro) */
+    D_SPEED,         /* Manning speed estimate (wg_hydro) */
     F_NDERIVED
 };
 
@@ -177,7 +177,7 @@ typedef struct tilemap_gen_s tilemap_gen_t;
    into per-tile buffers (final_elev, river_mask_buf, river_carve_buf). */
 typedef struct {
     tilemap_gen_t *gen;
-    void (*write)(const rlk_wg_nf_ctx_t *, const void *, rlk_tile_t *);
+    void (*write)(const rlk_wg_ctx_t *, const void *, rlk_tile_t *);
     const void *real_data;
 } tilemap_gen_capture_t;
 
@@ -186,7 +186,7 @@ typedef struct {
 struct tilemap_gen_s {
     rlk_tilemap_t tm;
     uint8_t buffer[TM_W * TM_H * sizeof(rlk_tile_t)];
-    rlk_wg_nf_t wg;
+    rlk_wg_t wg;
 
     /* Coarse elevation grid + drain (hydrology) */
     rlk_grid_t elev_grid;
@@ -207,22 +207,22 @@ struct tilemap_gen_s {
     rlk_noise_t relief_noise[F_NSAMPLED];
     rlk_noise_t geo_noise[3];   /* light geology: faults / folds / domes */
 
-    /* wg_nf stage configs (must outlive wg) */
-    rlk_wg_nf_modulator_cfg_t prov_cfg;   /* provinces: Voronoi bias on sampled fields */
-    rlk_wg_nf_stage_t prov_mod;           /* stock modulator stage built from prov_cfg */
-    rlk_wg_nf_stage_t relief_mod;         /* stock relief stage, wrapped with rain shadow */
-    rlk_wg_nf_drain_cfg_t drain_stage;
-    rlk_wg_nf_hydro_cfg_t hydro_stage;
-    rlk_wg_nf_rivers_cfg_t rivers_stage;
-    rlk_wg_nf_relief_cfg_t relief_stage;
+    /* wg stage configs (must outlive wg) */
+    rlk_wg_modulator_cfg_t prov_cfg;   /* provinces: Voronoi bias on sampled fields */
+    rlk_wg_stage_t prov_mod;           /* stock modulator stage built from prov_cfg */
+    rlk_wg_stage_t relief_mod;         /* stock relief stage, wrapped with rain shadow */
+    rlk_wg_drain_cfg_t drain_stage;
+    rlk_wg_hydro_cfg_t hydro_stage;
+    rlk_wg_rivers_cfg_t rivers_stage;
+    rlk_wg_relief_cfg_t relief_stage;
 
     /* POI detection */
     rlk_poi_t poi_buf[256];
     rlk_poi_list_t pois;
-    rlk_wg_nf_poi_cfg_t poi_cave_cfg;
-    rlk_wg_nf_poi_cfg_t poi_dungeon_cfg;
-    rlk_wg_nf_poi_cfg_t poi_village_cfg;
-    rlk_wg_nf_poi_cfg_t poi_tower_cfg;
+    rlk_wg_poi_cfg_t poi_cave_cfg;
+    rlk_wg_poi_cfg_t poi_dungeon_cfg;
+    rlk_wg_poi_cfg_t poi_village_cfg;
+    rlk_wg_poi_cfg_t poi_tower_cfg;
 
     /* Per-tile captured derived fields (for Relief/Flow display modes) */
     float final_elev[TM_W * TM_H];

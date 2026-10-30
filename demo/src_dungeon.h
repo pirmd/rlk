@@ -3,7 +3,7 @@
 
 /*
  * src_dungeon - viewer sources over the standalone generators ca and bsp
- * (demo component, layer 5).
+ * (demo component).
  *
  * Two sources sharing one state: "ca" (cellular automaton cave with an
  * entrance POI) and "bsp" (BSP dungeon with a spawn POI). One display

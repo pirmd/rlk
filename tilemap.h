@@ -1,8 +1,6 @@
 #ifndef RLK_TILEMAP_H
 #define RLK_TILEMAP_H
 
-/* layer: 1, domain: base */
-
 #include <assert.h>
 #include <stddef.h>
 #include <stdint.h>

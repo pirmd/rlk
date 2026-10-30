@@ -1,8 +1,6 @@
 #ifndef RLK_DRAIN_H
 #define RLK_DRAIN_H
 
-/* layer: 2, domain: terrain */
-
 /*
  * Drainage on a coarse elevation grid: depression filling, D8 flow
  * directions, flow accumulation, and signed distance to the river network.

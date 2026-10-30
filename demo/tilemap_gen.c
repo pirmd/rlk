@@ -33,7 +33,7 @@
    Uses the final elevation to estimate distance from the sea.
    shore = 0 at waterline, 1 at ELEV_BEACH (landward edge of beach). */
 static inline float
-estuary_mask(const rlk_wg_nf_ctx_t *ctx, float mask) {
+estuary_mask(const rlk_wg_ctx_t *ctx, float mask) {
     if (mask <= 0.0f) return 0.0f;
     float elev = ctx->field[F_ELEV];
     float shore = (elev - SEA_LEVEL) / (ELEV_BEACH - SEA_LEVEL);
@@ -48,7 +48,7 @@ estuary_mask(const rlk_wg_nf_ctx_t *ctx, float mask) {
    Used to bias the coarse drain grid exactly like the tile pipeline. */
 static float
 province_mod_field(const tilemap_gen_t *gen, int f, float value, float x, float y) {
-    rlk_wg_nf_ctx_t ctx = {0};
+    rlk_wg_ctx_t ctx = {0};
     ctx.wg = &gen->wg;
     ctx.wx = (int)floorf(x);
     ctx.wy = (int)floorf(y);
@@ -65,20 +65,20 @@ province_mod_field(const tilemap_gen_t *gen, int f, float value, float x, float 
    decorrelates humidity for any seed), then run the stock Voronoi modulator:
    per-province bias/gain on the sampled fields, before relief/rivers. */
 static void
-province_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
+province_stage(rlk_wg_ctx_t *ctx, const void *data) {
     const tilemap_gen_t *gen = (const tilemap_gen_t *)data;
-    ctx->field[F_HUM] = rlk_wg_nf_sample_field(ctx->wg, F_HUM,
+    ctx->field[F_HUM] = rlk_wg_sample_field(ctx->wg, F_HUM,
                                                (float)ctx->wx + 913.7f, (float)ctx->wy + 371.3f);
     gen->prov_mod.fn(ctx, gen->prov_mod.data);
 }
 
-/* Stage 3 wrapper: stock wg_nf_relief stage, then rain shadow (post-relief).
+/* Stage 3 wrapper: stock wg_relief stage, then rain shadow (post-relief).
    Dominant wind west -> east: air rising on the west slope of a range
    (elevation increasing eastward) is humid (orographic lift), air sinking
    on the east slope is dry (foehn). The slope is read from the coarse
    elevation grid, i.e. the same terrain the relief stage displays. */
 static void
-relief_rain_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
+relief_rain_stage(rlk_wg_ctx_t *ctx, const void *data) {
     const tilemap_gen_t *gen = (const tilemap_gen_t *)data;
     gen->relief_mod.fn(ctx, gen->relief_mod.data);
 
@@ -101,7 +101,7 @@ relief_rain_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
    The mask threshold in the writers (mask > 0.5) turns the scale factor
    into a width change of roughly +/-0.7 tile around the drain SDF width. */
 static void
-strahler_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
+strahler_stage(rlk_wg_ctx_t *ctx, const void *data) {
     (void)data;
     float mask = ctx->field[F_RIVER_MASK];
     if (mask <= 0.0f) return;
@@ -167,9 +167,9 @@ geo_eval(const tilemap_gen_t *gen, float x, float y, float elev,
     int cy = (int)floorf(y / GEO_VOLC_CELL);
     for (int j = cy - 1; j <= cy + 1; j++) {
         for (int i = cx - 1; i <= cx + 1; i++) {
-            if (rlk_wg_nf_rand(&gen->wg, i, j, 0xB01CULL) > GEO_VOLC_DENS) continue;
-            float vx = ((float)i + 0.5f + (rlk_wg_nf_rand(&gen->wg, i, j, 0xA11CEULL) - 0.5f) * 0.6f) * GEO_VOLC_CELL;
-            float vy = ((float)j + 0.5f + (rlk_wg_nf_rand(&gen->wg, i, j, 0xD0D0ULL) - 0.5f) * 0.6f) * GEO_VOLC_CELL;
+            if (rlk_wg_rand(&gen->wg, i, j, 0xB01CULL) > GEO_VOLC_DENS) continue;
+            float vx = ((float)i + 0.5f + (rlk_wg_rand(&gen->wg, i, j, 0xA11CEULL) - 0.5f) * 0.6f) * GEO_VOLC_CELL;
+            float vy = ((float)j + 0.5f + (rlk_wg_rand(&gen->wg, i, j, 0xD0D0ULL) - 0.5f) * 0.6f) * GEO_VOLC_CELL;
             float d = rlk_dist_euclideanf(x, y, vx, vy);
             if (d < vdist) vdist = d;
             if (d < GEO_VOLC_RADIUS) {
@@ -203,7 +203,7 @@ geo_eval(const tilemap_gen_t *gen, float x, float y, float elev,
    coarse grid got the same bias in relief_elev_fn, so rivers and relief
    agree) and records structure type + lithology per tile. */
 static void
-geology_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
+geology_stage(rlk_wg_ctx_t *ctx, const void *data) {
     tilemap_gen_t *gen = (tilemap_gen_t *)data;
     uint8_t st, litho;
     float bias = geo_eval(gen, (float)ctx->wx, (float)ctx->wy,
@@ -214,35 +214,35 @@ geology_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
     gen->litho_buf[idx] = litho;
 }
 
-/* Context for relief_elev_fn: reads field configs from wg, mirrors the wg_nf_relief stage. */
+/* Context for relief_elev_fn: reads field configs from wg, mirrors the wg_relief stage. */
 typedef struct {
     const tilemap_gen_t *gen;    /* for the province modulator stage */
-    const rlk_wg_nf_t *wg;       /* field configs (freq, octaves, gain, kind) */
+    const rlk_wg_t *wg;       /* field configs (freq, octaves, gain, kind) */
     const rlk_noise_t *noise;    /* relief_noise[F_NSAMPLED] */
     float warp;
     float hills_amp;
     float mountain_lo, mountain_hi, mountain_amp;
 } relief_elev_ctx_t;
 
-/* Sample a wg_nf field at (x,y), reading parameters from wg->fields[idx]. */
+/* Sample a wg field at (x,y), reading parameters from wg->fields[idx]. */
 static inline float
-relief_sample_field(const rlk_wg_nf_t *wg, const rlk_noise_t *noise,
+relief_sample_field(const rlk_wg_t *wg, const rlk_noise_t *noise,
                     int idx, float x, float y) {
-    const rlk_wg_nf_field_t *f = &wg->fields[idx];
+    const rlk_wg_field_t *f = &wg->fields[idx];
     float v = rlk_noise_fbm(&noise[idx], x, y, f->octaves, f->freq, f->gain);
-    if (f->kind == RLK_WG_NF_RIDGE)
+    if (f->kind == RLK_WG_RIDGE)
         v = 1.0f - fabsf(2.0f * v - 1.0f);
     return v;
 }
 
-/* Elevation grid function: reproduces the wg_nf_relief stage's BASE elevation
+/* Elevation grid function: reproduces the wg_relief stage's BASE elevation
    (cont + hills + mountains, before river/fjord carving), so the drain grid
    sees the same terrain that is displayed. Rivers follow the displayed relief.
    Field parameters are read from wg->fields[] to stay in sync with the stage. */
 static float
 relief_elev_fn(float px, float py, const void *user) {
     const relief_elev_ctx_t *ctx = (const relief_elev_ctx_t *)user;
-    const rlk_wg_nf_t *wg = ctx->wg;
+    const rlk_wg_t *wg = ctx->wg;
 
     /* Continent at original position, with the province bias applied through
        the same stock modulator stage as the tile pipeline: the drain grid and
@@ -277,7 +277,7 @@ relief_elev_fn(float px, float py, const void *user) {
 
 /* Capture writer: stores derived fields then dispatches to the real writer. */
 static void
-capture_write(const rlk_wg_nf_ctx_t *ctx, const void *data, rlk_tile_t *out) {
+capture_write(const rlk_wg_ctx_t *ctx, const void *data, rlk_tile_t *out) {
     const tilemap_gen_capture_t *cap = (const tilemap_gen_capture_t *)data;
     const int idx = ctx->y * TM_W + ctx->x;
     cap->gen->final_elev[idx] = ctx->field[F_ELEV];
@@ -289,7 +289,7 @@ capture_write(const rlk_wg_nf_ctx_t *ctx, const void *data, rlk_tile_t *out) {
 /* Rock shade by lithology: basalt darkest, granite lightest, metamorphic
    mid-tone, sedimentary keeps the depth-based ramp. */
 static uint8_t
-rock_variant(const rlk_wg_nf_ctx_t *ctx, const tilemap_gen_t *gen, float depth) {
+rock_variant(const rlk_wg_ctx_t *ctx, const tilemap_gen_t *gen, float depth) {
     int idx = ctx->y * TM_W + ctx->x;
     switch (gen->litho_buf[idx]) {
     case LITHO_EFFUSIVE:  return 3;
@@ -311,7 +311,7 @@ rock_variant(const rlk_wg_nf_ctx_t *ctx, const tilemap_gen_t *gen, float depth) 
 #define SLOPE_STEEP   0.03f   /* au-dessus: falaise */
 
 static int
-write_coast(const rlk_wg_nf_ctx_t *ctx, const void *data, rlk_tile_t *out) {
+write_coast(const rlk_wg_ctx_t *ctx, const void *data, rlk_tile_t *out) {
     float elev = ctx->field[F_ELEV];
     if (elev < ELEV_BEACH || elev > ELEV_BEACH + COAST_EXT) return 0;
     float slope = ctx->field[F_SLOPE];
@@ -330,7 +330,7 @@ write_coast(const rlk_wg_nf_ctx_t *ctx, const void *data, rlk_tile_t *out) {
 }
 
 static void
-write_deep(const rlk_wg_nf_ctx_t *ctx, const void *data, rlk_tile_t *out) {
+write_deep(const rlk_wg_ctx_t *ctx, const void *data, rlk_tile_t *out) {
     (void)data;
     out->type = TILE_WATER;
     /* Sediment plume: lighter water where a river meets the sea */
@@ -342,7 +342,7 @@ write_deep(const rlk_wg_nf_ctx_t *ctx, const void *data, rlk_tile_t *out) {
 }
 
 static void
-write_shallow(const rlk_wg_nf_ctx_t *ctx, const void *data, rlk_tile_t *out) {
+write_shallow(const rlk_wg_ctx_t *ctx, const void *data, rlk_tile_t *out) {
     (void)data;
     out->type = TILE_WATER;
     /* Sediment plume near river mouths: lightest water shade */
@@ -354,7 +354,7 @@ write_shallow(const rlk_wg_nf_ctx_t *ctx, const void *data, rlk_tile_t *out) {
 }
 
 static void
-write_beach(const rlk_wg_nf_ctx_t *ctx, const void *data, rlk_tile_t *out) {
+write_beach(const rlk_wg_ctx_t *ctx, const void *data, rlk_tile_t *out) {
     float mask = estuary_mask(ctx, ctx->field[F_RIVER_MASK]);
 
     if (mask > 0.0f) {
@@ -387,7 +387,7 @@ write_beach(const rlk_wg_nf_ctx_t *ctx, const void *data, rlk_tile_t *out) {
 /* Shared land prelude: lake, river channel, marsh floodplain.
    Returns 1 if out was written (caller must not touch it further). */
 static int
-write_land_water(const rlk_wg_nf_ctx_t *ctx, rlk_tile_t *out) {
+write_land_water(const rlk_wg_ctx_t *ctx, rlk_tile_t *out) {
     /* Lake: filled depression. At the shore with a river, show a channel. */
     if (ctx->field[F_LAKE] >= LAKE_MIN_DEPTH) {
         float mask = estuary_mask(ctx, ctx->field[F_RIVER_MASK]);
@@ -424,9 +424,9 @@ write_land_water(const rlk_wg_nf_ctx_t *ctx, rlk_tile_t *out) {
 
 /* Rocky outcrops near mountain borders (shared by lowland biomes). */
 static void
-land_rock_outcrop(const rlk_wg_nf_ctx_t *ctx, const void *data, rlk_tile_t *out) {
+land_rock_outcrop(const rlk_wg_ctx_t *ctx, const void *data, rlk_tile_t *out) {
     if (ctx->zone2 == Z_MOUNTAIN && ctx->edge > 0.6f &&
-        rlk_wg_nf_rand(ctx->wg, ctx->wx, ctx->wy, 2) < 0.3f) {
+        rlk_wg_rand(ctx->wg, ctx->wx, ctx->wy, 2) < 0.3f) {
         out->type = TILE_ROCK;
         out->flags = 0x01;
         out->variant = rock_variant(ctx, (const tilemap_gen_t *)data, ctx->depth);
@@ -434,7 +434,7 @@ land_rock_outcrop(const rlk_wg_nf_ctx_t *ctx, const void *data, rlk_tile_t *out)
 }
 
 static void
-write_desert(const rlk_wg_nf_ctx_t *ctx, const void *data, rlk_tile_t *out) {
+write_desert(const rlk_wg_ctx_t *ctx, const void *data, rlk_tile_t *out) {
     if (write_land_water(ctx, out)) return;
     if (write_coast(ctx, data, out)) return;
     out->type = TILE_SAND;
@@ -442,12 +442,12 @@ write_desert(const rlk_wg_nf_ctx_t *ctx, const void *data, rlk_tile_t *out) {
 }
 
 static void
-write_steppe(const rlk_wg_nf_ctx_t *ctx, const void *data, rlk_tile_t *out) {
+write_steppe(const rlk_wg_ctx_t *ctx, const void *data, rlk_tile_t *out) {
     if (write_land_water(ctx, out)) return;
     if (write_coast(ctx, data, out)) return;
     /* Écotone: near a desert border, sand spills over (50%) */
     if (ctx->zone2 == Z_DESERT && ctx->edge > 0.5f &&
-        rlk_wg_nf_rand(ctx->wg, ctx->wx, ctx->wy, 22) < 0.5f) {
+        rlk_wg_rand(ctx->wg, ctx->wx, ctx->wy, 22) < 0.5f) {
         out->type = TILE_SAND;
         out->variant = (uint8_t)(ctx->field[F_DETAIL] * 3.0f);
         return;
@@ -459,12 +459,12 @@ write_steppe(const rlk_wg_nf_ctx_t *ctx, const void *data, rlk_tile_t *out) {
 }
 
 static void
-write_plains(const rlk_wg_nf_ctx_t *ctx, const void *data, rlk_tile_t *out) {
+write_plains(const rlk_wg_ctx_t *ctx, const void *data, rlk_tile_t *out) {
     if (write_land_water(ctx, out)) return;
     if (write_coast(ctx, data, out)) return;
     /* Écotone: near a forest border, trees spill over (30%) */
     if (ctx->zone2 == Z_FOREST && ctx->edge > 0.5f &&
-        rlk_wg_nf_rand(ctx->wg, ctx->wx, ctx->wy, 21) < 0.3f) {
+        rlk_wg_rand(ctx->wg, ctx->wx, ctx->wy, 21) < 0.3f) {
         out->type = TILE_TREE;
         out->flags = 0x01;
         out->variant = (uint8_t)(ctx->field[F_DETAIL] * 3.0f);
@@ -477,14 +477,14 @@ write_plains(const rlk_wg_nf_ctx_t *ctx, const void *data, rlk_tile_t *out) {
 }
 
 static void
-write_forest(const rlk_wg_nf_ctx_t *ctx, const void *data, rlk_tile_t *out) {
+write_forest(const rlk_wg_ctx_t *ctx, const void *data, rlk_tile_t *out) {
     if (write_land_water(ctx, out)) return;
     if (write_coast(ctx, data, out)) return;
     /* Tree density */
     float density = (0.3f + ctx->depth * 0.5f) * (0.5f + ctx->field[F_DETAIL]);
     /* Variant: mix detail noise with depth (darker in the forest centre) */
     out->variant = (uint8_t)((ctx->field[F_DETAIL] * 0.5f + ctx->depth * 0.5f) * 3.0f);
-    if (rlk_wg_nf_rand(ctx->wg, ctx->wx, ctx->wy, 1) < density) {
+    if (rlk_wg_rand(ctx->wg, ctx->wx, ctx->wy, 1) < density) {
         out->type = TILE_TREE;  /* hot + wet: broadleaf */
         out->flags = 0x01;
     } else {
@@ -493,7 +493,7 @@ write_forest(const rlk_wg_nf_ctx_t *ctx, const void *data, rlk_tile_t *out) {
 }
 
 static void
-write_tundra(const rlk_wg_nf_ctx_t *ctx, const void *data, rlk_tile_t *out) {
+write_tundra(const rlk_wg_ctx_t *ctx, const void *data, rlk_tile_t *out) {
     if (write_land_water(ctx, out)) return;
     if (write_coast(ctx, data, out)) return;
     /* cold + dry: patchy snow over pale grass */
@@ -508,12 +508,12 @@ write_tundra(const rlk_wg_nf_ctx_t *ctx, const void *data, rlk_tile_t *out) {
 }
 
 static void
-write_taiga(const rlk_wg_nf_ctx_t *ctx, const void *data, rlk_tile_t *out) {
+write_taiga(const rlk_wg_ctx_t *ctx, const void *data, rlk_tile_t *out) {
     if (write_land_water(ctx, out)) return;
     if (write_coast(ctx, data, out)) return;
     /* Écotone: near a tundra border, snow creeps down (50%) */
     if (ctx->zone2 == Z_TUNDRA && ctx->edge > 0.5f &&
-        rlk_wg_nf_rand(ctx->wg, ctx->wx, ctx->wy, 23) < 0.5f) {
+        rlk_wg_rand(ctx->wg, ctx->wx, ctx->wy, 23) < 0.5f) {
         out->type = TILE_SNOW;
         out->flags = 0x01;
         out->variant = 0;
@@ -522,7 +522,7 @@ write_taiga(const rlk_wg_nf_ctx_t *ctx, const void *data, rlk_tile_t *out) {
     /* cold + wet: conifers over forest floor */
     float density = (0.3f + ctx->depth * 0.5f) * (0.5f + ctx->field[F_DETAIL]);
     out->variant = (uint8_t)((ctx->field[F_DETAIL] * 0.5f + ctx->depth * 0.5f) * 3.0f);
-    if (rlk_wg_nf_rand(ctx->wg, ctx->wx, ctx->wy, 5) < density) {
+    if (rlk_wg_rand(ctx->wg, ctx->wx, ctx->wy, 5) < density) {
         out->type = TILE_PINE;
         out->flags = 0x01;
     } else {
@@ -531,7 +531,7 @@ write_taiga(const rlk_wg_nf_ctx_t *ctx, const void *data, rlk_tile_t *out) {
 }
 
 static void
-write_mountain(const rlk_wg_nf_ctx_t *ctx, const void *data, rlk_tile_t *out) {
+write_mountain(const rlk_wg_ctx_t *ctx, const void *data, rlk_tile_t *out) {
     if (write_land_water(ctx, out)) return;
     out->type = TILE_ROCK;
     out->flags = 0x01;
@@ -540,7 +540,7 @@ write_mountain(const rlk_wg_nf_ctx_t *ctx, const void *data, rlk_tile_t *out) {
 }
 
 static void
-write_snow(const rlk_wg_nf_ctx_t *ctx, const void *data, rlk_tile_t *out) {
+write_snow(const rlk_wg_ctx_t *ctx, const void *data, rlk_tile_t *out) {
     if (write_land_water(ctx, out)) return;
     /* Snow line = f(temperature): 0.85 when cold (snow at sea level at the
        poles), 1.00 when hot (~5000 m at the equator). Smoothstep over 0.05
@@ -560,7 +560,7 @@ write_snow(const rlk_wg_nf_ctx_t *ctx, const void *data, rlk_tile_t *out) {
 }
 
 /* --- POI: terrain-constrained detectors + multi-tile content ---------------
-   The stock rlk_wg_nf_poi stages (7-10) cover field/grid/drain constraints.
+   The stock rlk_wg_poi stages (7-10) cover field/grid/drain constraints.
    Stage 11 adds kinds constrained by zone / slope / river / geology, all
    readable from the per-tile ctx and the geology buffers (stage 6 runs
    before, per tile). */
@@ -625,7 +625,7 @@ static const poi_det_t POI_DETS[] = {
 
 /* Stage 11: terrain-constrained POI detectors (table-driven). */
 static void
-poi_terrain_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
+poi_terrain_stage(rlk_wg_ctx_t *ctx, const void *data) {
     tilemap_gen_t *gen = (tilemap_gen_t *)data;
     if (ctx->wx < 0 || ctx->wx >= TM_W || ctx->wy < 0 || ctx->wy >= TM_H)
         return;
@@ -656,7 +656,7 @@ poi_terrain_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
             continue;
         if (d->litho_mask && !(d->litho_mask & (1u << gen->litho_buf[idx])))
             continue;
-        if (rlk_wg_nf_rand(ctx->wg, ctx->wx, ctx->wy, d->salt) >= d->density)
+        if (rlk_wg_rand(ctx->wg, ctx->wx, ctx->wy, d->salt) >= d->density)
             continue;
         if (rlk_poi_find(&gen->pois, ctx->wx, ctx->wy, d->min_sep, d->type))
             continue;
@@ -699,7 +699,7 @@ stamp_poi(tilemap_gen_t *gen, const rlk_poi_t *p) {
         for (int x = box.x; x < box.x + box.w; x++) {
             gen->poi_res[(size_t)y * TM_W + (size_t)x] = (uint8_t)p->type;
             rlk_tile_t *t = rlk_tilemap_get(&gen->tm, x, y);
-            float r = rlk_wg_nf_rand(&gen->wg, x, y,
+            float r = rlk_wg_rand(&gen->wg, x, y,
                                      rlk_hash_sub(p->seed, 0x57A9ULL));
             int dx = x - (p->x - hs), dy = y - (p->y - hs);  /* bbox-local */
             int on_ring = (dx == 0 || dy == 0 ||
@@ -817,7 +817,7 @@ cosmetic_pass(tilemap_gen_t *gen) {
             rlk_tile_t *t = rlk_tilemap_get(&gen->tm, x, y);
             if (!cosmetic_land(t->type) || gen->poi_res[idx] != 0xFFu)
                 continue;
-            float r = rlk_wg_nf_rand(&gen->wg, x, y, 0xCA257ULL);
+            float r = rlk_wg_rand(&gen->wg, x, y, 0xCA257ULL);
             if (r < KARST_DENS) {
                 t->type = TILE_SINKHOLE;
                 t->flags = 0x01;
@@ -858,10 +858,10 @@ cosmetic_pass(tilemap_gen_t *gen) {
                     rlk_tile_t *nt = rlk_tilemap_get(&gen->tm, nx, ny);
                     if (nt->type != TILE_WATER || gen->poi_res[nidx] != 0xFFu)
                         continue;
-                    if (rlk_wg_nf_rand(&gen->wg, nx, ny, 0xDE17AULL) < DELTA_DENS) {
+                    if (rlk_wg_rand(&gen->wg, nx, ny, 0xDE17AULL) < DELTA_DENS) {
                         nt->type = TILE_SAND;
                         nt->flags = 0;
-                        nt->variant = (uint8_t)(rlk_wg_nf_rand(&gen->wg, nx, ny, 0x5A11ULL) * 3.0f);
+                        nt->variant = (uint8_t)(rlk_wg_rand(&gen->wg, nx, ny, 0x5A11ULL) * 3.0f);
                     }
                 }
             }
@@ -886,7 +886,7 @@ cosmetic_pass(tilemap_gen_t *gen) {
                 rlk_tile_t *nt = rlk_tilemap_get(&gen->tm, nx, ny);
                 if (!cosmetic_land(nt->type))
                     continue;
-                if (rlk_wg_nf_rand(&gen->wg, nx, ny, 0x0B0CULL) < OXBOW_DENS) {
+                if (rlk_wg_rand(&gen->wg, nx, ny, 0x0B0CULL) < OXBOW_DENS) {
                     nt->type = TILE_LAKE;
                     nt->flags = 0x02;
                     nt->variant = 0;
@@ -922,29 +922,29 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
 
     rlk_tilemap_init(&gen->tm, TM_W, TM_H, gen->buffer, sizeof(gen->buffer));
 
-    /* --- wg_nf field config (before grid fill: relief_noise seeding needs field seeds) --- */
-    rlk_wg_nf_t *wg = &gen->wg;
+    /* --- wg field config (before grid fill: relief_noise seeding needs field seeds) --- */
+    rlk_wg_t *wg = &gen->wg;
     wg->seed = seed;
     wg->nstages = 0;
     wg->nsampled = F_NSAMPLED;
     wg->nderived = F_NDERIVED;
-    wg->fields[F_CONT]   = (rlk_wg_nf_field_t){ .kind = RLK_WG_NF_FBM,   .seed = 1, .octaves = 3, .freq = 0.012f, .gain = 0.5f };
-    wg->fields[F_HILLS]  = (rlk_wg_nf_field_t){ .kind = RLK_WG_NF_FBM,   .seed = 2, .octaves = 4, .freq = 0.050f, .gain = 0.5f };
-    wg->fields[F_RIDGE]  = (rlk_wg_nf_field_t){ .kind = RLK_WG_NF_RIDGE, .seed = 3, .octaves = 4, .freq = 0.030f, .gain = 0.5f };
-    wg->fields[F_WARP_X] = (rlk_wg_nf_field_t){ .kind = RLK_WG_NF_FBM,   .seed = 4, .octaves = 2, .freq = 0.025f, .gain = 0.5f };
-    wg->fields[F_WARP_Y] = (rlk_wg_nf_field_t){ .kind = RLK_WG_NF_FBM,   .seed = 5, .octaves = 2, .freq = 0.025f, .gain = 0.5f };
-    wg->fields[F_FJORD]  = (rlk_wg_nf_field_t){ .kind = RLK_WG_NF_FBM,   .seed = 6, .octaves = 2, .freq = 0.040f, .gain = 0.5f };
-    wg->fields[F_TEMP]   = (rlk_wg_nf_field_t){ .kind = RLK_WG_NF_FBM,   .seed = 7, .octaves = 4, .freq = 0.040f, .gain = 0.5f };
-    wg->fields[F_DETAIL] = (rlk_wg_nf_field_t){ .kind = RLK_WG_NF_FBM,   .seed = 8, .octaves = 2, .freq = 0.050f, .gain = 0.5f };
-    wg->fields[F_WIG_X]  = (rlk_wg_nf_field_t){ .kind = RLK_WG_NF_FBM,   .seed = 9, .octaves = 2, .freq = 0.100f, .gain = 0.5f };
-    wg->fields[F_WIG_Y]  = (rlk_wg_nf_field_t){ .kind = RLK_WG_NF_FBM,   .seed = 10, .octaves = 2, .freq = 0.120f, .gain = 0.5f };
-    wg->fields[F_CREEK]  = (rlk_wg_nf_field_t){ .kind = RLK_WG_NF_FBM,   .seed = 11, .octaves = 2, .freq = 0.025f, .gain = 0.5f };
-    wg->fields[F_HUM]    = (rlk_wg_nf_field_t){ .kind = RLK_WG_NF_FBM,   .seed = 12, .octaves = 4, .freq = 0.040f, .gain = 0.5f };
+    wg->fields[F_CONT]   = (rlk_wg_field_t){ .kind = RLK_WG_FBM,   .seed = 1, .octaves = 3, .freq = 0.012f, .gain = 0.5f };
+    wg->fields[F_HILLS]  = (rlk_wg_field_t){ .kind = RLK_WG_FBM,   .seed = 2, .octaves = 4, .freq = 0.050f, .gain = 0.5f };
+    wg->fields[F_RIDGE]  = (rlk_wg_field_t){ .kind = RLK_WG_RIDGE, .seed = 3, .octaves = 4, .freq = 0.030f, .gain = 0.5f };
+    wg->fields[F_WARP_X] = (rlk_wg_field_t){ .kind = RLK_WG_FBM,   .seed = 4, .octaves = 2, .freq = 0.025f, .gain = 0.5f };
+    wg->fields[F_WARP_Y] = (rlk_wg_field_t){ .kind = RLK_WG_FBM,   .seed = 5, .octaves = 2, .freq = 0.025f, .gain = 0.5f };
+    wg->fields[F_FJORD]  = (rlk_wg_field_t){ .kind = RLK_WG_FBM,   .seed = 6, .octaves = 2, .freq = 0.040f, .gain = 0.5f };
+    wg->fields[F_TEMP]   = (rlk_wg_field_t){ .kind = RLK_WG_FBM,   .seed = 7, .octaves = 4, .freq = 0.040f, .gain = 0.5f };
+    wg->fields[F_DETAIL] = (rlk_wg_field_t){ .kind = RLK_WG_FBM,   .seed = 8, .octaves = 2, .freq = 0.050f, .gain = 0.5f };
+    wg->fields[F_WIG_X]  = (rlk_wg_field_t){ .kind = RLK_WG_FBM,   .seed = 9, .octaves = 2, .freq = 0.100f, .gain = 0.5f };
+    wg->fields[F_WIG_Y]  = (rlk_wg_field_t){ .kind = RLK_WG_FBM,   .seed = 10, .octaves = 2, .freq = 0.120f, .gain = 0.5f };
+    wg->fields[F_CREEK]  = (rlk_wg_field_t){ .kind = RLK_WG_FBM,   .seed = 11, .octaves = 2, .freq = 0.025f, .gain = 0.5f };
+    wg->fields[F_HUM]    = (rlk_wg_field_t){ .kind = RLK_WG_FBM,   .seed = 12, .octaves = 4, .freq = 0.040f, .gain = 0.5f };
 
     /* --- Provinces: stock Voronoi modulator biasing the sampled fields before
        relief/rivers. Type 0 is neutral; 1..4 are ARID/LUSH/COLD/ISLES.
        cell 64 tiles, blend 16 tiles: macro-zones a few cells wide. */
-    gen->prov_cfg = (rlk_wg_nf_modulator_cfg_t){
+    gen->prov_cfg = (rlk_wg_modulator_cfg_t){
         .ntypes = 5,
         .cell = 64.0f,
         .blend = 16.0f,
@@ -955,16 +955,16 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
     gen->prov_cfg.types[2].bias[F_HUM]  = +0.14f;  /* LUSH: wet         */
     gen->prov_cfg.types[3].bias[F_TEMP] = -0.16f;  /* COLD: cold        */
     gen->prov_cfg.types[4].bias[F_CONT] = -0.10f;  /* ISLES: more sea   */
-    gen->prov_mod = rlk_wg_nf_modulator(&gen->prov_cfg);
+    gen->prov_mod = rlk_wg_modulator(&gen->prov_cfg);
 
-    /* --- Coarse elevation grid: seed noise like wg_nf, fill with relief terrain ---
+    /* --- Coarse elevation grid: seed noise like wg, fill with relief terrain ---
        The drain grid must see the SAME terrain the relief stage displays,
        otherwise rivers follow a different landscape than what is shown. */
     for (int i = 0; i < F_NSAMPLED; i++) {
         uint64_t s = rlk_hash_sub(seed, 0xF1E1D000ULL + (uint64_t)i);
         rlk_noise_seed(&gen->relief_noise[i], rlk_hash_sub(s, wg->fields[i].seed));
     }
-    /* Light geology noise (demo-owned, not wg_nf fields) */
+    /* Light geology noise (demo-owned, not wg fields) */
     for (int i = 0; i < 3; i++)
         rlk_noise_seed(&gen->geo_noise[i], rlk_hash_sub(seed, 0x6E0600ULL + (uint64_t)i));
     relief_elev_ctx_t elev_ctx = {
@@ -1026,37 +1026,37 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
                                 .speed = gen->hydro_speed };
     rlk_hydro_build(&gen->hydro, &gen->drain, RIVER_ACC_MIN, gen->hydro_scratch);
 
-    /* --- wg_nf stages: provinces + drain + hydro + rivers + strahler + relief + POI --- */
+    /* --- wg stages: provinces + drain + hydro + rivers + strahler + relief + POI --- */
 
     /* Stage 0: provinces (F_HUM offset decorrelation + Voronoi modulator) */
-    rlk_wg_nf_add(wg, (rlk_wg_nf_stage_t){ .fn = province_stage, .data = gen });
+    rlk_wg_add(wg, (rlk_wg_stage_t){ .fn = province_stage, .data = gen });
 
-    /* Stage 1: wg_nf_drain — inject accumulation + lake depth */
-    gen->drain_stage = (rlk_wg_nf_drain_cfg_t){
+    /* Stage 1: wg_drain — inject accumulation + lake depth */
+    gen->drain_stage = (rlk_wg_drain_cfg_t){
         .drain = &gen->drain,
         .elev = &gen->elev_grid,
         .sea = SEA_LEVEL,
-        .slot_acc  = RLK_WG_NF_DRAIN_NONE,   /* acc read straight from the drain grid */
-        .slot_dir  = RLK_WG_NF_DRAIN_NONE,
+        .slot_acc  = RLK_WG_DRAIN_NONE,   /* acc read straight from the drain grid */
+        .slot_dir  = RLK_WG_DRAIN_NONE,
         .slot_lake = D_LAKE,
         .acc_scale = 1.0f,
     };
-    rlk_wg_nf_add(wg, rlk_wg_nf_drain(&gen->drain_stage));
+    rlk_wg_add(wg, rlk_wg_drain(&gen->drain_stage));
 
-    /* Stage 2: wg_nf_hydro — inject slope / Strahler order / speed */
-    gen->hydro_stage = (rlk_wg_nf_hydro_cfg_t){
+    /* Stage 2: wg_hydro — inject slope / Strahler order / speed */
+    gen->hydro_stage = (rlk_wg_hydro_cfg_t){
         .hydro = &gen->hydro,
         .slot_slope = D_SLOPE,
         .slot_strahler = D_STRAHLER,
         .slot_speed = D_SPEED,
     };
-    rlk_wg_nf_add(wg, rlk_wg_nf_hydro(&gen->hydro_stage));
+    rlk_wg_add(wg, rlk_wg_hydro(&gen->hydro_stage));
 
-    /* Stage 3: wg_nf_rivers — project drainage into per-tile river masks.
+    /* Stage 3: wg_rivers — project drainage into per-tile river masks.
        Channel width follows the drain SDF (~log2(acc), capped at cellsize);
        mask fades 1 tile past the bank, valley reach = 2 * cellsize.
        Meanders from F_WIG_X/Y, creeks from F_CREEK, lakes from the filtered grid. */
-    gen->rivers_stage = (rlk_wg_nf_rivers_cfg_t){
+    gen->rivers_stage = (rlk_wg_rivers_cfg_t){
         .drain = &gen->drain,
         .elev = &gen->elev_grid,
         .sea = SEA_LEVEL,
@@ -1075,13 +1075,13 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
         .creek_width = 1.0f,
         .creek_carve = 0.02f,
     };
-    rlk_wg_nf_add(wg, rlk_wg_nf_rivers(&gen->rivers_stage));
+    rlk_wg_add(wg, rlk_wg_rivers(&gen->rivers_stage));
 
     /* Stage 4: Strahler width — narrow headwaters, wide big rivers */
-    rlk_wg_nf_add(wg, (rlk_wg_nf_stage_t){ .fn = strahler_stage, .data = gen });
+    rlk_wg_add(wg, (rlk_wg_stage_t){ .fn = strahler_stage, .data = gen });
 
-    /* Stage 5: wg_nf_relief — standardised elevation (domain warp, fjords, lapse) */
-    gen->relief_stage = (rlk_wg_nf_relief_cfg_t){
+    /* Stage 5: wg_relief — standardised elevation (domain warp, fjords, lapse) */
+    gen->relief_stage = (rlk_wg_relief_cfg_t){
         .f_cont = F_CONT,
         .f_hills = F_HILLS,
         .f_ridge = F_RIDGE,
@@ -1089,10 +1089,10 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
         .f_warp_y = F_WARP_Y,
         .f_fjord = F_FJORD,
         .f_temp = F_TEMP,
-        .f_river = RLK_WG_NF_RELIEF_NONE,  /* rivers come from wg_nf_rivers */
+        .f_river = RLK_WG_RELIEF_NONE,  /* rivers come from wg_rivers */
         .slot_elev = D_ELEV,
-        .slot_river = RLK_WG_NF_RELIEF_NONE,
-        .river_carve_field = D_RIVER_CARVE,  /* read carve from wg_nf_rivers */
+        .slot_river = RLK_WG_RELIEF_NONE,
+        .river_carve_field = D_RIVER_CARVE,  /* read carve from wg_rivers */
         .sea = SEA_LEVEL,
         .warp = 8.0f,
         .hills_amp = 0.30f,
@@ -1112,17 +1112,17 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
         .fjord_cold0 = 0.45f,
         .fjord_cold1 = 0.65f,
     };
-    gen->relief_mod = rlk_wg_nf_relief(&gen->relief_stage);
-    rlk_wg_nf_add(wg, (rlk_wg_nf_stage_t){ .fn = relief_rain_stage, .data = gen });
+    gen->relief_mod = rlk_wg_relief(&gen->relief_stage);
+    rlk_wg_add(wg, (rlk_wg_stage_t){ .fn = relief_rain_stage, .data = gen });
 
     /* Stage 6: geology — structural bias on the final elevation + lithology */
-    rlk_wg_nf_add(wg, (rlk_wg_nf_stage_t){ .fn = geology_stage, .data = gen });
+    rlk_wg_add(wg, (rlk_wg_stage_t){ .fn = geology_stage, .data = gen });
 
     /* Stage 7-10: POI detectors */
     gen->pois = (rlk_poi_list_t){ gen->poi_buf, 0, 256 };
 
     /* Cave: on hills/mountains, high detail noise */
-    gen->poi_cave_cfg = (rlk_wg_nf_poi_cfg_t){
+    gen->poi_cave_cfg = (rlk_wg_poi_cfg_t){
         .list = &gen->pois,
         .type = POI_CAVE,
         .salt = 0xCAFEULL,
@@ -1135,10 +1135,10 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
         .grid_max = 0.85f,
         .min_separation = 24,
     };
-    rlk_wg_nf_add(wg, rlk_wg_nf_poi(&gen->poi_cave_cfg));
+    rlk_wg_add(wg, rlk_wg_poi(&gen->poi_cave_cfg));
 
     /* Dungeon: near rivers */
-    gen->poi_dungeon_cfg = (rlk_wg_nf_poi_cfg_t){
+    gen->poi_dungeon_cfg = (rlk_wg_poi_cfg_t){
         .list = &gen->pois,
         .type = POI_DUNGEON,
         .salt = 0xD0D0ULL,
@@ -1150,10 +1150,10 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
         .min_acc = 30.0f,
         .min_separation = 32,
     };
-    rlk_wg_nf_add(wg, rlk_wg_nf_poi(&gen->poi_dungeon_cfg));
+    rlk_wg_add(wg, rlk_wg_poi(&gen->poi_dungeon_cfg));
 
     /* Village: warm lowland plains only (temperature + altitude constraints) */
-    gen->poi_village_cfg = (rlk_wg_nf_poi_cfg_t){
+    gen->poi_village_cfg = (rlk_wg_poi_cfg_t){
         .list = &gen->pois,
         .type = POI_VILLAGE,
         .salt = 0xA11CEULL,
@@ -1166,10 +1166,10 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
         .grid_max = 0.50f,
         .min_separation = 16,
     };
-    rlk_wg_nf_add(wg, rlk_wg_nf_poi(&gen->poi_village_cfg));
+    rlk_wg_add(wg, rlk_wg_poi(&gen->poi_village_cfg));
 
     /* Tower: on hills and peaks */
-    gen->poi_tower_cfg = (rlk_wg_nf_poi_cfg_t){
+    gen->poi_tower_cfg = (rlk_wg_poi_cfg_t){
         .list = &gen->pois,
         .type = POI_TOWER,
         .salt = 0x70E1ULL,
@@ -1182,19 +1182,19 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
         .grid_max = 1.0f,
         .min_separation = 8,
     };
-    rlk_wg_nf_add(wg, rlk_wg_nf_poi(&gen->poi_tower_cfg));
+    rlk_wg_add(wg, rlk_wg_poi(&gen->poi_tower_cfg));
 
     /* Stage 11: terrain-constrained POI kinds (zone/slope/river/geology) */
-    rlk_wg_nf_add(wg, (rlk_wg_nf_stage_t){ .fn = poi_terrain_stage, .data = gen });
+    rlk_wg_add(wg, (rlk_wg_stage_t){ .fn = poi_terrain_stage, .data = gen });
 
     /* Axes: elevation (relief output), temperature (lapse-cooled), humidity */
     wg->naxes = 3;
-    wg->axes[0] = (rlk_wg_nf_axis_t){ .field = F_ELEV,  .jitter_field = F_DETAIL, .jitter_amp = 0.03f };
-    wg->axes[1] = (rlk_wg_nf_axis_t){ .field = F_TEMP, .jitter_field = F_DETAIL, .jitter_amp = 0.03f };
-    wg->axes[2] = (rlk_wg_nf_axis_t){ .field = F_HUM,  .jitter_field = F_DETAIL, .jitter_amp = 0.03f };
+    wg->axes[0] = (rlk_wg_axis_t){ .field = F_ELEV,  .jitter_field = F_DETAIL, .jitter_amp = 0.03f };
+    wg->axes[1] = (rlk_wg_axis_t){ .field = F_TEMP, .jitter_field = F_DETAIL, .jitter_amp = 0.03f };
+    wg->axes[2] = (rlk_wg_axis_t){ .field = F_HUM,  .jitter_field = F_DETAIL, .jitter_amp = 0.03f };
 
     /* Zones: elevation slices on axis 0; the lowland band splits into the 6
-       Köppen biomes on (temp, hum). Unbound axes use +/- RLK_WG_NF_OPEN. */
+       Köppen biomes on (temp, hum). Unbound axes use +/- RLK_WG_OPEN. */
     wg->nzones = Z_COUNT;
 
     /* Setup capture wrappers: each zone writes through capture_write */
@@ -1210,28 +1210,28 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
     gen->cap[Z_MOUNTAIN] = (tilemap_gen_capture_t){ .gen = gen, .write = write_mountain, .real_data = gen };
     gen->cap[Z_SNOW]     = (tilemap_gen_capture_t){ .gen = gen, .write = write_snow,     .real_data = gen };
 
-#define Z_OPEN_LO (-RLK_WG_NF_OPEN)
-#define Z_OPEN_HI ( RLK_WG_NF_OPEN)
-    wg->zones[Z_DEEP]     = (rlk_wg_nf_zone_t){ .lo = {0.0f,        Z_OPEN_LO, Z_OPEN_LO}, .hi = {ELEV_DEEP,    Z_OPEN_HI, Z_OPEN_HI}, .write = capture_write, .data = &gen->cap[Z_DEEP] };
-    wg->zones[Z_SHALLOW]  = (rlk_wg_nf_zone_t){ .lo = {ELEV_DEEP,   Z_OPEN_LO, Z_OPEN_LO}, .hi = {ELEV_SHALLOW, Z_OPEN_HI, Z_OPEN_HI}, .write = capture_write, .data = &gen->cap[Z_SHALLOW] };
-    wg->zones[Z_BEACH]    = (rlk_wg_nf_zone_t){ .lo = {ELEV_SHALLOW, Z_OPEN_LO, Z_OPEN_LO}, .hi = {ELEV_BEACH,  Z_OPEN_HI, Z_OPEN_HI}, .write = capture_write, .data = &gen->cap[Z_BEACH] };
+#define Z_OPEN_LO (-RLK_WG_OPEN)
+#define Z_OPEN_HI ( RLK_WG_OPEN)
+    wg->zones[Z_DEEP]     = (rlk_wg_zone_t){ .lo = {0.0f,        Z_OPEN_LO, Z_OPEN_LO}, .hi = {ELEV_DEEP,    Z_OPEN_HI, Z_OPEN_HI}, .write = capture_write, .data = &gen->cap[Z_DEEP] };
+    wg->zones[Z_SHALLOW]  = (rlk_wg_zone_t){ .lo = {ELEV_DEEP,   Z_OPEN_LO, Z_OPEN_LO}, .hi = {ELEV_SHALLOW, Z_OPEN_HI, Z_OPEN_HI}, .write = capture_write, .data = &gen->cap[Z_SHALLOW] };
+    wg->zones[Z_BEACH]    = (rlk_wg_zone_t){ .lo = {ELEV_SHALLOW, Z_OPEN_LO, Z_OPEN_LO}, .hi = {ELEV_BEACH,  Z_OPEN_HI, Z_OPEN_HI}, .write = capture_write, .data = &gen->cap[Z_BEACH] };
     /* Lowland: 6 biomes on (temp, hum) */
-    wg->zones[Z_DESERT]   = (rlk_wg_nf_zone_t){ .lo = {ELEV_BEACH,   TEMP_HOT,  0.0f},     .hi = {ELEV_LOWLAND, Z_OPEN_HI, HUM_DRY},   .write = capture_write, .data = &gen->cap[Z_DESERT] };
-    wg->zones[Z_FOREST]   = (rlk_wg_nf_zone_t){ .lo = {ELEV_BEACH,   TEMP_HOT,  HUM_DRY},  .hi = {ELEV_LOWLAND, Z_OPEN_HI, Z_OPEN_HI}, .write = capture_write, .data = &gen->cap[Z_FOREST] };
-    wg->zones[Z_STEPPE]   = (rlk_wg_nf_zone_t){ .lo = {ELEV_BEACH,   TEMP_COLD, 0.0f},     .hi = {ELEV_LOWLAND, TEMP_HOT,  HUM_DRY},   .write = capture_write, .data = &gen->cap[Z_STEPPE] };
-    wg->zones[Z_PLAINS]   = (rlk_wg_nf_zone_t){ .lo = {ELEV_BEACH,   TEMP_COLD, HUM_DRY},  .hi = {ELEV_LOWLAND, TEMP_HOT,  Z_OPEN_HI}, .write = capture_write, .data = &gen->cap[Z_PLAINS] };
-    wg->zones[Z_TUNDRA]   = (rlk_wg_nf_zone_t){ .lo = {ELEV_BEACH,   Z_OPEN_LO, 0.0f},     .hi = {ELEV_LOWLAND, TEMP_COLD, HUM_DRY},   .write = capture_write, .data = &gen->cap[Z_TUNDRA] };
-    wg->zones[Z_TAIGA]    = (rlk_wg_nf_zone_t){ .lo = {ELEV_BEACH,   Z_OPEN_LO, HUM_DRY},  .hi = {ELEV_LOWLAND, TEMP_COLD, Z_OPEN_HI}, .write = capture_write, .data = &gen->cap[Z_TAIGA] };
-    wg->zones[Z_MOUNTAIN] = (rlk_wg_nf_zone_t){ .lo = {ELEV_LOWLAND, Z_OPEN_LO, Z_OPEN_LO}, .hi = {ELEV_MOUNTAIN, Z_OPEN_HI, Z_OPEN_HI}, .write = capture_write, .data = &gen->cap[Z_MOUNTAIN] };
-    wg->zones[Z_SNOW]     = (rlk_wg_nf_zone_t){ .lo = {ELEV_MOUNTAIN, Z_OPEN_LO, Z_OPEN_LO}, .hi = {1.0f,         Z_OPEN_HI, Z_OPEN_HI}, .write = capture_write, .data = &gen->cap[Z_SNOW] };
+    wg->zones[Z_DESERT]   = (rlk_wg_zone_t){ .lo = {ELEV_BEACH,   TEMP_HOT,  0.0f},     .hi = {ELEV_LOWLAND, Z_OPEN_HI, HUM_DRY},   .write = capture_write, .data = &gen->cap[Z_DESERT] };
+    wg->zones[Z_FOREST]   = (rlk_wg_zone_t){ .lo = {ELEV_BEACH,   TEMP_HOT,  HUM_DRY},  .hi = {ELEV_LOWLAND, Z_OPEN_HI, Z_OPEN_HI}, .write = capture_write, .data = &gen->cap[Z_FOREST] };
+    wg->zones[Z_STEPPE]   = (rlk_wg_zone_t){ .lo = {ELEV_BEACH,   TEMP_COLD, 0.0f},     .hi = {ELEV_LOWLAND, TEMP_HOT,  HUM_DRY},   .write = capture_write, .data = &gen->cap[Z_STEPPE] };
+    wg->zones[Z_PLAINS]   = (rlk_wg_zone_t){ .lo = {ELEV_BEACH,   TEMP_COLD, HUM_DRY},  .hi = {ELEV_LOWLAND, TEMP_HOT,  Z_OPEN_HI}, .write = capture_write, .data = &gen->cap[Z_PLAINS] };
+    wg->zones[Z_TUNDRA]   = (rlk_wg_zone_t){ .lo = {ELEV_BEACH,   Z_OPEN_LO, 0.0f},     .hi = {ELEV_LOWLAND, TEMP_COLD, HUM_DRY},   .write = capture_write, .data = &gen->cap[Z_TUNDRA] };
+    wg->zones[Z_TAIGA]    = (rlk_wg_zone_t){ .lo = {ELEV_BEACH,   Z_OPEN_LO, HUM_DRY},  .hi = {ELEV_LOWLAND, TEMP_COLD, Z_OPEN_HI}, .write = capture_write, .data = &gen->cap[Z_TAIGA] };
+    wg->zones[Z_MOUNTAIN] = (rlk_wg_zone_t){ .lo = {ELEV_LOWLAND, Z_OPEN_LO, Z_OPEN_LO}, .hi = {ELEV_MOUNTAIN, Z_OPEN_HI, Z_OPEN_HI}, .write = capture_write, .data = &gen->cap[Z_MOUNTAIN] };
+    wg->zones[Z_SNOW]     = (rlk_wg_zone_t){ .lo = {ELEV_MOUNTAIN, Z_OPEN_LO, Z_OPEN_LO}, .hi = {1.0f,         Z_OPEN_HI, Z_OPEN_HI}, .write = capture_write, .data = &gen->cap[Z_SNOW] };
 #undef Z_OPEN_LO
 #undef Z_OPEN_HI
 
     wg->depth_scale = 0.15f;
     wg->transition_width = 0.10f;
 
-    rlk_wg_nf_init(wg);
-    rlk_wg_nf_fill(wg, 0, 0, &gen->tm);
+    rlk_wg_init(wg);
+    rlk_wg_fill(wg, 0, 0, &gen->tm);
 
     /* Multi-tile content inside each POI bbox (first POI wins on overlap) */
     poi_content_pass(gen);

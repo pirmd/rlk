@@ -1,8 +1,6 @@
 #ifndef RLK_GRID_H
 #define RLK_GRID_H
 
-/* layer: 1, domain: base */
-
 /*
  * Mono-band float raster over a finite world rectangle, with bilinear sampling.
  *

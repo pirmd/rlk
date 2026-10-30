@@ -1,4 +1,4 @@
-#include "wg_nf.h"
+#include "wg.h"
 #include <assert.h>
 #include <math.h>
 
@@ -13,20 +13,20 @@
 /* Safety checks only: prevent crashes (buffer overflow, NULL deref, div by zero).
    Logic errors (hi <= lo, freq <= 0, etc.) are the user's responsibility. */
 static void
-assert_wg(const rlk_wg_nf_t *wg) {
+assert_wg(const rlk_wg_t *wg) {
     assert(wg);
-    assert(wg->nsampled >= 1 && wg->nsampled <= RLK_WG_NF_MAX_FIELDS);
-    assert(wg->nderived >= 0 && wg->nsampled + wg->nderived <= RLK_WG_NF_MAX_FIELDS);
-    assert(wg->nstages >= 0 && wg->nstages <= RLK_WG_NF_MAX_STAGES);
+    assert(wg->nsampled >= 1 && wg->nsampled <= RLK_WG_MAX_FIELDS);
+    assert(wg->nderived >= 0 && wg->nsampled + wg->nderived <= RLK_WG_MAX_FIELDS);
+    assert(wg->nstages >= 0 && wg->nstages <= RLK_WG_MAX_STAGES);
     for (int i = 0; i < wg->nstages; i++)
         assert(wg->stages[i].fn);
-    assert(wg->naxes >= 1 && wg->naxes <= RLK_WG_NF_MAX_AXES);
-    assert(wg->nzones >= 1 && wg->nzones <= RLK_WG_NF_MAX_ZONES);
+    assert(wg->naxes >= 1 && wg->naxes <= RLK_WG_MAX_AXES);
+    assert(wg->nzones >= 1 && wg->nzones <= RLK_WG_MAX_ZONES);
     assert(wg->depth_scale > 0.0f && wg->transition_width > 0.0f);
 
     const int nslots = wg->nsampled + wg->nderived;
     for (int a = 0; a < wg->naxes; a++) {
-        const rlk_wg_nf_axis_t *ax = &wg->axes[a];
+        const rlk_wg_axis_t *ax = &wg->axes[a];
         assert(ax->field < nslots);
         assert(ax->jitter_amp == 0.0f || ax->jitter_field < nslots);
     }
@@ -36,9 +36,9 @@ assert_wg(const rlk_wg_nf_t *wg) {
 }
 
 rlk_err_t
-rlk_wg_nf_add(rlk_wg_nf_t *wg, rlk_wg_nf_stage_t stage) {
+rlk_wg_add(rlk_wg_t *wg, rlk_wg_stage_t stage) {
     assert(wg && stage.fn);
-    if (wg->nstages >= RLK_WG_NF_MAX_STAGES)
+    if (wg->nstages >= RLK_WG_MAX_STAGES)
         return RLK_E_INVALID;
     wg->stages[wg->nstages] = stage;
     wg->nstages++;
@@ -47,12 +47,12 @@ rlk_wg_nf_add(rlk_wg_nf_t *wg, rlk_wg_nf_stage_t stage) {
 
 /* Resolve zero defaults (octaves->3, gain->0.5), validate, and seed noise. */
 void
-rlk_wg_nf_init(rlk_wg_nf_t *wg) {
+rlk_wg_init(rlk_wg_t *wg) {
     assert(wg);
 
     /* Resolve zero defaults. */
     for (int i = 0; i < wg->nsampled; i++) {
-        rlk_wg_nf_field_t *f = &wg->fields[i];
+        rlk_wg_field_t *f = &wg->fields[i];
         if (f->octaves == 0)
             f->octaves = 3;
         if (f->gain == 0.0f)
@@ -73,13 +73,13 @@ rlk_wg_nf_init(rlk_wg_nf_t *wg) {
 
 /* Sample field f at float world position (x, y). Public: stages reuse it. */
 float
-rlk_wg_nf_sample_field(const rlk_wg_nf_t *wg, int idx, float x, float y) {
+rlk_wg_sample_field(const rlk_wg_t *wg, int idx, float x, float y) {
     assert(wg && idx >= 0 && idx < wg->nsampled);
     const rlk_noise_t *n = &wg->noise[idx];
-    const rlk_wg_nf_field_t *f = &wg->fields[idx];
+    const rlk_wg_field_t *f = &wg->fields[idx];
     assert(f->freq > 0.0f && f->gain > 0.0f);
     float v = rlk_noise_fbm(n, x, y, f->octaves, f->freq, f->gain);
-    if (f->kind == RLK_WG_NF_RIDGE)
+    if (f->kind == RLK_WG_RIDGE)
         v = 1.0f - fabsf(2.0f * v - 1.0f);
     return v;
 }
@@ -88,7 +88,7 @@ rlk_wg_nf_sample_field(const rlk_wg_nf_t *wg, int idx, float x, float y) {
 
 /* Signed distance to zone bounds: > 0 inside, < 0 outside. */
 static inline float
-zone_margin(const rlk_wg_nf_zone_t *z, const float v[RLK_WG_NF_MAX_AXES], int naxes) {
+zone_margin(const rlk_wg_zone_t *z, const float v[RLK_WG_MAX_AXES], int naxes) {
     float m = fminf(v[0] - z->lo[0], z->hi[0] - v[0]);
     for (int a = 1; a < naxes; a++)
         m = fminf(m, fminf(v[a] - z->lo[a], z->hi[a] - v[a]));
@@ -97,13 +97,13 @@ zone_margin(const rlk_wg_nf_zone_t *z, const float v[RLK_WG_NF_MAX_AXES], int na
 
 /* Classify tile into zone/zone2 with depth/edge. */
 static inline void
-classify(const rlk_wg_nf_t *wg, rlk_wg_nf_ctx_t *ctx) {
+classify(const rlk_wg_t *wg, rlk_wg_ctx_t *ctx) {
     assert(wg && ctx && wg->nzones > 0);
     const int naxes = wg->naxes;
-    float v[RLK_WG_NF_MAX_AXES];
+    float v[RLK_WG_MAX_AXES];
 
     for (int a = 0; a < naxes; a++) {
-        const rlk_wg_nf_axis_t *ax = &wg->axes[a];
+        const rlk_wg_axis_t *ax = &wg->axes[a];
         v[a] = ctx->field[ax->field];
         if (ax->jitter_amp > 0.0f)
             v[a] += (ctx->field[ax->jitter_field] - 0.5f) * 2.0f * ax->jitter_amp;
@@ -138,11 +138,11 @@ classify(const rlk_wg_nf_t *wg, rlk_wg_nf_ctx_t *ctx) {
 /* Evaluate one tile: fields -> stages -> classify. Fills ctx.
    A tile outside every zone box gets the nearest zone (depth = 0). */
 static void
-eval(const rlk_wg_nf_t *wg, int wx, int wy, int x, int y,
-     rlk_wg_nf_ctx_t *ctx) {
+eval(const rlk_wg_t *wg, int wx, int wy, int x, int y,
+     rlk_wg_ctx_t *ctx) {
     assert(wg && ctx);
 
-    *ctx = (rlk_wg_nf_ctx_t){
+    *ctx = (rlk_wg_ctx_t){
         .wg = wg,
         .wx = wx,
         .wy = wy,
@@ -153,7 +153,7 @@ eval(const rlk_wg_nf_t *wg, int wx, int wy, int x, int y,
     /* FIELDS */
     const float wxf = (float)wx, wyf = (float)wy;
     for (int i = 0; i < wg->nsampled; i++)
-        ctx->field[i] = rlk_wg_nf_sample_field(wg, i, wxf, wyf);
+        ctx->field[i] = rlk_wg_sample_field(wg, i, wxf, wyf);
 
     /* STAGES */
     for (int i = 0; i < wg->nstages; i++)
@@ -168,17 +168,17 @@ eval(const rlk_wg_nf_t *wg, int wx, int wy, int x, int y,
 /* Fill tilemap tm with tiles for the world-space rect starting at
  * (origin_x, origin_y). Rect dimensions are tm->w x tm->h tiles. */
 void
-rlk_wg_nf_fill(const rlk_wg_nf_t *wg, int origin_x, int origin_y, rlk_tilemap_t *tm) {
+rlk_wg_fill(const rlk_wg_t *wg, int origin_x, int origin_y, rlk_tilemap_t *tm) {
     assert(wg && tm);
     assert(tm->w > 0 && tm->h > 0);
 
     for (int y = 0; y < tm->h; y++) {
         for (int x = 0; x < tm->w; x++) {
-            rlk_wg_nf_ctx_t ctx;
+            rlk_wg_ctx_t ctx;
             eval(wg, origin_x + x, origin_y + y, x, y, &ctx);
 
             /* WRITE */
-            const rlk_wg_nf_zone_t *z = &wg->zones[ctx.zone];
+            const rlk_wg_zone_t *z = &wg->zones[ctx.zone];
             rlk_tile_t *tile = rlk_tilemap_get(tm, tm->origin_x + x, tm->origin_y + y);
             assert(tile);
             /* Reset tile, set biome to zone id, then the zone writer fills type/flags/variant. */

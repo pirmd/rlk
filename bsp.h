@@ -1,8 +1,6 @@
 #ifndef RLK_BSP_H
 #define RLK_BSP_H
 
-/* layer: 4, domain: worldgen */
-
 /*
  * Binary Space Partitioning for dungeon/room generation.
  *

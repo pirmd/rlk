@@ -1,8 +1,6 @@
 #ifndef RLK_ERR_H
 #define RLK_ERR_H
 
-/* layer: 0, domain: core */
-
 typedef enum {
     RLK_OK,
     RLK_E_INVALID,      /* Invalid parameter or configuration */

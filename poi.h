@@ -1,8 +1,6 @@
 #ifndef RLK_POI_H
 #define RLK_POI_H
 
-/* layer: 1, domain: base */
-
 /*
  * Points of Interest: discrete markers on the world map that trigger local
  * content generation (caves, dungeons, villages, towers).
@@ -37,7 +35,7 @@ typedef struct {
     rlk_rect_t bbox;      /* world footprint, in tiles (contains (x, y)) */
     uint32_t   type;      /* game-defined type (same role as rlk_tile_t.type) */
     uint64_t   seed;      /* per-POI seed */
-    uint8_t    gen;       /* generation only: 0 = placed by wg_nf, +1 per emitted POI */
+    uint8_t    gen;       /* generation only: 0 = placed by wg, +1 per emitted POI */
     uint8_t    level;     /* target level/map (0 = overworld) */
 } rlk_poi_t;
 

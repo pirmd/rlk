@@ -2,7 +2,7 @@
 #define WIDGET_H
 
 /*
- * widget - reusable UI elements for PXL demos (demo component, layer 5).
+ * widget - reusable UI elements for PXL demos (demo component).
  *
  * Text, button, menu and legend on a pxl canvas. Stateless drawing
  * functions: colors and fonts come from the app (ui_t), no theme is

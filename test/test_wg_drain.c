@@ -1,6 +1,6 @@
 #include <assert.h>
 #include <stdint.h>
-#include "wg_nf_drain.h"
+#include "wg_drain.h"
 
 #define MAP 16
 
@@ -9,29 +9,29 @@ static rlk_tile_t tilebuf[MAP * MAP];
 /* Writer: derived[0]=acc -> variant, derived[1]=dir -> type, derived[2]=lake -> flags.
    acc and lake are normalized [0,1] -> 0..255; dir is raw 0..8. */
 static void
-write_drain(const rlk_wg_nf_ctx_t *ctx, const void *data, rlk_tile_t *out) {
+write_drain(const rlk_wg_ctx_t *ctx, const void *data, rlk_tile_t *out) {
     (void)data;
-    const rlk_wg_nf_t *wg = ctx->wg;
+    const rlk_wg_t *wg = ctx->wg;
     out->biome = (uint8_t)ctx->zone;
     out->type  = (uint8_t)ctx->field[wg->nsampled + 1];
     out->flags = (uint8_t)(rlk_clampf(ctx->field[wg->nsampled + 2], 0.0f, 1.0f) * 255.0f);
     out->variant = (uint8_t)(rlk_clampf(ctx->field[wg->nsampled + 0], 0.0f, 1.0f) * 255.0f);
 }
 
-/* Minimal wg_nf: 1 sampled field, 3 derived fields, 1 full-coverage zone. */
-static rlk_wg_nf_t
+/* Minimal wg: 1 sampled field, 3 derived fields, 1 full-coverage zone. */
+static rlk_wg_t
 wg_min(void) {
-    rlk_wg_nf_t wg = {0};
+    rlk_wg_t wg = {0};
     wg.seed = 42ULL;
     wg.depth_scale = 0.20f;
     wg.transition_width = 0.20f;
     wg.nsampled = 1;
     wg.nderived = 3;
-    wg.fields[0] = (rlk_wg_nf_field_t){ .freq = 0.01f };
+    wg.fields[0] = (rlk_wg_field_t){ .freq = 0.01f };
     wg.naxes = 1;
-    wg.axes[0] = (rlk_wg_nf_axis_t){ .field = 0 };
+    wg.axes[0] = (rlk_wg_axis_t){ .field = 0 };
     wg.nzones = 1;
-    wg.zones[0] = (rlk_wg_nf_zone_t){ .lo = {0.0f}, .hi = {1.0f},
+    wg.zones[0] = (rlk_wg_zone_t){ .lo = {0.0f}, .hi = {1.0f},
                                         .write = write_drain };
     return wg;
 }
@@ -68,8 +68,8 @@ static void
 test_drain_stage_basic(void) {
     drain_setup();
 
-    rlk_wg_nf_t wg = wg_min();
-    rlk_wg_nf_drain_cfg_t f = {0};
+    rlk_wg_t wg = wg_min();
+    rlk_wg_drain_cfg_t f = {0};
     f.drain = &drain;
     f.elev = &elev;
     f.sea = -1.0f;
@@ -78,12 +78,12 @@ test_drain_stage_basic(void) {
     f.slot_lake = 2;
     f.acc_scale = (float)(FW * FH);
 
-    assert(rlk_wg_nf_add(&wg, rlk_wg_nf_drain(&f)) == RLK_OK);
-    rlk_wg_nf_init(&wg);
+    assert(rlk_wg_add(&wg, rlk_wg_drain(&f)) == RLK_OK);
+    rlk_wg_init(&wg);
 
     rlk_tilemap_t tm;
     rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
-    rlk_wg_nf_fill(&wg, 0, 0, &tm);
+    rlk_wg_fill(&wg, 0, 0, &tm);
 
     /* Tile (2,2) -> cell (0,0): west edge = outlet -> dir = 8 */
     const rlk_tile_t *t = rlk_tilemap_get(&tm, 2, 2);
@@ -107,21 +107,21 @@ static void
 test_drain_stage_none_slots(void) {
     drain_setup();
 
-    rlk_wg_nf_t wg = wg_min();
-    rlk_wg_nf_drain_cfg_t f = {0};
+    rlk_wg_t wg = wg_min();
+    rlk_wg_drain_cfg_t f = {0};
     f.drain = &drain;
     f.elev = &elev;
     f.sea = -1.0f;
     f.slot_acc = 0;
-    f.slot_dir = RLK_WG_NF_DRAIN_NONE;
-    f.slot_lake = RLK_WG_NF_DRAIN_NONE;
+    f.slot_dir = RLK_WG_DRAIN_NONE;
+    f.slot_lake = RLK_WG_DRAIN_NONE;
 
-    assert(rlk_wg_nf_add(&wg, rlk_wg_nf_drain(&f)) == RLK_OK);
-    rlk_wg_nf_init(&wg);
+    assert(rlk_wg_add(&wg, rlk_wg_drain(&f)) == RLK_OK);
+    rlk_wg_init(&wg);
 
     rlk_tilemap_t tm;
     rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
-    rlk_wg_nf_fill(&wg, 0, 0, &tm);
+    rlk_wg_fill(&wg, 0, 0, &tm);
 
     /* Should not crash; acc written, dir/lake untouched. */
     const rlk_tile_t *t = rlk_tilemap_get(&tm, 2, 2);
@@ -134,8 +134,8 @@ static void
 test_drain_constructor(void) {
     drain_setup();
 
-    rlk_wg_nf_t wg = wg_min();
-    rlk_wg_nf_drain_cfg_t f = {0};
+    rlk_wg_t wg = wg_min();
+    rlk_wg_drain_cfg_t f = {0};
     f.drain = &drain;
     f.elev = &elev;
     f.sea = -1.0f;
@@ -143,20 +143,20 @@ test_drain_constructor(void) {
     f.slot_dir = 1;
     f.slot_lake = 2;
 
-    rlk_wg_nf_stage_t st = rlk_wg_nf_drain(&f);
+    rlk_wg_stage_t st = rlk_wg_drain(&f);
     assert(st.data == &f);
     /* cfg is const: acc_scale 0 -> 1.0 resolved in the stage, not written back. */
     assert(f.acc_scale == 0.0f);
 
-    assert(rlk_wg_nf_add(&wg, st) == RLK_OK);
+    assert(rlk_wg_add(&wg, st) == RLK_OK);
     assert(wg.nstages == 1);
     assert(wg.stages[0].data == &f);
 
-    rlk_wg_nf_init(&wg);
+    rlk_wg_init(&wg);
 
     rlk_tilemap_t tm;
     rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
-    rlk_wg_nf_fill(&wg, 0, 0, &tm);
+    rlk_wg_fill(&wg, 0, 0, &tm);
 }
 
 /* Stage table full -> RLK_E_INVALID. */
@@ -164,17 +164,17 @@ static void
 test_drain_limit_too_many_stages(void) {
     drain_setup();
 
-    rlk_wg_nf_t wg = wg_min();
-    rlk_wg_nf_drain_cfg_t f = {0};
+    rlk_wg_t wg = wg_min();
+    rlk_wg_drain_cfg_t f = {0};
     f.drain = &drain;
     f.elev = &elev;
     f.slot_acc = 0;
     f.slot_dir = 1;
     f.slot_lake = 2;
-    for (int i = 0; i < RLK_WG_NF_MAX_STAGES; i++)
-        assert(rlk_wg_nf_add(&wg, rlk_wg_nf_drain(&f)) == RLK_OK);
+    for (int i = 0; i < RLK_WG_MAX_STAGES; i++)
+        assert(rlk_wg_add(&wg, rlk_wg_drain(&f)) == RLK_OK);
 
-    assert(rlk_wg_nf_add(&wg, rlk_wg_nf_drain(&f)) == RLK_E_INVALID);
+    assert(rlk_wg_add(&wg, rlk_wg_drain(&f)) == RLK_E_INVALID);
 }
 
 int

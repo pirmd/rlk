@@ -1,8 +1,6 @@
 #ifndef RLK_PATH_H
 #define RLK_PATH_H
 
-/* layer: 2, domain: spatial */
-
 /*
  * A* pathfinding with integer costs on a tile-aligned window
  * (rlk_lattice_t with cellsize == 1). 8-connected: a cardinal step costs

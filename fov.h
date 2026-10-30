@@ -1,8 +1,6 @@
 #ifndef RLK_FOV_H
 #define RLK_FOV_H
 
-/* layer: 2, domain: spatial */
-
 /*
  * Field of view by recursive shadowcasting on a tile-aligned window
  * (rlk_lattice_t with cellsize == 1). 8 octants, deterministic,

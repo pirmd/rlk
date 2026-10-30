@@ -1,10 +1,8 @@
-#ifndef RLK_WG_NF_RIVERS_H
-#define RLK_WG_NF_RIVERS_H
-
-/* layer: 3, domain: worldgen */
+#ifndef RLK_WG_RIVERS_H
+#define RLK_WG_RIVERS_H
 
 /*
- * Optional wg_nf stage: project a pre-built rlk_drain_t drainage network
+ * Optional wg stage: project a pre-built rlk_drain_t drainage network
  * into per-tile river masks and valley carves.
  *
  * The network is queried as a signed distance field (rlk_drain_river_sdf,
@@ -28,19 +26,19 @@
  * Creeks (optional): a noise field (f_creek) adds small headwater streams
  * on top of the drainage network, as level lines of the noise field.
  *
- * The drain and elevation grid must be built before rlk_wg_nf_init() and must
+ * The drain and elevation grid must be built before rlk_wg_init() and must
  * outlive the wg.
  *
- * STAGE ORDER: this stage must run BEFORE wg_nf_relief (which reads slot_carve
+ * STAGE ORDER: this stage must run BEFORE wg_relief (which reads slot_carve
  * via river_carve_field). Adding stages in the wrong order silently produces
  * rivers without valley carving.
  */
 
-#include "wg_nf.h"
+#include "wg.h"
 #include "drain.h"
 #include "grid.h"
 
-#define RLK_WG_NF_RIVERS_NONE 255  /* slot value: do not write this output */
+#define RLK_WG_RIVERS_NONE 255  /* slot value: do not write this output */
 
 /* Rivers stage configuration. Const after construction: zero defaults are
    resolved inside the stage, the cfg is never mutated. */
@@ -70,9 +68,9 @@ typedef struct {
     uint8_t f_creek;            /* sampled noise field for creeks, or NONE */
     float   creek_width;        /* creek half-width in tiles */
     float   creek_carve;        /* creek valley depth, elevation units */
-} rlk_wg_nf_rivers_cfg_t;
+} rlk_wg_rivers_cfg_t;
 
 /* Build a stage from a const config. The cfg must outlive the wg. */
-rlk_wg_nf_stage_t rlk_wg_nf_rivers(const rlk_wg_nf_rivers_cfg_t *cfg);
+rlk_wg_stage_t rlk_wg_rivers(const rlk_wg_rivers_cfg_t *cfg);
 
-#endif /* RLK_WG_NF_RIVERS_H */
+#endif /* RLK_WG_RIVERS_H */

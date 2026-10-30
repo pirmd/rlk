@@ -1,4 +1,4 @@
-#include "wg_nf_modulator.h"
+#include "wg_modulator.h"
 
 #include <assert.h>
 #include <float.h>
@@ -9,7 +9,7 @@
 
 /* Resolve zero defaults (cell 0->128, blend 0->cell/4). */
 static void
-modulator_resolve(rlk_wg_nf_modulator_cfg_t *m) {
+modulator_resolve(rlk_wg_modulator_cfg_t *m) {
     if (m->cell == 0.0f)
         m->cell = 128.0f;
     if (m->blend == 0.0f)
@@ -17,12 +17,12 @@ modulator_resolve(rlk_wg_nf_modulator_cfg_t *m) {
 }
 
 static void
-modulator_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
+modulator_stage(rlk_wg_ctx_t *ctx, const void *data) {
     assert(ctx && data);
-    rlk_wg_nf_modulator_cfg_t mc = *(const rlk_wg_nf_modulator_cfg_t *)data;
+    rlk_wg_modulator_cfg_t mc = *(const rlk_wg_modulator_cfg_t *)data;
     modulator_resolve(&mc);
-    const rlk_wg_nf_modulator_cfg_t *m = &mc;
-    const rlk_wg_nf_t *wg = ctx->wg;
+    const rlk_wg_modulator_cfg_t *m = &mc;
+    const rlk_wg_t *wg = ctx->wg;
 
     const float cell = m->cell;
     const float blend = m->blend;
@@ -51,8 +51,8 @@ modulator_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
     }
 
     /* Weighted average of bias and gain. */
-    float bias[RLK_WG_NF_MAX_FIELDS] = {0};
-    float gain[RLK_WG_NF_MAX_FIELDS] = {0};
+    float bias[RLK_WG_MAX_FIELDS] = {0};
+    float gain[RLK_WG_MAX_FIELDS] = {0};
     float sum = 0.0f;
     const int nf = wg->nsampled;
 
@@ -61,7 +61,7 @@ modulator_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
         if (w <= 0.0f)
             continue;
         sum += w;
-        const rlk_wg_nf_modulator_type_t *ty = &m->types[t[k]];
+        const rlk_wg_modulator_type_t *ty = &m->types[t[k]];
         for (int f = 0; f < nf; f++) {
             bias[f] += w * ty->bias[f];
             gain[f] += w * ty->gain[f];
@@ -73,13 +73,13 @@ modulator_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
         ctx->field[f] = (ctx->field[f] + bias[f] * inv) * (1.0f + gain[f] * inv);
 }
 
-rlk_wg_nf_stage_t
-rlk_wg_nf_modulator(const rlk_wg_nf_modulator_cfg_t *cfg) {
+rlk_wg_stage_t
+rlk_wg_modulator(const rlk_wg_modulator_cfg_t *cfg) {
     assert(cfg);
-    assert(cfg->ntypes >= 1 && cfg->ntypes <= RLK_WG_NF_MODULATOR_MAX_TYPES);
-    rlk_wg_nf_modulator_cfg_t m = *cfg;
+    assert(cfg->ntypes >= 1 && cfg->ntypes <= RLK_WG_MODULATOR_MAX_TYPES);
+    rlk_wg_modulator_cfg_t m = *cfg;
     modulator_resolve(&m);
     assert(m.cell >= 16.0f);
     assert(m.blend <= 0.5f * m.cell);
-    return (rlk_wg_nf_stage_t){ .fn = modulator_stage, .data = cfg };
+    return (rlk_wg_stage_t){ .fn = modulator_stage, .data = cfg };
 }

@@ -2,7 +2,7 @@
 #define VIEWER_APP_H
 
 /*
- * viewer_app - generic PXL viewer shell over a src_t source (demo layer 5).
+ * viewer_app - generic PXL viewer shell over a src_t source (demo).
  *
  * Owns the layout (map + sidebar: minimap, map info, tile info, legend,
  * mode bar, overlay bar), the input (camera, minimap pan, tile selection,

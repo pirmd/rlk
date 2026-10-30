@@ -1,8 +1,6 @@
 #ifndef RLK_MASK_H
 #define RLK_MASK_H
 
-/* layer: 1, domain: base */
-
 /*
  * Mono-band uint8 mask over a finite world rectangle: 0 = excluded,
  * 1..255 = weight (255 = full). Depending on usage: placement density

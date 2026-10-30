@@ -1,8 +1,6 @@
 #ifndef RLK_CA_H
 #define RLK_CA_H
 
-/* layer: 4, domain: worldgen */
-
 /*
  * Cellular Automata for cave/dungeon generation.
  *
@@ -128,7 +126,7 @@ typedef struct {
 
 /* Ready-made writer: copies wall_type/floor_type from a `rlk_ca_wallfloor_t`
    given as data. biome is already set by fill (0 = wall, > 0 = floor region).
-   variant is filled with deterministic random. Same role as rlk_wg_nf_write_const. */
+   variant is filled with deterministic random. Same role as rlk_wg_write_const. */
 static inline void
 rlk_ca_write_wallfloor(const rlk_ca_t *ca, const void *data, int x, int y,
                        rlk_tile_t *out) {

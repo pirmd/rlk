@@ -1,4 +1,4 @@
-#include "wg_nf_rivers.h"
+#include "wg_rivers.h"
 
 #include <assert.h>
 #include <math.h>
@@ -8,7 +8,7 @@
 /* Resolve zero defaults: acc_min 0->1, bank_fade<=0->1.0, valley_mult<1->1.0,
    wig_tiles<=0 disables meanders, creek_width<=0 disables creeks. */
 static void
-rivers_resolve(rlk_wg_nf_rivers_cfg_t *r) {
+rivers_resolve(rlk_wg_rivers_cfg_t *r) {
     assert(r->drain && r->elev);
     assert(rlk_lattice_same(&r->drain->lattice, &r->elev->lattice));
     if (r->acc_min == 0)
@@ -19,32 +19,32 @@ rivers_resolve(rlk_wg_nf_rivers_cfg_t *r) {
         r->valley_mult = 1.0f;
     /* Meanders and creeks are opt-in: disable if amplitude is zero */
     if (r->wig_tiles <= 0.0f) {
-        r->f_wig_x = RLK_WG_NF_RIVERS_NONE;
-        r->f_wig_y = RLK_WG_NF_RIVERS_NONE;
+        r->f_wig_x = RLK_WG_RIVERS_NONE;
+        r->f_wig_y = RLK_WG_RIVERS_NONE;
     }
     if (r->creek_width <= 0.0f)
-        r->f_creek = RLK_WG_NF_RIVERS_NONE;
+        r->f_creek = RLK_WG_RIVERS_NONE;
 }
 
 static void
-rivers_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
+rivers_stage(rlk_wg_ctx_t *ctx, const void *data) {
     assert(ctx && data);
-    rlk_wg_nf_rivers_cfg_t rc = *(const rlk_wg_nf_rivers_cfg_t *)data;
+    rlk_wg_rivers_cfg_t rc = *(const rlk_wg_rivers_cfg_t *)data;
     rivers_resolve(&rc);
-    const rlk_wg_nf_rivers_cfg_t *r = &rc;
-    const rlk_wg_nf_t *wg = ctx->wg;
+    const rlk_wg_rivers_cfg_t *r = &rc;
+    const rlk_wg_t *wg = ctx->wg;
 
     /* Slots are validated against the wg's derived field count here
        (the constructor does not know the wg). */
-    assert(r->slot_mask == RLK_WG_NF_RIVERS_NONE || (int)r->slot_mask < wg->nderived);
-    assert(r->slot_carve == RLK_WG_NF_RIVERS_NONE || (int)r->slot_carve < wg->nderived);
+    assert(r->slot_mask == RLK_WG_RIVERS_NONE || (int)r->slot_mask < wg->nderived);
+    assert(r->slot_carve == RLK_WG_RIVERS_NONE || (int)r->slot_carve < wg->nderived);
 
     const float cell = (float)r->elev->lattice.cellsize;
 
     /* Tile centre in world coords, displaced by optional meanders */
     float px = (float)ctx->wx + 0.5f;
     float py = (float)ctx->wy + 0.5f;
-    if (r->f_wig_x != RLK_WG_NF_RIVERS_NONE && r->f_wig_y != RLK_WG_NF_RIVERS_NONE) {
+    if (r->f_wig_x != RLK_WG_RIVERS_NONE && r->f_wig_y != RLK_WG_RIVERS_NONE) {
         px += (ctx->field[r->f_wig_x] - 0.5f) * 2.0f * r->wig_tiles;
         py += (ctx->field[r->f_wig_y] - 0.5f) * 2.0f * r->wig_tiles;
     }
@@ -65,10 +65,10 @@ rivers_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
     }
 
     /* Creeks: noise level-line streams on top of the drainage network */
-    if (r->f_creek != RLK_WG_NF_RIVERS_NONE && r->creek_width > 0.0f) {
-        const float cv = rlk_wg_nf_sample_field(wg, r->f_creek, px, py);
-        const float cx = rlk_wg_nf_sample_field(wg, r->f_creek, px + 1.0f, py) - cv;
-        const float cy = rlk_wg_nf_sample_field(wg, r->f_creek, px, py + 1.0f) - cv;
+    if (r->f_creek != RLK_WG_RIVERS_NONE && r->creek_width > 0.0f) {
+        const float cv = rlk_wg_sample_field(wg, r->f_creek, px, py);
+        const float cx = rlk_wg_sample_field(wg, r->f_creek, px + 1.0f, py) - cv;
+        const float cy = rlk_wg_sample_field(wg, r->f_creek, px, py + 1.0f) - cv;
         float g = sqrtf(cx * cx + cy * cy);
         if (g < 0.004f) g = 0.004f;
         const float dist = fabsf(cv - 0.5f) / g;
@@ -109,22 +109,22 @@ rivers_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
     }
 
     /* Write outputs */
-    if (r->slot_mask != RLK_WG_NF_RIVERS_NONE) {
+    if (r->slot_mask != RLK_WG_RIVERS_NONE) {
         const int idx = wg->nsampled + r->slot_mask;
-        assert(idx >= 0 && idx < RLK_WG_NF_MAX_FIELDS);
+        assert(idx >= 0 && idx < RLK_WG_MAX_FIELDS);
         ctx->field[idx] = mask < 0.0f ? 0.0f : (mask > 1.0f ? 1.0f : mask);
     }
-    if (r->slot_carve != RLK_WG_NF_RIVERS_NONE) {
+    if (r->slot_carve != RLK_WG_RIVERS_NONE) {
         const int idx = wg->nsampled + r->slot_carve;
-        assert(idx >= 0 && idx < RLK_WG_NF_MAX_FIELDS);
+        assert(idx >= 0 && idx < RLK_WG_MAX_FIELDS);
         ctx->field[idx] = carve;
     }
 }
 
-rlk_wg_nf_stage_t
-rlk_wg_nf_rivers(const rlk_wg_nf_rivers_cfg_t *cfg) {
+rlk_wg_stage_t
+rlk_wg_rivers(const rlk_wg_rivers_cfg_t *cfg) {
     assert(cfg);
     assert(cfg->drain && cfg->elev);
     assert(rlk_lattice_same(&cfg->drain->lattice, &cfg->elev->lattice));
-    return (rlk_wg_nf_stage_t){ .fn = rivers_stage, .data = cfg };
+    return (rlk_wg_stage_t){ .fn = rivers_stage, .data = cfg };
 }

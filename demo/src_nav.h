@@ -3,7 +3,7 @@
 
 /*
  * src_nav - viewer source for an in-game navigation scenario
- * (demo component, layer 5).
+ * (demo component).
  *
  * A wall column with one door splits the map; the door opens
  * (incremental 1x1 mask update), A* finds a path

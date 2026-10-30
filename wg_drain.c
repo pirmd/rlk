@@ -1,15 +1,15 @@
-#include "wg_nf_drain.h"
+#include "wg_drain.h"
 
 #include <assert.h>
 
 static void
-drain_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
+drain_stage(rlk_wg_ctx_t *ctx, const void *data) {
     assert(ctx && data);
-    rlk_wg_nf_drain_cfg_t fc = *(const rlk_wg_nf_drain_cfg_t *)data;
+    rlk_wg_drain_cfg_t fc = *(const rlk_wg_drain_cfg_t *)data;
     if (fc.acc_scale == 0.0f)
         fc.acc_scale = 1.0f;
-    const rlk_wg_nf_drain_cfg_t *f = &fc;
-    const rlk_wg_nf_t *wg = ctx->wg;
+    const rlk_wg_drain_cfg_t *f = &fc;
+    const rlk_wg_t *wg = ctx->wg;
 
     int i, j;
     int inside = rlk_grid_cell_of(f->elev, ctx->wx, ctx->wy, &i, &j);
@@ -25,27 +25,27 @@ drain_stage(rlk_wg_nf_ctx_t *ctx, const void *data) {
         lake_val = rlk_drain_lake_depth(f->drain, f->elev, f->sea, i, j);
     }
 
-    if (f->slot_acc != RLK_WG_NF_DRAIN_NONE) {
+    if (f->slot_acc != RLK_WG_DRAIN_NONE) {
         const int idx = wg->nsampled + f->slot_acc;
-        assert(idx >= 0 && idx < RLK_WG_NF_MAX_FIELDS);
+        assert(idx >= 0 && idx < RLK_WG_MAX_FIELDS);
         ctx->field[idx] = acc_val;
     }
-    if (f->slot_dir != RLK_WG_NF_DRAIN_NONE) {
+    if (f->slot_dir != RLK_WG_DRAIN_NONE) {
         const int idx = wg->nsampled + f->slot_dir;
-        assert(idx >= 0 && idx < RLK_WG_NF_MAX_FIELDS);
+        assert(idx >= 0 && idx < RLK_WG_MAX_FIELDS);
         ctx->field[idx] = dir_val;
     }
-    if (f->slot_lake != RLK_WG_NF_DRAIN_NONE) {
+    if (f->slot_lake != RLK_WG_DRAIN_NONE) {
         const int idx = wg->nsampled + f->slot_lake;
-        assert(idx >= 0 && idx < RLK_WG_NF_MAX_FIELDS);
+        assert(idx >= 0 && idx < RLK_WG_MAX_FIELDS);
         ctx->field[idx] = lake_val;
     }
 }
 
-rlk_wg_nf_stage_t
-rlk_wg_nf_drain(const rlk_wg_nf_drain_cfg_t *cfg) {
+rlk_wg_stage_t
+rlk_wg_drain(const rlk_wg_drain_cfg_t *cfg) {
     assert(cfg);
     assert(cfg->drain && cfg->elev);
     assert(rlk_lattice_same(&cfg->drain->lattice, &cfg->elev->lattice));
-    return (rlk_wg_nf_stage_t){ .fn = drain_stage, .data = cfg };
+    return (rlk_wg_stage_t){ .fn = drain_stage, .data = cfg };
 }

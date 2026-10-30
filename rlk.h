@@ -2,43 +2,47 @@
 #define RLK_H
 
 /*
- * Umbrella header - includes all public API headers, grouped by layer
- * (see doc/architecture.md). For finer granularity, include individual
- * headers directly.
+ * Umbrella header - includes all public API headers, grouped by base
+ * strata and domains (see doc/architecture.md). For finer granularity,
+ * include individual headers directly.
  */
 
-/* Layer 0: core */
+/* Base: core */
 #include "err.h"
 #include "hash.h"
 #include "fmath.h"
 #include "noise.h"
 #include "rng.h"
 
-/* Layer 1: base data */
+/* Base: data */
 #include "geom.h"
 #include "grid.h"
 #include "mask.h"
 #include "poi.h"
 #include "tilemap.h"
 
-/* Layer 2: terrain (slope, drain, hydro) + spatial (path, fov) */
+/* Domain terrain */
 #include "slope.h"
 #include "drain.h"
-#include "wg_hydro.h"
+#include "hydro.h"
+
+/* Domain nav */
 #include "path.h"
+
+/* Domain vision */
 #include "fov.h"
 
-/* Layer 3: worldgen pipeline (wg_ prefix) */
-#include "wg_nf.h"
-#include "wg_nf_modulator.h"
-#include "wg_nf_grid.h"
-#include "wg_nf_drain.h"
-#include "wg_nf_hydro.h"
-#include "wg_nf_relief.h"
-#include "wg_nf_rivers.h"
-#include "wg_nf_poi.h"
+/* Domain worldgen: pipeline engine and stages (wg_ prefix) */
+#include "wg.h"
+#include "wg_modulator.h"
+#include "wg_grid.h"
+#include "wg_drain.h"
+#include "wg_hydro.h"
+#include "wg_relief.h"
+#include "wg_rivers.h"
+#include "wg_poi.h"
 
-/* Layer 4: worldgen generators */
+/* Domain worldgen: structure generators */
 #include "ca.h"
 #include "bsp.h"
 

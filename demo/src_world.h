@@ -2,7 +2,7 @@
 #define SRC_WORLD_H
 
 /*
- * src_world - viewer source over tilemap_gen (demo component, layer 5).
+ * src_world - viewer source over tilemap_gen (demo component).
  *
  * The fantasy-world source of demo_viewer: tilemap_gen map with display
  * modes (tile type, biome, variant, depth + stage probes: coarse elev,
@@ -85,21 +85,21 @@ static const char *const SRC_WORLD_POI_NAMES[POI_KIND_COUNT] = {
 
 /* --- MODES / OVERLAYS ---------------------------------------------------- */
 
-/* Base modes: tile fields, then stage probes (wg_nf / drain outputs). */
+/* Base modes: tile fields, then stage probes (wg / drain outputs). */
 enum {
     W_MODE_TYPE = 0,   /* tile palette by type+variant */
     W_MODE_BIOME,      /* biome id color */
     W_MODE_VARIANT,    /* variant index, gray ramp */
     W_MODE_DEPTH,      /* tile depth field, blue ramp */
     W_MODE_ELEV,       /* probe: coarse elevation grid (sampled) */
-    W_MODE_RELIEF,     /* probe: final per-tile elevation (wg_nf_relief) */
+    W_MODE_RELIEF,     /* probe: final per-tile elevation (wg_relief) */
     W_MODE_FLOW,       /* probe: drain flow accumulation */
     W_MODE_LAKE,       /* probe: lake depth */
     W_MODE_COUNT
 };
 
 enum {
-    W_OVL_RIVER = 0,   /* wg_nf_rivers mask + floodplain carve */
+    W_OVL_RIVER = 0,   /* wg_rivers mask + floodplain carve */
     W_OVL_DETAIL,      /* per-tile detail marks (Type mode only) */
     W_OVL_POI,         /* POI markers */
     W_OVL_COUNT
@@ -227,7 +227,7 @@ src_world_color(void *data, int mode, int wx, int wy) {
     }
 }
 
-/* River overlay: highlight rivers + floodplains (wg_nf_rivers buffers) */
+/* River overlay: highlight rivers + floodplains (wg_rivers buffers) */
 static inline uint32_t
 src_world_overlay(void *data, int o, int wx, int wy, uint32_t base) {
     const src_world_t *w = (const src_world_t *)data;

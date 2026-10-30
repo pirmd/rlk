@@ -2,7 +2,7 @@
 #define SOURCE_H
 
 /*
- * source - viewer source interface for demo_viewer (demo component, layer 5).
+ * source - viewer source interface for demo_viewer (demo component).
  *
  * A source is POD state + callbacks; the generic viewer shell (viewer_app.h)
  * renders any source through this interface. The shell owns the layout,

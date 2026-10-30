@@ -1,10 +1,12 @@
 # RLK - Naming conventions
 
 1. Module: file `<module>.h`, identifiers `rlk_<module>_*`, types
-   `rlk_<module>_t`, macros `RLK_<MODULE>_*`. The `wg_` prefix is
-   reserved for the worldgen pipeline and its bridges/stages (`wg_nf`,
-   `wg_flow`, `wg_ca`, ...). For everything else ask: "is it usable
-   without worldgen?" If yes, generic name.
+   `rlk_<module>_t`, macros `RLK_<MODULE>_*`. A domain prefix exists
+   only for a family of modules that only make sense together: `wg_`
+   groups the worldgen pipeline, i.e. the engine (`wg.h`, `rlk_wg_t`,
+   `rlk_wg_fill`) and its stages/bridges (`wg_relief`, `wg_drain`,
+   ...). A module usable without its domain gets a generic name
+   (`ca`, `bsp`, `path`, `hydro` -- not `wg_hydro`: it is terrain).
 2. Verbs (one meaning each):
    - `init`: prepares a struct; `build`: computes derived data;
    - `find`: a search that can fail; `compute`: computes a result into

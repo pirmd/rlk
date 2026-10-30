@@ -1,8 +1,6 @@
 #ifndef RLK_SLOPE_H
 #define RLK_SLOPE_H
 
-/* layer: 2, domain: terrain */
-
 /*
  * Slope of an elevation grid, Horn's 3x3 method. Header-only.
  *

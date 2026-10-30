@@ -2,8 +2,7 @@
 #define VIEWER_H
 
 /*
- * viewer - reusable view bricks for PXL tilemap viewers (demo component,
- * layer 5).
+ * viewer - reusable view bricks for PXL tilemap viewers (demo component).
  *
  * World-tile camera, minimap view math and per-frame input snapshot.
  * The layout, palette and map rendering stay in the app; widgets come
