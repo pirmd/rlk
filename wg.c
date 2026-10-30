@@ -185,11 +185,13 @@ classify(const rlk_wg_t *wg, rlk_wg_ctx_t *ctx) {
 
 /* --- PER-TILE PIPELINE --------------------------------------------------- */
 
-/* Evaluate one tile: fields -> stages -> classify. Fills ctx.
-   A tile outside every zone box gets the nearest zone (depth = 0). */
+/* Evaluate one point: fields -> stages -> classify. Fills ctx.
+   Fields are sampled at the float world position (wxf, wyf); (wx, wy) is the
+   containing tile, (x, y) the run-local index. A tile outside every zone box
+   gets the nearest zone (depth = 0). */
 static void
-eval(const rlk_wg_t *wg, int wx, int wy, int x, int y,
-     rlk_wg_ctx_t *ctx) {
+eval_at(const rlk_wg_t *wg, float wxf, float wyf, int wx, int wy, int x, int y,
+        rlk_wg_ctx_t *ctx) {
     assert(wg && ctx);
 
     *ctx = (rlk_wg_ctx_t){
@@ -201,7 +203,6 @@ eval(const rlk_wg_t *wg, int wx, int wy, int x, int y,
     };
 
     /* FIELDS */
-    const float wxf = (float)wx, wyf = (float)wy;
     for (int i = 0; i < wg->nsampled; i++)
         ctx->field[i] = rlk_wg_sample_field(wg, i, wxf, wyf);
 
@@ -213,7 +214,43 @@ eval(const rlk_wg_t *wg, int wx, int wy, int x, int y,
     classify(wg, ctx);
 }
 
+/* Evaluate one tile: same as eval_at at the integer world position. */
+static void
+eval(const rlk_wg_t *wg, int wx, int wy, int x, int y,
+     rlk_wg_ctx_t *ctx) {
+    eval_at(wg, (float)wx, (float)wy, wx, wy, x, y, ctx);
+}
+
 /* --- DRIVER -------------------------------------------------------------- */
+
+void
+rlk_wg_run(const rlk_wg_t *wg, int origin_x, int origin_y, int w, int h,
+           rlk_wg_sink_fn sink, void *user) {
+    assert(wg && sink);
+    assert(w > 0 && h > 0);
+
+    for (int y = 0; y < h; y++) {
+        for (int x = 0; x < w; x++) {
+            rlk_wg_ctx_t ctx;
+            eval(wg, origin_x + x, origin_y + y, x, y, &ctx);
+            sink(&ctx, user);
+        }
+    }
+}
+
+/* Tilemap sink for rlk_wg_fill: the tilemap is a window at its own origin;
+ * the world rect evaluated is the fill origin. */
+static void
+tilemap_sink(const rlk_wg_ctx_t *ctx, void *user) {
+    assert(ctx && user);
+    rlk_tilemap_t *tm = (rlk_tilemap_t *)user;
+    rlk_tile_t *tile = rlk_tilemap_get(tm, tm->origin_x + ctx->x, tm->origin_y + ctx->y);
+    assert(tile);
+    /* Reset tile, set biome to zone id, then the zone writer fills type/flags/variant. */
+    *tile = (rlk_tile_t){.biome = ctx->zone};
+    const rlk_wg_zone_t *z = &ctx->wg->zones[ctx->zone];
+    z->write(ctx, z->data, tile);
+}
 
 /* Fill tilemap tm with tiles for the world-space rect starting at
  * (origin_x, origin_y). Rect dimensions are tm->w x tm->h tiles. */
@@ -221,19 +258,27 @@ void
 rlk_wg_fill(const rlk_wg_t *wg, int origin_x, int origin_y, rlk_tilemap_t *tm) {
     assert(wg && tm);
     assert(tm->w > 0 && tm->h > 0);
+    rlk_wg_run(wg, origin_x, origin_y, tm->w, tm->h, tilemap_sink, tm);
+}
 
-    for (int y = 0; y < tm->h; y++) {
-        for (int x = 0; x < tm->w; x++) {
+/* Fill grid g with slot `slot`, pipeline evaluated at each cell centre. */
+void
+rlk_wg_fill_slot(const rlk_wg_t *wg, uint8_t slot, rlk_grid_t *g) {
+    assert(wg && g);
+    assert((int)slot < wg->nsampled + wg->nderived);
+    const rlk_lattice_t *lat = &g->lattice;
+    assert(lat->w > 0 && lat->h > 0 && lat->cellsize > 0);
+
+    for (int j = 0; j < lat->h; j++) {
+        for (int i = 0; i < lat->w; i++) {
+            float cx, cy;
+            rlk_grid_center(g, i, j, &cx, &cy);
             rlk_wg_ctx_t ctx;
-            eval(wg, origin_x + x, origin_y + y, x, y, &ctx);
-
-            /* WRITE */
-            const rlk_wg_zone_t *z = &wg->zones[ctx.zone];
-            rlk_tile_t *tile = rlk_tilemap_get(tm, tm->origin_x + x, tm->origin_y + y);
-            assert(tile);
-            /* Reset tile, set biome to zone id, then the zone writer fills type/flags/variant. */
-            *tile = (rlk_tile_t){.biome = ctx.zone};
-            z->write(&ctx, z->data, tile);
+            eval_at(wg, cx, cy,
+                    lat->origin_x + i * lat->cellsize,
+                    lat->origin_y + j * lat->cellsize,
+                    i, j, &ctx);
+            g->v[(size_t)j * (size_t)lat->w + (size_t)i] = ctx.field[slot];
         }
     }
 }

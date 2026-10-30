@@ -13,6 +13,7 @@
 #include <stdint.h>
 
 #include "err.h"
+#include "grid.h"
 #include "hash.h"
 #include "noise.h"
 #include "tilemap.h"
@@ -189,9 +190,26 @@ rlk_err_t rlk_wg_add(rlk_wg_t *wg, rlk_wg_stage_t stage);
    Returns RLK_OK on success. */
 rlk_err_t rlk_wg_init(rlk_wg_t *wg);
 
+/* Sink: called by rlk_wg_run for each tile of the run, after fields, stages
+ * and classify. ctx->x/y are run-local, ctx->wx/wy the world tile. */
+typedef void (*rlk_wg_sink_fn)(const rlk_wg_ctx_t *ctx, void *user);
+
+/* Generic driver: evaluate the pipeline over the world rect
+ * (origin_x, origin_y, w, h) and call sink per tile, row-major order. */
+void rlk_wg_run(const rlk_wg_t *wg, int origin_x, int origin_y, int w, int h,
+                rlk_wg_sink_fn sink, void *user);
+
 /* Fill tm with the world rect (tm->w x tm->h tiles) at world origin
-   (origin_x, origin_y). General primitive; origin may be any tile (incl. negative). */
+   (origin_x, origin_y). General primitive; origin may be any tile (incl. negative).
+   Implemented as a tilemap sink over rlk_wg_run. */
 void rlk_wg_fill(const rlk_wg_t *wg, int origin_x, int origin_y, rlk_tilemap_t *tm);
+
+/* Macro pass: fill grid g with the value of slot `slot` (0..nsampled+nderived-1,
+ * indexed as in ctx->field), the pipeline evaluated once per cell at the cell
+ * centre (rlk_grid_center). With cellsize > 1 the fields are sampled at the
+ * true cell centre, not at a tile corner. This is the macro -> micro driver:
+ * fill an elevation grid, run drain on it, then instance the micro pass. */
+void rlk_wg_fill_slot(const rlk_wg_t *wg, uint8_t slot, rlk_grid_t *g);
 
 /* Generate chunk (cx, cy) into tm. tm must be exactly one chunk; chunk origin
    is (cx*tm->w, cy*tm->h). Convenience wrapper over rlk_wg_fill. */

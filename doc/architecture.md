@@ -45,6 +45,17 @@ Each stage declares the slots it reads and writes (`rlk_wg_stage_t.reads` /
 (or references a slot out of range; same check for the axes, against all
 stages). Stage order is therefore explicit and checked, not implicit.
 
+Drivers (sinks are pluggable; the tilemap is only one sink):
+
+- `rlk_wg_run(wg, ox, oy, w, h, sink, user)` evaluates the pipeline over the
+  world rect `(ox, oy, w, h)` and calls `sink(ctx, user)` per tile, row-major.
+- `rlk_wg_fill(wg, ox, oy, tm)` is the tilemap sink over `rlk_wg_run`.
+- `rlk_wg_fill_slot(wg, slot, &grid)` is the macro -> micro driver: it fills a
+  grid with `ctx->field[slot]`, the pipeline evaluated once per cell at the
+  cell centre (`rlk_grid_center`, so `cellsize > 1` samples at the true cell
+  centre). Typical pass: fill an elevation grid, run `drain` on it, then
+  instance the micro pass on the tilemap.
+
 ---
 
 ## User land: composition recipes

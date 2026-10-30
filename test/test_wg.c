@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <math.h>
 #include <stdint.h>
 #include "wg.h"
 
@@ -79,6 +80,27 @@ stage_derive_complement(rlk_wg_ctx_t *ctx, const void *data) {
 static void
 stage_noop(rlk_wg_ctx_t *ctx, const void *data) {
     (void)ctx; (void)data;
+}
+
+/* Derive field[1] (wg_min: nsampled=1, so derived slot 0) as 2 * field[0]. */
+static void
+stage_derive_double(rlk_wg_ctx_t *ctx, const void *data) {
+    (void)data;
+    ctx->field[1] = 2.0f * ctx->field[0];
+}
+
+/* Sink capture for rlk_wg_run tests. */
+static int g_run_x[256], g_run_y[256], g_run_wx[256], g_run_wy[256];
+
+static void
+sink_capture(const rlk_wg_ctx_t *ctx, void *user) {
+    int *count = (int *)user;
+    assert(*count < 256);
+    g_run_x[*count] = ctx->x;
+    g_run_y[*count] = ctx->y;
+    g_run_wx[*count] = ctx->wx;
+    g_run_wy[*count] = ctx->wy;
+    (*count)++;
 }
 
 /* Config fixtures --------------------------------------------------------------- */
@@ -586,6 +608,67 @@ test_init_accepts_slots_all(void) {
     assert(rlk_wg_init(&wg) == RLK_OK);
 }
 
+/* rlk_wg_run calls the sink once per tile, row-major, with world coords
+   offset by the run origin and local coords reset to the run. */
+static void
+test_rlk_wg_run_sink_order(void) {
+    rlk_wg_t wg = wg_min();
+    assert(rlk_wg_init(&wg) == RLK_OK);
+    int count = 0;
+    rlk_wg_run(&wg, 100, -50, 4, 3, sink_capture, &count);
+    assert(count == 12);
+    for (int k = 0; k < count; k++) {
+        int x = k % 4, y = k / 4;
+        assert(g_run_x[k] == x && g_run_y[k] == y);
+        assert(g_run_wx[k] == 100 + x && g_run_wy[k] == -50 + y);
+    }
+}
+
+/* rlk_wg_fill_slot on a sampled slot: each cell equals rlk_wg_sample_field
+   at the cell centre (cellsize > 1, negative origin). */
+static void
+test_rlk_wg_fill_slot_sampled(void) {
+    rlk_wg_t wg = wg_min();
+    assert(rlk_wg_init(&wg) == RLK_OK);
+
+    static float buf[4 * 3];
+    rlk_grid_t g = { .lattice = { .w = 4, .h = 3, .cellsize = 8,
+                                  .origin_x = -16, .origin_y = 24 }, .v = buf };
+    rlk_wg_fill_slot(&wg, 0, &g);
+    for (int j = 0; j < 3; j++)
+        for (int i = 0; i < 4; i++) {
+            float cx, cy;
+            rlk_grid_center(&g, i, j, &cx, &cy);
+            float want = rlk_wg_sample_field(&wg, 0, cx, cy);
+            float got = buf[(size_t)j * 4 + (size_t)i];
+            assert(fabsf(got - want) < 1e-6f);
+        }
+}
+
+/* rlk_wg_fill_slot on a derived slot reflects the stage output; the pipeline
+   runs at the cell centre (cellsize = 1 -> tile centre x+0.5). */
+static void
+test_rlk_wg_fill_slot_derived(void) {
+    rlk_wg_t wg = wg_min();
+    wg.nderived = 1;
+    assert(rlk_wg_add(&wg, (rlk_wg_stage_t){ .fn = stage_derive_double, .data = NULL,
+                                              .reads = { .sampled = RLK_WG_SLOT(0) },
+                                              .writes = { .derived = RLK_WG_SLOT(0) } }) == RLK_OK);
+    assert(rlk_wg_init(&wg) == RLK_OK);
+
+    static float buf[3 * 2];
+    rlk_grid_t g = { .lattice = { .w = 3, .h = 2, .cellsize = 1,
+                                  .origin_x = 5, .origin_y = 7 }, .v = buf };
+    rlk_wg_fill_slot(&wg, 1, &g);   /* slot 1 = nsampled(1) + derived 0 */
+    for (int j = 0; j < 2; j++)
+        for (int i = 0; i < 3; i++) {
+            float cx, cy;
+            rlk_grid_center(&g, i, j, &cx, &cy);
+            float want = 2.0f * rlk_wg_sample_field(&wg, 0, cx, cy);
+            assert(fabsf(buf[(size_t)j * 3 + (size_t)i] - want) < 1e-6f);
+        }
+}
+
 int
 main(void) {
     test_rlk_wg_init_defaults();
@@ -612,5 +695,8 @@ main(void) {
     test_init_rejects_out_of_range();
     test_init_rejects_axis_on_unwritten_slot();
     test_init_accepts_slots_all();
+    test_rlk_wg_run_sink_order();
+    test_rlk_wg_fill_slot_sampled();
+    test_rlk_wg_fill_slot_derived();
     return 0;
 }
