@@ -9,7 +9,7 @@ one domain, several domains:
 . Domains are independent: no cross-domain include. Anything serving
   several domains lives in the base (`rlk_tilemap_line`).
 . Everything that flows between modules is caller-owned POD (grid, mask,
-  POI list, tilemap). No allocation in the lib ("Memory model" below).
+  POI list, tilemap). No allocation in the lib (see "Memory model").
 
 ```
  USER LAND   your game, your tools, your composition code
@@ -62,6 +62,15 @@ Drivers (sinks are pluggable; the tilemap is only one sink):
   cell centre (`rlk_grid_center`, so `cellsize > 1` samples at the true cell
   centre). Typical pass: fill an elevation grid, run `drain` on it, then
   instance the micro pass on the tilemap.
+- `rlk_wg_chunk(wg, cx, cy, tm)` fills one chunk of a larger map: `tm` holds
+  exactly one chunk, its world origin is `(cx*tm->w, cy*tm->h)`.
+
+## Memory model
+
+No allocation in the lib: every buffer is caller-owned POD passed by pointer
+(grid/mask/tilemap/POI buffers, scratch arrays). Functions either fill a
+caller buffer or write through a caller sink; the only runtime checks are
+system-allocation failures, programmer errors are `assert`s.
 
 ## Two-level generation
 
@@ -87,6 +96,8 @@ one loop (executable reference: `demo/demo_world.c`); the POI list is the
 work queue, growing during iteration, zero allocation:
 
 ```c
+rlk_lattice_t win;
+rlk_poi_window(p, (rlk_rect_t){0, 0, MAP_W, MAP_H}, &win);  /* bbox clamped to map */
 for (int i = 0; i < pois.n; i++) {          /* pois.n may grow */
     const rlk_poi_t *p = &pois.v[i];
     if (p->gen > MAX_GEN) continue;
@@ -100,5 +111,6 @@ for (int i = 0; i < pois.n; i++) {          /* pois.n may grow */
 ```
 
 Demos (examples, not part of the lib): `demo_viewer.c` (PXL terrain viewer
-over `tilemap_gen`), `demo_world.c` (full world: overworld + POI structures
-+ roads).
+over the `tilemap_gen` package: `tilemap_gen.c` + `gen_stages/gen_write/
+gen_post/gen_stats.c`), `demo_world.c` (full world: overworld + POI
+structures + roads, ASCII views of the generation stages via argv).

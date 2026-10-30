@@ -20,14 +20,15 @@ SRC_PXL = demo_viewer
 DEMO_PXL = $(SRC_PXL)
 
 # --- Text demos (terminal, no PXL) ---------------------------------------
-# demo_world reuses the shared tilemap_gen object
-SRC_TXT = demo_world
+# all reuse the shared tilemap_gen objects
+SRC_TXT = demo_world demo_metrics demo_dump
 DEMO_TXT = $(SRC_TXT)
 
 DEMO = $(DEMO_PXL) $(DEMO_TXT)
 
-# Shared demo objects, linked into the PXL demos that need them
-DEMO_OBJ = tilemap_gen.o
+# Shared demo objects (tilemap_gen split into modules), linked into the demos
+GEN_SRC = tilemap_gen gen_stages gen_write gen_post gen_stats
+DEMO_OBJ = $(GEN_SRC:=.o)
 
 all: $(DEMO)
 
@@ -44,8 +45,10 @@ $(d): $(d).c $(DEMO_OBJ) $(RLK_DIR)/librlk.a $(PXL_DIR)/libpxl.a
 	$(CC) $(CFLAGS) $(PXL_CFLAGS) $(d).c $(DEMO_OBJ) $(RLK_DIR)/librlk.a $(PXL_DIR)/libpxl.a -o $@ $(RLK_LDLIBS) $(PXL_LDLIBS)
 .endfor
 
-tilemap_gen.o: tilemap_gen.c tilemap_gen.h $(RLK_HDR)
-	$(CC) $(CFLAGS) -c tilemap_gen.c -o $@
+.for o in $(GEN_SRC)
+$(o).o: $(o).c gen_internal.h tilemap_gen.h $(RLK_HDR)
+	$(CC) $(CFLAGS) -c $(o).c -o $@
+.endfor
 
 # Text demos: link librlk + libm only (plus the shared tilemap_gen object)
 .for d in $(DEMO_TXT)
@@ -57,7 +60,7 @@ $(DEMO_PXL): $(RLK_HDR) $(PXL_HDR)
 $(DEMO_TXT): $(RLK_HDR)
 
 lint:
-.for d in $(DEMO_PXL) $(DEMO_TXT) tilemap_gen
+.for d in $(DEMO_PXL) $(DEMO_TXT) $(GEN_SRC)
 	$(CC) -Werror -fsyntax-only $(CFLAGS) $(CFLAGS_LINT) $(d).c
 .endfor
 

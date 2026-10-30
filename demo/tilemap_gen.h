@@ -246,4 +246,26 @@ struct tilemap_gen_s {
 /* Generate (or regenerate) the map in place with the given seed. */
 void tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed);
 
+/* --- Post-generation stats (map probes) ---------------------------------- */
+
+typedef struct {
+    uint32_t tile_count[TILE_COUNT];  /* histogram of final tile types */
+    float entropy;                    /* Shannon entropy of tile types, bits */
+    float water_frac;                 /* WATER + LAKE fraction */
+    float river_frac;                 /* RIVER fraction */
+    float land_frac;                  /* walkable land fraction */
+    int n_components;                 /* connected walkable components (4-conn) */
+    int largest_component;            /* size in tiles of the largest one */
+    int n_sinkholes;                  /* karst dolines */
+    int n_poi[POI_KIND_COUNT];        /* POIs per kind */
+} tilemap_gen_stats_t;
+
+/* Fill st from gen. scratch = TM_W*TM_H caller-owned bytes (flood fill). */
+void tilemap_gen_stats(const tilemap_gen_t *gen, tilemap_gen_stats_t *st,
+                       uint8_t *scratch);
+
+/* Print a human-readable summary of st (and the seed) to stdout. */
+void tilemap_gen_stats_print(const tilemap_gen_t *gen,
+                             const tilemap_gen_stats_t *st);
+
 #endif /* TILEMAP_GEN_H */

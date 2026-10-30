@@ -5,7 +5,8 @@
  *   demo_viewer [world|ca|bsp|nav] [seed]
  *
  *   world  tilemap_gen fantasy map (modes: type/biome/variant/depth +
- *          stage probes elev/relief/flow/lake; overlays: river/POI)
+ *          stages elev/relief/flow/lake/cont/temp/hum/slope/strahler;
+ *          overlays: river/detail/POI)
  *   ca     cellular-automaton cave (rlk_ca_fill + entrance POI)
  *   bsp    BSP dungeon (rlk_bsp_fill + spawn POI)
  *   nav    in-game navigation scenario (mask + A* + overlays)

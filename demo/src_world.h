@@ -5,9 +5,9 @@
  * src_world - viewer source over tilemap_gen (demo component).
  *
  * The fantasy-world source of demo_viewer: tilemap_gen map with display
- * modes (tile type, biome, variant, depth + stage probes: coarse elev,
- * final relief, flow accumulation, lake depth) and overlays (river
- * network, POI markers). Extracted from the former demo_tilemap_viewer.
+ * modes (tile type, biome, variant, depth + generation stages: coarse elev,
+ * final relief, flow accumulation, lake depth, sampled fields cont/temp/hum,
+ * hydro slope and Strahler order) and overlays (river network, detail, POI).
  *
  *   static src_world_t w;
  *   src_world_init(&w, seed);
@@ -95,6 +95,11 @@ enum {
     W_MODE_RELIEF,     /* probe: final per-tile elevation (wg_relief) */
     W_MODE_FLOW,       /* probe: drain flow accumulation */
     W_MODE_LAKE,       /* probe: lake depth */
+    W_MODE_CONT,       /* field: continents (F_CONT) */
+    W_MODE_TEMP,       /* field: temperature (F_TEMP) */
+    W_MODE_HUM,        /* field: humidity (F_HUM) */
+    W_MODE_SLOPE,      /* probe: hydro slope on the drain grid */
+    W_MODE_STRAHLER,   /* probe: Strahler stream order */
     W_MODE_COUNT
 };
 
@@ -218,6 +223,35 @@ src_world_color(void *data, int mode, int wx, int wy) {
         uint32_t g = (uint32_t)(0x40f + t * 0xC0f);
         uint32_t b = (uint32_t)(0x20f + t * 0x60f);
         return 0xFF000000U | (g << 8) | b;
+    }
+    case W_MODE_CONT:
+    case W_MODE_TEMP:
+    case W_MODE_HUM: {
+        /* Sampled wg fields, gray ramp 0..1 */
+        int f = (mode == W_MODE_CONT) ? F_CONT : (mode == W_MODE_TEMP) ? F_TEMP : F_HUM;
+        float v = rlk_wg_sample_field(&w->gen.wg, f, (float)wx + 0.5f, (float)wy + 0.5f);
+        uint32_t g = (uint32_t)(v * 255.0f);
+        return 0xFF000000U | (g << 16) | (g << 8) | g;
+    }
+    case W_MODE_SLOPE: {
+        int ci = 0, cj = 0;
+        float s = 0.0f;
+        if (rlk_grid_cell_of(&w->gen.elev_grid, wx, wy, &ci, &cj))
+            s = w->gen.hydro_slope[(size_t)cj * (size_t)w->gen.hydro.lattice.w + (size_t)ci];
+        float t = s / 0.05f;
+        if (t > 1.0f) t = 1.0f;
+        uint32_t r = (uint32_t)(t * 0xFF);
+        return 0xFF000000U | (r << 16) | ((uint32_t)(t * 0x80) << 8);
+    }
+    case W_MODE_STRAHLER: {
+        int ci = 0, cj = 0;
+        uint8_t o = 0;
+        if (rlk_grid_cell_of(&w->gen.elev_grid, wx, wy, &ci, &cj))
+            o = w->gen.hydro_strahler[(size_t)cj * (size_t)w->gen.hydro.lattice.w + (size_t)ci];
+        float t = (float)o / 6.0f;
+        if (t > 1.0f) t = 1.0f;
+        uint32_t g = (uint32_t)(0x20 + t * 0xDF);
+        return 0xFF000000U | ((uint32_t)(t * 0x60) << 16) | (g << 8) | (uint32_t)(t * 0xFF);
     }
     case W_MODE_TYPE:
     default:
@@ -540,6 +574,21 @@ src_world_legend(widget_item_t *items, int cap, const void *data,
         }
         break;
     }
+    case W_MODE_CONT:
+    case W_MODE_TEMP:
+    case W_MODE_HUM:
+    case W_MODE_SLOPE:
+    case W_MODE_STRAHLER: {
+        /* Gray ramp for the field / probe modes */
+        static const char *const lbl[4] = { "0", "0.33", "0.66", "1" };
+        for (int i = 0; i < 4 && n < cap; i++) {
+            uint32_t g = 0x30U + (uint32_t)i * 0x40U;
+            items[n].color = 0xFF000000U | (g << 16) | (g << 8) | g;
+            items[n].label = lbl[i];
+            n++;
+        }
+        break;
+    }
     case W_MODE_TYPE:
     default:
         /* Tile types (skip VOID) */
@@ -587,7 +636,8 @@ src_world_source(src_world_t *w) {
     assert(w);
 
     static const char *const mode_names[W_MODE_COUNT] = {
-        "Type", "Biome", "Var", "Dpth", "Elev", "Rel", "Flow", "Lake"
+        "Type", "Biome", "Var", "Dpth", "Elev", "Rel", "Flow", "Lake",
+        "Cont", "Temp", "Hum", "Slope", "Str"
     };
     static const char *const overlay_names[W_OVL_COUNT] = {
         "River", "Detail", "POI"
