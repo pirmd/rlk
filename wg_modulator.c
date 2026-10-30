@@ -1,11 +1,9 @@
 #include "wg_modulator.h"
 
 #include <assert.h>
-#include <float.h>
 #include "hash.h"
 #include "fmath.h"
-
-#define NEIGHBORHOOD 25  /* 5x5 cells */
+#include "noise.h"
 
 /* Resolve zero defaults (cell 0->128, blend 0->cell/4). */
 static void
@@ -29,48 +27,30 @@ modulator_stage(rlk_wg_ctx_t *ctx, const void *data) {
     const float wxf = (float)ctx->wx + 0.5f, wyf = (float)ctx->wy + 0.5f;
     const uint64_t pseed = rlk_hash_sub(rlk_hash_sub(wg->seed, 0x9E0F5C3D11ULL), m->salt);
 
-    float d[NEIGHBORHOOD];
-    uint8_t t[NEIGHBORHOOD];
-    int n = 0;
-    float dmin = FLT_MAX;
+    rlk_noise_t cn;
+    rlk_noise_seed(&cn, pseed);
+    rlk_noise_cell_t c;
+    rlk_noise_cell(&cn, wxf, wyf, cell, &c);
 
-    for (int j = -2; j <= 2; j++) {
-        for (int i = -2; i <= 2; i++) {
-            int cx = (int)floorf(wxf / cell) + i;
-            int cy = (int)floorf(wyf / cell) + j;
-            uint64_t h = rlk_hash_combine2(pseed, cx, cy);
-            float fx = 0.15f + 0.70f * (float)(rlk_hash_sub(h, 1) >> 40) * (1.0f / 16777216.0f);
-            float fy = 0.15f + 0.70f * (float)(rlk_hash_sub(h, 2) >> 40) * (1.0f / 16777216.0f);
-            float qx = ((float)cx + fx) * cell - wxf;
-            float qy = ((float)cy + fy) * cell - wyf;
-            d[n] = rlk_dist_euclideanf(0.0f, 0.0f, qx, qy);
-            t[n] = (uint8_t)((rlk_hash_sub(h, 3) >> 33) % (uint64_t)m->ntypes);
-            if (d[n] < dmin) dmin = d[n];
-            n++;
-        }
-    }
+    /* Type of the closest cell, and of the cell containing the point. */
+    const uint8_t t1 = (uint8_t)((rlk_hash_sub(c.id, 3) >> 33) % (uint64_t)m->ntypes);
+    const int bx = (int)floorf(wxf / cell);
+    const int by = (int)floorf(wyf / cell);
+    const uint64_t h0 = rlk_hash_combine2(pseed, bx, by);
+    const uint8_t t0 = (uint8_t)((rlk_hash_sub(h0, 3) >> 33) % (uint64_t)m->ntypes);
 
-    /* Weighted average of bias and gain. */
-    float bias[RLK_WG_MAX_FIELDS] = {0};
-    float gain[RLK_WG_MAX_FIELDS] = {0};
-    float sum = 0.0f;
+    /* Smooth blend: full weight on the closest cell deep inside it, mixed
+       with the containing cell within `blend` of a border (d2 - d1 ~ 0 on
+       a border, grows towards the cell center). */
+    const float w = rlk_clampf((c.d2 - c.d1) / blend, 0.0f, 1.0f);
+    const rlk_wg_modulator_type_t *ta = &m->types[t1];
+    const rlk_wg_modulator_type_t *tb = &m->types[t0];
     const int nf = wg->nsampled;
-
-    for (int k = 0; k < n; k++) {
-        float w = rlk_clampf(1.0f - (d[k] - dmin) / blend, 0.0f, 1.0f);
-        if (w <= 0.0f)
-            continue;
-        sum += w;
-        const rlk_wg_modulator_type_t *ty = &m->types[t[k]];
-        for (int f = 0; f < nf; f++) {
-            bias[f] += w * ty->bias[f];
-            gain[f] += w * ty->gain[f];
-        }
+    for (int f = 0; f < nf; f++) {
+        const float bias = w * ta->bias[f] + (1.0f - w) * tb->bias[f];
+        const float gain = w * ta->gain[f] + (1.0f - w) * tb->gain[f];
+        ctx->field[f] = (ctx->field[f] + bias) * (1.0f + gain);
     }
-
-    const float inv = sum > 0.0f ? 1.0f / sum : 1.0f;
-    for (int f = 0; f < nf; f++)
-        ctx->field[f] = (ctx->field[f] + bias[f] * inv) * (1.0f + gain[f] * inv);
 }
 
 rlk_wg_stage_t

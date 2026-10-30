@@ -2,6 +2,7 @@
 #define RLK_NOISE_H
 
 #include <assert.h>
+#include <float.h>
 #include <stdint.h>
 
 #include "fmath.h"
@@ -123,6 +124,58 @@ rlk_noise_fbm(const rlk_noise_t *n, float x, float y,
         f    *= 2.0f;
     }
     return sum / norm;
+}
+
+/* Worley / Voronoi cellular noise: feature points of a lattice of cells with
+   side `cell`, one point jittered inside each cell. Pure function of
+   (seed, x, y): deterministic, no allocation. */
+typedef struct {
+    uint64_t id;   /* identity (hash) of the closest feature point */
+    int cx, cy;    /* cell of the closest feature point */
+    float d1;      /* distance to the closest feature point (F1) */
+    float d2;      /* distance to the second closest feature point (F2) */
+} rlk_noise_cell_t;
+
+/* Closest feature points at (x, y): scans the 5x5 cells around the
+   containing cell, which provably holds F1/F2 for jitter in [0.15, 0.85]. */
+static inline void
+rlk_noise_cell(const rlk_noise_t *n, float x, float y, float cell,
+               rlk_noise_cell_t *out) {
+    assert(n);
+    assert(out);
+    assert(cell > 0.0f);
+    assert(x == x && y == y);
+    const int bx = (int)floorf(x / cell);
+    const int by = (int)floorf(y / cell);
+    float d1 = FLT_MAX, d2 = FLT_MAX;
+    uint64_t id = 0;
+    int cx = bx, cy = by;
+    for (int j = -2; j <= 2; j++) {
+        for (int i = -2; i <= 2; i++) {
+            const int ccx = bx + i;
+            const int ccy = by + j;
+            const uint64_t h = rlk_hash_combine2(n->seed, ccx, ccy);
+            const float fx = 0.15f + 0.70f * (float)(rlk_hash_sub(h, 1) >> 40) * (1.0f / 16777216.0f);
+            const float fy = 0.15f + 0.70f * (float)(rlk_hash_sub(h, 2) >> 40) * (1.0f / 16777216.0f);
+            const float qx = ((float)ccx + fx) * cell - x;
+            const float qy = ((float)ccy + fy) * cell - y;
+            const float d = rlk_dist_euclideanf(0.0f, 0.0f, qx, qy);
+            if (d < d1) {
+                d2 = d1;
+                d1 = d;
+                id = h;
+                cx = ccx;
+                cy = ccy;
+            } else if (d < d2) {
+                d2 = d;
+            }
+        }
+    }
+    out->id = id;
+    out->cx = cx;
+    out->cy = cy;
+    out->d1 = d1;
+    out->d2 = d2;
 }
 
 #endif /* RLK_NOISE_H */

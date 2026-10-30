@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <float.h>
 #include "noise.h"
 
 /* Fixture -------------------------------------------------------------------- */
@@ -176,6 +177,65 @@ test_rlk_noise_fbm_range(void) {
 	fixture_teardown();
 }
 
+/* rlk_noise_cell tests -------------------------------------------------------- */
+
+static void
+test_rlk_noise_cell_basic(void) {
+	fixture_setup();
+	rlk_noise_cell_t c;
+	rlk_noise_cell(&g_noise, 3.7f, -2.1f, 16.0f, &c);
+	assert(c.d1 >= 0.0f);
+	assert(c.d1 <= c.d2);
+	assert(c.d2 < FLT_MAX); /* the 5x5 scan always finds two points */
+	fixture_teardown();
+}
+
+static void
+test_rlk_noise_cell_deterministic(void) {
+	fixture_setup();
+	rlk_noise_cell_t a, b;
+	rlk_noise_cell(&g_noise, 10.3f, 20.8f, 8.0f, &a);
+	rlk_noise_cell(&g_noise, 10.3f, 20.8f, 8.0f, &b);
+	assert(a.id == b.id && a.cx == b.cx && a.cy == b.cy);
+	assert(a.d1 == b.d1 && a.d2 == b.d2);
+	fixture_teardown();
+}
+
+static void
+test_rlk_noise_cell_seed_changes_result(void) {
+	rlk_noise_t n2;
+	rlk_noise_seed(&n2, 999);
+	fixture_setup();
+	rlk_noise_cell_t a, b;
+	rlk_noise_cell(&g_noise, 10.3f, 20.8f, 8.0f, &a);
+	rlk_noise_cell(&n2, 10.3f, 20.8f, 8.0f, &b);
+	assert(a.id != b.id || a.d1 != b.d1);
+	fixture_teardown();
+}
+
+/* Invariants over a grid of sample points: id matches the returned cell,
+   the cell lies in the 5x5 neighborhood of the containing cell, and F1 is
+   bounded by the farthest feature point of the containing cell. */
+static void
+test_rlk_noise_cell_invariants(void) {
+	fixture_setup();
+	const float cell = 16.0f;
+	for (int k = 0; k < 50; k++) {
+		const float x = -100.0f + 4.13f * (float)k;
+		const float y = 55.0f - 3.71f * (float)k;
+		rlk_noise_cell_t c;
+		rlk_noise_cell(&g_noise, x, y, cell, &c);
+		const int bx = (int)floorf(x / cell);
+		const int by = (int)floorf(y / cell);
+		assert(c.id == rlk_hash_combine2(g_noise.seed, c.cx, c.cy));
+		assert(c.cx - bx >= -2 && c.cx - bx <= 2);
+		assert(c.cy - by >= -2 && c.cy - by <= 2);
+		assert(c.d1 <= 1.21f * cell); /* sqrt(2) * 0.85 * cell, jitter bound */
+		assert(c.d1 <= c.d2);
+	}
+	fixture_teardown();
+}
+
 /* Main ----------------------------------------------------------------------- */
 
 int
@@ -204,6 +264,12 @@ main(void) {
 	test_rlk_noise_fbm_basic();
 	test_rlk_noise_fbm_deterministic();
 	test_rlk_noise_fbm_range();
+
+	/* rlk_noise_cell tests */
+	test_rlk_noise_cell_basic();
+	test_rlk_noise_cell_deterministic();
+	test_rlk_noise_cell_seed_changes_result();
+	test_rlk_noise_cell_invariants();
 
 	return 0;
 }
