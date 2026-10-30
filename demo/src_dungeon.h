@@ -64,7 +64,6 @@ typedef struct {
     uint8_t grid[DUN_W * DUN_H];          /* ca/bsp scratch grid */
     int regions[DUN_W * DUN_H];           /* ca region ids */
     rlk_bsp_node_t nodes[RLK_BSP_MAX_NODES];
-    float win[DUN_W * DUN_H];             /* fill window (v unread) */
     rlk_poi_t spawn;                      /* entrance / spawn POI */
     uint64_t seed;
     int kind;                             /* DUN_SRC_CA / DUN_SRC_BSP */
@@ -77,18 +76,18 @@ src_dungeon_build(src_dungeon_t *d) {
 
     rlk_tilemap_init(&d->tm, DUN_W, DUN_H, d->tiles, sizeof(d->tiles));
 
-    /* Window: the whole map, one cell per tile (grid->v is not read by fill). */
-    rlk_grid_t win = { .lattice = { .w = DUN_W, .h = DUN_H, .cellsize = 1,
-                                    .origin_x = 0, .origin_y = 0 }, .v = d->win };
+    /* Window: the whole map, one cell per tile. */
+    rlk_lattice_t win = { .w = DUN_W, .h = DUN_H, .cellsize = 1,
+                          .origin_x = 0, .origin_y = 0 };
 
     rlk_err_t err;
     if (d->kind == DUN_SRC_BSP) {
-        static const rlk_bsp_wallfloor_t wf = { .wall_type = DUN_WALL, .floor_type = DUN_FLOOR };
+        static const rlk_wallfloor_t wf = { .wall_type = DUN_WALL, .floor_type = DUN_FLOOR };
         rlk_bsp_t bsp = {
             .seed = d->seed,
             .min_room_size = 5,
             .max_depth = 6,
-            .write = rlk_bsp_write_wallfloor,
+            .write = rlk_write_wallfloor,
             .write_data = &wf,
             .grid = d->grid,
             .nodes = d->nodes,
@@ -97,7 +96,7 @@ src_dungeon_build(src_dungeon_t *d) {
         err = rlk_bsp_fill(&bsp, &win, &d->tm, NULL, NULL, &d->spawn);
         d->region_count = bsp.room_count;
     } else {
-        static const rlk_ca_wallfloor_t wf = { .wall_type = DUN_WALL, .floor_type = DUN_FLOOR };
+        static const rlk_wallfloor_t wf = { .wall_type = DUN_WALL, .floor_type = DUN_FLOOR };
         rlk_ca_t ca = {
             .seed = d->seed,
             .fill_prob = 0.47f,
@@ -105,7 +104,7 @@ src_dungeon_build(src_dungeon_t *d) {
             .survive_low = 4, .survive_high = 8,
             .iterations = 5,
             .connect = 1,
-            .write = rlk_ca_write_wallfloor,
+            .write = rlk_write_wallfloor,
             .write_data = &wf,
             .grid = d->grid,
             .region_ids = d->regions,

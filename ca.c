@@ -399,16 +399,16 @@ largest_region(const rlk_ca_t *ca, int *out_rid,
 /* --- PUBLIC API ---------------------------------------------------------- */
 
 rlk_err_t
-rlk_ca_fill(rlk_ca_t *ca, const rlk_grid_t *g, rlk_tilemap_t *tm,
+rlk_ca_fill(rlk_ca_t *ca, const rlk_lattice_t *win, rlk_tilemap_t *tm,
             const rlk_mask_t *mask, const rlk_poi_list_t *poi,
             rlk_poi_t *spawn) {
-    assert(ca && g && tm);
-    assert(g->lattice.w > 0 && g->lattice.h > 0 && g->lattice.cellsize > 0);
+    assert(ca && win && tm);
+    assert(win->w > 0 && win->h > 0 && win->cellsize > 0);
     assert(ca->grid && ca->region_ids && ca->write);
     if (mask)
-        assert(rlk_lattice_same(&mask->lattice, &g->lattice));
+        assert(rlk_lattice_same(&mask->lattice, win));
 
-    const rlk_lattice_t *l = &g->lattice;
+    const rlk_lattice_t *l = win;
     const int w = l->w, h = l->h, cs = l->cellsize;
 
     /* The tilemap must fully cover the window. */
@@ -445,7 +445,7 @@ rlk_ca_fill(rlk_ca_t *ca, const rlk_grid_t *g, rlk_tilemap_t *tm,
             int rid = (cell == CA_FLOOR) ? ca->region_ids[idx] : 0;
             /* Preset biome to region id, then the writer fills type/flags/variant. */
             rlk_tile_t tile = { .biome = (uint8_t)rid };
-            ca->write(ca, ca->write_data, wx, wy, &tile);
+            ca->write(ca->seed, ca->write_data, wx, wy, &tile);
             for (int dy = 0; dy < cs; dy++) {
                 for (int dx = 0; dx < cs; dx++) {
                     const int tx = wx + dx, ty = wy + dy;

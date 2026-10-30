@@ -12,7 +12,6 @@
 #include <stdint.h>
 
 #include "err.h"
-#include "grid.h"
 #include "hash.h"
 #include "mask.h"
 #include "poi.h"
@@ -71,12 +70,12 @@ struct rlk_ca_s {
     int connect;
 
     /* Writer callback. Called once per cell with the world position (x, y)
-       of the cell's top-left tile. The tile arrives with biome preset to
-       the region id (0 = wall, > 0 = floor region). Fill type/flags/variant
-       as needed; the produced tile is then stamped over the cell's
-       cellsize x cellsize tile block (see rlk_ca_fill).
-       Use rlk_ca_write_wallfloor for simple wall/floor output. */
-    void (*write)(const rlk_ca_t *ca, const void *data, int x, int y,
+       of the cell's top-left tile and the generator seed. The tile arrives
+       with biome preset to the region id (0 = wall, > 0 = floor region).
+       Fill type/flags/variant as needed; the produced tile is then stamped
+       over the cell's cellsize x cellsize tile block (see rlk_ca_fill).
+       Use rlk_write_wallfloor for simple wall/floor output. */
+    void (*write)(uint64_t seed, const void *data, int x, int y,
                   rlk_tile_t *out);
 
     /* Opaque user pointer passed as `data` to the writer. May be NULL. */
@@ -118,23 +117,6 @@ rlk_ca_rand(const rlk_ca_t *ca, int x, int y, uint64_t salt) {
     return (float)(h >> 40) * (1.0f / 16777216.0f);
 }
 
-/* Ready-made writer data: tile types for wall and floor. */
-typedef struct {
-    uint8_t wall_type;
-    uint8_t floor_type;
-} rlk_ca_wallfloor_t;
-
-/* Ready-made writer: copies wall_type/floor_type from a `rlk_ca_wallfloor_t`
-   given as data. biome is already set by fill (0 = wall, > 0 = floor region).
-   variant is filled with deterministic random. Same role as rlk_wg_write_const. */
-static inline void
-rlk_ca_write_wallfloor(const rlk_ca_t *ca, const void *data, int x, int y,
-                       rlk_tile_t *out) {
-    const rlk_ca_wallfloor_t *wf = (const rlk_ca_wallfloor_t *)data;
-    out->type = (out->biome == 0) ? wf->wall_type : wf->floor_type;
-    out->variant = (uint8_t)(rlk_ca_rand(ca, x, y, 0xCAFE) * 255.0f);
-}
-
 /* --- PUBLIC API ---------------------------------------------------------- */
 
 /* Resolve zero defaults and validate (safety asserts).
@@ -142,15 +124,14 @@ rlk_ca_write_wallfloor(const rlk_ca_t *ca, const void *data, int x, int y,
 void rlk_ca_init(rlk_ca_t *ca);
 
 /* Generate (seed, iterate, connect) and render onto tm over the window
-   g->lattice: a world rect of w x h cells of `cellsize` tiles. g->v is not
-   read (window geometry only). Buffers grid/region_ids must hold w*h
-   elements of that window. RLK_E_INVALID if tm does not fully cover the
-   window.
+   `win`: a world rect of w x h cells of `cellsize` tiles. Buffers
+   grid/region_ids must hold w*h elements of that window.
+   RLK_E_INVALID if tm does not fully cover the window.
 
    Rendering: the writer is called once per cell, then the produced tile is
    stamped over the cell's cellsize x cellsize tile block, except:
      - cells with mask weight 0 are not written (mask NULL = all allowed;
-       the mask geometry must equal g->lattice);
+       the mask geometry must equal `win`);
      - tiles inside the bbox of a POI of `poi` are not written (reserved
        areas, poi NULL = none).
 
@@ -161,7 +142,7 @@ void rlk_ca_init(rlk_ca_t *ca);
    them. Not written if there is no floor region.
 
    Not const: mutates ca->grid, ca->region_ids and the runtime fields. */
-rlk_err_t rlk_ca_fill(rlk_ca_t *ca, const rlk_grid_t *g, rlk_tilemap_t *tm,
+rlk_err_t rlk_ca_fill(rlk_ca_t *ca, const rlk_lattice_t *win, rlk_tilemap_t *tm,
                       const rlk_mask_t *mask, const rlk_poi_list_t *poi,
                       rlk_poi_t *spawn);
 

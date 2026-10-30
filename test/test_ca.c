@@ -12,10 +12,9 @@
 static uint8_t g_grid[FIXTURE_GRID_SIZE];
 static int g_region_ids[FIXTURE_MAP_W * FIXTURE_MAP_H];
 static rlk_ca_t g_ca;
-static const rlk_ca_wallfloor_t g_wf = { .wall_type = 1, .floor_type = 0 };
+static const rlk_wallfloor_t g_wf = { .wall_type = 1, .floor_type = 0 };
 
-static float g_win_buf[FIXTURE_GRID_SIZE];
-static rlk_grid_t g_win;
+static rlk_lattice_t g_win;
 static uint8_t g_tile_buf[FIXTURE_MAP_W * FIXTURE_MAP_H * sizeof(rlk_tile_t)];
 static rlk_tilemap_t g_tilemap;
 
@@ -26,16 +25,15 @@ fixture_setup(void) {
         .fill_prob = FIXTURE_FILL_PROB,
         .iterations = FIXTURE_ITERATIONS,
         .connect = 1,
-        .write = rlk_ca_write_wallfloor,
+        .write = rlk_write_wallfloor,
         .write_data = &g_wf,
         .grid = g_grid,
         .region_ids = g_region_ids,
     };
     rlk_ca_init(&g_ca);
 
-    g_win = (rlk_grid_t){ .lattice = { .w = FIXTURE_MAP_W, .h = FIXTURE_MAP_H,
-                                       .cellsize = 1, .origin_x = 0, .origin_y = 0 },
-                          .v = g_win_buf };
+    g_win = (rlk_lattice_t){ .w = FIXTURE_MAP_W, .h = FIXTURE_MAP_H,
+                             .cellsize = 1, .origin_x = 0, .origin_y = 0 };
     rlk_tilemap_init(&g_tilemap, FIXTURE_MAP_W, FIXTURE_MAP_H,
                      g_tile_buf, sizeof(g_tile_buf));
 }
@@ -55,7 +53,7 @@ test_init_valid(void) {
     assert(g_ca.region_ids == g_region_ids);
     assert(g_ca.seed == 42);
     assert(g_ca.fill_prob == FIXTURE_FILL_PROB);
-    assert(g_ca.write == rlk_ca_write_wallfloor);
+    assert(g_ca.write == rlk_write_wallfloor);
     assert(g_ca.write_data == &g_wf);
     /* Defaults resolved from zero. */
     assert(g_ca.birth_low == 4);
@@ -72,10 +70,10 @@ test_init_default(void) {
     int region_ids[16 * 16];
 
     /* All zero except required fields — defaults should be resolved. */
-    static const rlk_ca_wallfloor_t wf = { .wall_type = 1, .floor_type = 0 };
+    static const rlk_wallfloor_t wf = { .wall_type = 1, .floor_type = 0 };
     ca = (rlk_ca_t){
         .seed = 123,
-        .write = rlk_ca_write_wallfloor,
+        .write = rlk_write_wallfloor,
         .write_data = &wf,
         .grid = grid,
         .region_ids = region_ids,
@@ -153,7 +151,7 @@ test_fill_deterministic(void) {
         .seed = 42,
         .fill_prob = FIXTURE_FILL_PROB,
         .iterations = FIXTURE_ITERATIONS,
-        .write = rlk_ca_write_wallfloor,
+        .write = rlk_write_wallfloor,
         .write_data = &g_wf,
         .grid = grid1,
         .region_ids = region_ids1,
@@ -167,7 +165,7 @@ test_fill_deterministic(void) {
         .seed = 42,
         .fill_prob = FIXTURE_FILL_PROB,
         .iterations = FIXTURE_ITERATIONS,
-        .write = rlk_ca_write_wallfloor,
+        .write = rlk_write_wallfloor,
         .write_data = &g_wf,
         .grid = grid2,
         .region_ids = region_ids2,
@@ -206,15 +204,14 @@ test_fill_window_origin(void) {
     /* 27x27 window at world (5,5) over a 32x32 tilemap. */
     static uint8_t grid[27 * 27];
     static int region_ids[27 * 27];
-    static float win_buf[27 * 27];
-    rlk_grid_t win = { .lattice = { .w = 27, .h = 27, .cellsize = 1,
-                                    .origin_x = 5, .origin_y = 5 }, .v = win_buf };
+    rlk_lattice_t win = { .w = 27, .h = 27, .cellsize = 1,
+                          .origin_x = 5, .origin_y = 5 };
     rlk_ca_t ca = {
         .seed = 42,
         .fill_prob = FIXTURE_FILL_PROB,
         .iterations = FIXTURE_ITERATIONS,
         .connect = 1,
-        .write = rlk_ca_write_wallfloor,
+        .write = rlk_write_wallfloor,
         .write_data = &g_wf,
         .grid = grid,
         .region_ids = region_ids,
@@ -268,7 +265,7 @@ test_fill_mask(void) {
     for (int j = 0; j < FIXTURE_MAP_H; j++)
         for (int i = 0; i < FIXTURE_MAP_W; i++)
             m_buf[(size_t)j * FIXTURE_MAP_W + (size_t)i] = (i < 16) ? 0 : 255;
-    rlk_mask_t mask = { .lattice = g_win.lattice, .v = m_buf };
+    rlk_mask_t mask = { .lattice = g_win, .v = m_buf };
 
     /* Sentinel everywhere. */
     for (int y = 0; y < g_tilemap.h; y++)
@@ -349,17 +346,16 @@ static void
 test_fill_cellsize(void) {
     static uint8_t grid[16 * 16];
     static int region_ids[16 * 16];
-    static float win_buf[16 * 16];
     uint8_t tile_buf[FIXTURE_MAP_W * FIXTURE_MAP_H * sizeof(rlk_tile_t)];
     rlk_tilemap_t tm;
-    rlk_grid_t win = { .lattice = { .w = 16, .h = 16, .cellsize = 2,
-                                    .origin_x = 0, .origin_y = 0 }, .v = win_buf };
+    rlk_lattice_t win = { .w = 16, .h = 16, .cellsize = 2,
+                          .origin_x = 0, .origin_y = 0 };
     rlk_ca_t ca = {
         .seed = 42,
         .fill_prob = FIXTURE_FILL_PROB,
         .iterations = FIXTURE_ITERATIONS,
         .connect = 1,
-        .write = rlk_ca_write_wallfloor,
+        .write = rlk_write_wallfloor,
         .write_data = &g_wf,
         .grid = grid,
         .region_ids = region_ids,
@@ -426,11 +422,10 @@ static void
 test_fill_small_map(void) {
     uint8_t grid[8 * 8];
     int region_ids[8 * 8];
-    float win_buf[8 * 8];
     uint8_t tile_buf[8 * 8 * sizeof(rlk_tile_t)];
     rlk_tilemap_t tm;
-    rlk_grid_t win = { .lattice = { .w = 8, .h = 8, .cellsize = 1,
-                                    .origin_x = 0, .origin_y = 0 }, .v = win_buf };
+    rlk_lattice_t win = { .w = 8, .h = 8, .cellsize = 1,
+                          .origin_x = 0, .origin_y = 0 };
     rlk_ca_t ca = {
         .seed = 123,
         .fill_prob = 0.5f,
@@ -439,7 +434,7 @@ test_fill_small_map(void) {
         .survive_low = 3,
         .survive_high = 5,
         .iterations = 3,
-        .write = rlk_ca_write_wallfloor,
+        .write = rlk_write_wallfloor,
         .write_data = &g_wf,
         .grid = grid,
         .region_ids = region_ids,
@@ -535,9 +530,9 @@ static int g_writer_has_wall;
 static int g_writer_has_floor;
 
 static void
-test_writer_cb(const rlk_ca_t *ca, const void *data, int x, int y,
+test_writer_cb(uint64_t seed, const void *data, int x, int y,
                rlk_tile_t *out) {
-    (void)ca; (void)data; (void)x; (void)y;
+    (void)seed; (void)data; (void)x; (void)y;
     g_writer_calls++;
     if (out->biome == 0) {
         g_writer_has_wall = 1;
@@ -576,17 +571,17 @@ test_fill_writer_callback(void) {
 }
 
 static void
-test_writer_cb_data(const rlk_ca_t *ca, const void *data, int x, int y,
+test_writer_cb_data(uint64_t seed, const void *data, int x, int y,
                     rlk_tile_t *out) {
-    (void)ca; (void)x; (void)y;
-    const rlk_ca_wallfloor_t *d = (const rlk_ca_wallfloor_t *)data;
+    (void)seed; (void)x; (void)y;
+    const rlk_wallfloor_t *d = (const rlk_wallfloor_t *)data;
     out->type = (out->biome == 0) ? d->wall_type : d->floor_type;
 }
 
 static void
 test_fill_writer_with_data(void) {
     fixture_setup();
-    static const rlk_ca_wallfloor_t wd = { .wall_type = 7, .floor_type = 3 };
+    static const rlk_wallfloor_t wd = { .wall_type = 7, .floor_type = 3 };
     g_ca.write = test_writer_cb_data;
     g_ca.write_data = &wd;
 

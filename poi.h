@@ -98,4 +98,18 @@ rlk_poi_seed(uint64_t world_seed, int x, int y, uint32_t type, uint64_t salt) {
     return rlk_hash_sub(h, salt);
 }
 
+/* Window lattice over the POI bbox clamped to `map` (cellsize 1, in tiles).
+   Returns 1 and fills *out if the intersection is non-empty, else 0.
+   Typical use: the fill window of a local generator (ca/bsp) over a POI. */
+static inline int
+rlk_poi_window(const rlk_poi_t *p, rlk_rect_t map, rlk_lattice_t *out) {
+    assert(p && out);
+    rlk_rect_t box;
+    if (!rlk_rect_intersect(&box, &p->bbox, &map))
+        return 0;
+    *out = (rlk_lattice_t){ .w = box.w, .h = box.h, .cellsize = 1,
+                           .origin_x = box.x, .origin_y = box.y };
+    return 1;
+}
+
 #endif /* RLK_POI_H */

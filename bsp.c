@@ -301,16 +301,16 @@ reserved(const rlk_poi_list_t *poi, int x, int y) {
 /* --- PUBLIC API ---------------------------------------------------------- */
 
 rlk_err_t
-rlk_bsp_fill(rlk_bsp_t *bsp, const rlk_grid_t *g, rlk_tilemap_t *tm,
+rlk_bsp_fill(rlk_bsp_t *bsp, const rlk_lattice_t *win, rlk_tilemap_t *tm,
              const rlk_mask_t *mask, const rlk_poi_list_t *poi,
              rlk_poi_t *spawn) {
-    assert(bsp && g && tm);
-    assert(g->lattice.w > 0 && g->lattice.h > 0 && g->lattice.cellsize > 0);
+    assert(bsp && win && tm);
+    assert(win->w > 0 && win->h > 0 && win->cellsize > 0);
     assert(bsp->grid && bsp->nodes && bsp->write);
     if (mask)
-        assert(rlk_lattice_same(&mask->lattice, &g->lattice));
+        assert(rlk_lattice_same(&mask->lattice, win));
 
-    const rlk_lattice_t *l = &g->lattice;
+    const rlk_lattice_t *l = win;
     const int w = l->w, h = l->h, cs = l->cellsize;
 
     /* The tilemap must fully cover the window. */
@@ -351,7 +351,7 @@ rlk_bsp_fill(rlk_bsp_t *bsp, const rlk_grid_t *g, rlk_tilemap_t *tm,
             uint8_t cell = bsp->grid[idx];
             /* Preset biome to cell type, then the writer fills type/flags/variant. */
             rlk_tile_t tile = { .biome = cell };
-            bsp->write(bsp, bsp->write_data, wx, wy, &tile);
+            bsp->write(bsp->seed, bsp->write_data, wx, wy, &tile);
             for (int dy = 0; dy < cs; dy++) {
                 for (int dx = 0; dx < cs; dx++) {
                     const int tx = wx + dx, ty = wy + dy;

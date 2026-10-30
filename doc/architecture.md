@@ -18,8 +18,10 @@ one domain, several domains:
  DOMAINS     terrain   slope, drain, hydro
  (independent) nav     path
              vision    fov
-             worldgen  wg + stages (modulator, grid, drain, hydro,
-                       relief, rivers, poi); structure generators ca, bsp
+             worldgen  pipeline: wg + stages (modulator, grid, drain, hydro,
+                       relief, rivers, poi)
+                       structure generators: ca, bsp (windowed, POI-driven,
+                       not pipeline stages — see "Two-level generation")
  ---------------------------------------------------------------
  BASE        data      geom, grid, mask, poi, tilemap
              core      err, hash, fmath, noise, rng
@@ -60,6 +62,21 @@ Drivers (sinks are pluggable; the tilemap is only one sink):
   cell centre (`rlk_grid_center`, so `cellsize > 1` samples at the true cell
   centre). Typical pass: fill an elevation grid, run `drain` on it, then
   instance the micro pass on the tilemap.
+
+## Two-level generation
+
+The wg pipeline above is the macro level: per-tile, pure in `(seed, wx, wy)`,
+it produces the tilemap AND the POI list (the `wg_poi` stage). Local content
+is a second, separate level: a user-land loop over the POI list runs windowed
+generators (`ca`, `bsp`) that stamp their output into the reserved POI
+bboxes, then post passes (roads, cosmetics). The POI list is the work queue
+between the two levels.
+
+`ca`/`bsp` are NOT wg stages and are not meant to be: a stage sees one tile
+at a time and only edits `ctx->field[]`, while `ca`/`bsp` generate over a
+whole window and stamp `cellsize x cellsize` tile blocks into a tilemap.
+Keeping them out of the pipeline keeps the pipeline pure and chunkable;
+the composition stays in user land (recipe below).
 
 ---
 

@@ -117,6 +117,30 @@ test_seed(void) {
     assert(s1 != rlk_poi_seed(43ULL, 3, 7, POI_A, 0xCAFEULL));
 }
 
+/* poi_window: bbox clamped to the map, cellsize 1, empty when disjoint. */
+
+static void
+test_window(void) {
+    rlk_poi_t p = { .x = 20, .y = 20,
+                    .bbox = { .x = 10, .y = 10, .w = 20, .h = 20 } };
+    rlk_rect_t map = { .x = 0, .y = 0, .w = 32, .h = 32 };
+    rlk_lattice_t win;
+
+    assert(rlk_poi_window(&p, map, &win) == 1);
+    assert(win.w == 20 && win.h == 20 && win.cellsize == 1);
+    assert(win.origin_x == 10 && win.origin_y == 10);
+
+    /* Clamped to the map edge. */
+    rlk_rect_t small = { .x = 0, .y = 0, .w = 15, .h = 32 };
+    assert(rlk_poi_window(&p, small, &win) == 1);
+    assert(win.w == 5 && win.h == 20);
+    assert(win.origin_x == 10 && win.origin_y == 10);
+
+    /* Disjoint bbox: no window. */
+    rlk_rect_t far = { .x = 100, .y = 100, .w = 8, .h = 8 };
+    assert(rlk_poi_window(&p, far, &win) == 0);
+}
+
 /* Main */
 
 int
@@ -127,5 +151,6 @@ main(void) {
     test_find();
     test_count();
     test_seed();
+    test_window();
     return 0;
 }

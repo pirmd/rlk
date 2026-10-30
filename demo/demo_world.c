@@ -148,7 +148,6 @@ int
 main(void) {
     /* Static buffers: no allocation. */
     static tilemap_gen_t gen;
-    static float win_buf[MAX_POI_SZ * MAX_POI_SZ];
     static uint8_t ca_grid[MAX_POI_SZ * MAX_POI_SZ];
     static int ca_regions[MAX_POI_SZ * MAX_POI_SZ];
     static uint8_t bsp_grid[MAX_POI_SZ * MAX_POI_SZ];
@@ -164,10 +163,10 @@ main(void) {
     static int path_buf[2 * TM_W * TM_H];
     static int sites[256];
 
-    static const rlk_ca_wallfloor_t wf_ca = {
+    static const rlk_wallfloor_t wf_ca = {
         .wall_type = TILE_CAVE_WALL, .floor_type = TILE_CAVE_FLOOR,
     };
-    static const rlk_bsp_wallfloor_t wf_bsp = {
+    static const rlk_wallfloor_t wf_bsp = {
         .wall_type = TILE_DUNGEON_WALL, .floor_type = TILE_DUNGEON_FLOOR,
     };
 
@@ -190,16 +189,12 @@ main(void) {
 
         /* Window over the POI bbox, clamped to the map (fill requires the
            tilemap to fully cover the window). */
-        rlk_rect_t map_r = { 0, 0, TM_W, TM_H };
-        rlk_rect_t box;
-        if (!rlk_rect_intersect(&box, &p->bbox, &map_r)) {
+        rlk_lattice_t win;
+        if (!rlk_poi_window(p, (rlk_rect_t){ 0, 0, TM_W, TM_H }, &win)) {
             n_skipped++;
             rlk_poi_push(&done, p);
             continue;
         }
-        rlk_grid_t win = { .lattice = { .w = box.w, .h = box.h, .cellsize = 1,
-                                        .origin_x = box.x, .origin_y = box.y },
-                           .v = win_buf };
 
         rlk_poi_t spawn = {
             .type = (p->type == POI_CAVE) ? POI_CAVE_ENTR : POI_DUNGEON_ENTR,
@@ -214,7 +209,7 @@ main(void) {
                 .fill_prob = 0.45f,
                 .iterations = 5,
                 .connect = 1,
-                .write = rlk_ca_write_wallfloor,
+                .write = rlk_write_wallfloor,
                 .write_data = &wf_ca,
                 .grid = ca_grid,
                 .region_ids = ca_regions,
@@ -225,7 +220,7 @@ main(void) {
         } else {
             rlk_bsp_t bsp = {
                 .seed = p->seed,
-                .write = rlk_bsp_write_wallfloor,
+                .write = rlk_write_wallfloor,
                 .write_data = &wf_bsp,
                 .grid = bsp_grid,
                 .nodes = bsp_nodes,

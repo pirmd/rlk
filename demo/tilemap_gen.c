@@ -1119,9 +1119,12 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
         .fjord_cold1 = 0.65f,
     };
     gen->relief_mod = rlk_wg_relief(&gen->relief_stage);
-    /* Wrapper around the stock relief stage, adding the rain shadow on F_HUM. */
+    /* Wrapper around the stock relief stage, adding the rain shadow on F_HUM.
+       data must be the tilemap_gen_t (relief_rain_stage reads gen->relief_mod),
+       not the relief cfg that the stock stage carries. */
     rlk_wg_stage_t rain = gen->relief_mod;
     rain.fn = relief_rain_stage;
+    rain.data = gen;
     rain.reads.sampled |= RLK_WG_SLOT(F_HUM);
     rain.writes.sampled |= RLK_WG_SLOT(F_HUM);
     rlk_wg_add(wg, rain);
