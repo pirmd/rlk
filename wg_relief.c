@@ -139,8 +139,8 @@ relief_stage(rlk_wg_ctx_t *ctx, const void *data) {
     const rlk_wg_relief_cfg_t *r = &rc;
     const rlk_wg_t *wg = ctx->wg;
 
-    const float px = (float)ctx->wx;
-    const float py = (float)ctx->wy;
+    const float px = (float)ctx->wx + 0.5f;   /* tile centre */
+    const float py = (float)ctx->wy + 0.5f;
 
     /* Continent value (sampled at original position by the pipeline) */
     const float cont = ctx->field[r->f_cont];

@@ -6,6 +6,10 @@
  *
  * Everything is a pure function of (seed, wx, wy): chunks are independent.
  * Pipeline: (wx,wy) -> [FIELDS] -> [STAGES] -> [CLASSIFY] -> [WRITE] -> tile
+ *
+ * Sampling convention: the fields of tile (wx, wy) are sampled at the tile
+ * centre ((float)wx + 0.5f, (float)wy + 0.5f), consistent with
+ * rlk_grid_sample / rlk_grid_center.
  */
 
 #include <assert.h>
@@ -167,7 +171,8 @@ rlk_wg_rand(const rlk_wg_t *wg, int wx, int wy, uint64_t salt) {
 /* Re-sample a wg field at an arbitrary float world position.
  * Mirrors the field sampling done in eval(): FBM or RIDGE, same noise generator.
  * For stages that need to sample a field at a non-tile position (e.g. creeks,
- * domain-warped relief). */
+ * domain-warped relief). To get the field value of tile (wx, wy), pass the
+ * tile centre (wx + 0.5f, wy + 0.5f). */
 float rlk_wg_sample_field(const rlk_wg_t *wg, int idx, float x, float y);
 
 /* --- PUBLIC API ---------------------------------------------------------- */
@@ -195,7 +200,8 @@ rlk_err_t rlk_wg_init(rlk_wg_t *wg);
 typedef void (*rlk_wg_sink_fn)(const rlk_wg_ctx_t *ctx, void *user);
 
 /* Generic driver: evaluate the pipeline over the world rect
- * (origin_x, origin_y, w, h) and call sink per tile, row-major order. */
+ * (origin_x, origin_y, w, h) and call sink per tile, row-major order.
+ * Fields are sampled at the tile centre (wx+0.5, wy+0.5). */
 void rlk_wg_run(const rlk_wg_t *wg, int origin_x, int origin_y, int w, int h,
                 rlk_wg_sink_fn sink, void *user);
 

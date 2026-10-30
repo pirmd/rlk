@@ -669,6 +669,25 @@ test_rlk_wg_fill_slot_derived(void) {
         }
 }
 
+/* Convention: rlk_wg_fill samples the fields at the tile centre
+   ((float)wx + 0.5f, (float)wy + 0.5f), consistent with rlk_grid_center. */
+static void
+test_fill_samples_tile_centre(void) {
+    rlk_wg_t wg = wg_min();
+    wg.zones[0].write = write_capture;
+    assert(rlk_wg_init(&wg) == RLK_OK);
+
+    g_ctx_count = 0;
+    rlk_tile_t buf;
+    rlk_tilemap_t tm;
+    rlk_tilemap_init(&tm, 1, 1, &buf, sizeof(buf));
+    rlk_wg_fill(&wg, 3, -2, &tm);
+    assert(g_ctx_count == 1);
+    assert(g_ctx.wx == 3 && g_ctx.wy == -2);
+    float want = rlk_wg_sample_field(&wg, 0, (float)3 + 0.5f, (float)-2 + 0.5f);
+    assert(fabsf(g_ctx.field[0] - want) < 1e-6f);
+}
+
 int
 main(void) {
     test_rlk_wg_init_defaults();
@@ -698,5 +717,6 @@ main(void) {
     test_rlk_wg_run_sink_order();
     test_rlk_wg_fill_slot_sampled();
     test_rlk_wg_fill_slot_derived();
+    test_fill_samples_tile_centre();
     return 0;
 }

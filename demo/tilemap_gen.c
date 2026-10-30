@@ -68,7 +68,8 @@ static void
 province_stage(rlk_wg_ctx_t *ctx, const void *data) {
     const tilemap_gen_t *gen = (const tilemap_gen_t *)data;
     ctx->field[F_HUM] = rlk_wg_sample_field(ctx->wg, F_HUM,
-                                               (float)ctx->wx + 913.7f, (float)ctx->wy + 371.3f);
+                                               (float)ctx->wx + 0.5f + 913.7f,
+                                               (float)ctx->wy + 0.5f + 371.3f);
     gen->prov_mod.fn(ctx, gen->prov_mod.data);
 }
 

@@ -38,6 +38,11 @@ Per-tile engine, pure in world coordinates `(wx, wy)`:
   └ nsampled noise fields (FBM/RIDGE) sampled into ctx->field[]
 ```
 
+Sampling convention: the fields of tile `(wx, wy)` are sampled at the tile
+centre (`(float)wx + 0.5f, (float)wy + 0.5f`), consistent with
+`rlk_grid_sample` / `rlk_grid_center`. Stages that re-sample a field
+(`rlk_wg_sample_field`) follow the same convention.
+
 Each stage declares the slots it reads and writes (`rlk_wg_stage_t.reads` /
 `.writes`, bitmasks over the sampled fields and the derived slots).
 `rlk_wg_init()` validates the declarations in registration order and returns

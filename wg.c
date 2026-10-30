@@ -5,8 +5,9 @@
 #include "hash.h"
 
 /* Coordinate naming: x,y chunk-local; wx,wy world tile; origin_x,origin_y
- * rect origin (wx == origin_x + x); wxf,wyf float world position
- * (wxf == (float)wx). */
+ * rect origin (wx == origin_x + x); wxf,wyf float world position at the tile
+ * centre (wxf == (float)wx + 0.5f). Fields are sampled at the tile centre,
+ * consistent with rlk_grid_sample / rlk_grid_center. */
 
 /* --- SETUP --------------------------------------------------------------- */
 
@@ -214,11 +215,11 @@ eval_at(const rlk_wg_t *wg, float wxf, float wyf, int wx, int wy, int x, int y,
     classify(wg, ctx);
 }
 
-/* Evaluate one tile: same as eval_at at the integer world position. */
+/* Evaluate one tile: same as eval_at at the tile centre (wx+0.5, wy+0.5). */
 static void
 eval(const rlk_wg_t *wg, int wx, int wy, int x, int y,
      rlk_wg_ctx_t *ctx) {
-    eval_at(wg, (float)wx, (float)wy, wx, wy, x, y, ctx);
+    eval_at(wg, (float)wx + 0.5f, (float)wy + 0.5f, wx, wy, x, y, ctx);
 }
 
 /* --- DRIVER -------------------------------------------------------------- */
