@@ -208,6 +208,6 @@ rlk_path_draw(rlk_tilemap_t *tm, const int *path, int n,
     assert(tm && path);
     assert(n >= 0);
     for (int k = 1; k < n; k++)
-        rlk_tilemap_line(tm, path[2 * (k - 1)], path[2 * (k - 1) + 1],
+        rlk_tilemap_set_line(tm, path[2 * (k - 1)], path[2 * (k - 1) + 1],
                          path[2 * k], path[2 * k + 1], width, tile);
 }

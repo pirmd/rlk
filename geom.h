@@ -1,15 +1,7 @@
 #ifndef RLK_GEOM_H
 #define RLK_GEOM_H
 
-/*
- * Geometric primitives of the tile world: regions (rect) and lattices.
- * Pure types, no data, no allocation. Header-only.
- *
- * rlk_rect_t    integer rectangle in tile coordinates (region, window, bbox).
- *               Same layout as pxl_rect_t: trivial conversion.
- * rlk_lattice_t regular grid of cells over the world: the geotransform of
- *               a raster (w,h cells of cellsize tiles, origin ox,oy).
- */
+/* World geometry: rects and lattices over the tile world. */
 
 #include <assert.h>
 
@@ -17,7 +9,7 @@
 
 typedef struct { int x, y, w, h; } rlk_rect_t;
 
-/* 1 if (x,y) is inside r: x <= px < x+w, y <= py < y+h. */
+/* 1 if (x,y) is inside r, else 0 */
 static inline int
 rlk_rect_contains(const rlk_rect_t *r, int x, int y) {
     assert(r);
@@ -39,9 +31,12 @@ rlk_rect_intersect(rlk_rect_t *out, const rlk_rect_t *a, const rlk_rect_t *b) {
 
 /* --- Lattice ------------------------------------------------------------ */
 
+/* A regular grid of cells over the world: the geotransform of
+ * a raster (wxh cells of cellsize tiles at origin origin_x,origin_y).
+ */
 typedef struct {
-    int w, h;        /* cells, >= 1 */
-    int cellsize;    /* tiles per cell side, >= 1 */
+    int w, h;                /* in cells, >0 */
+    int cellsize;            /* tiles per cell side, >= 1 */
     int origin_x, origin_y;  /* world tile of the top-left corner */
 } rlk_lattice_t;
 
@@ -63,7 +58,8 @@ static inline int
 rlk_lattice_same(const rlk_lattice_t *a, const rlk_lattice_t *b) {
     assert(a && b);
     return a->w == b->w && a->h == b->h
-        && a->cellsize == b->cellsize && a->origin_x == b->origin_x && a->origin_y == b->origin_y;
+        && a->cellsize == b->cellsize
+        && a->origin_x == b->origin_x && a->origin_y == b->origin_y;
 }
 
 #endif /* RLK_GEOM_H */

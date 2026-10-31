@@ -42,7 +42,7 @@ rivers_stage(rlk_wg_ctx_t *ctx, const void *data) {
 
     const float cell = (float)r->elev->lattice.cellsize;
 
-    /* Hack's law: effective bank fade grows with the normalized log of the
+    /* Log-width law: effective bank fade grows with the normalized log of the
        upstream accumulation (specialist review 2026-10-30, hydrologist).
        Larger fade -> wider mask for the same SDF distance. */
     float bank_fade = r->bank_fade;
@@ -64,15 +64,15 @@ rivers_stage(rlk_wg_ctx_t *ctx, const void *data) {
        Meanders are quantized to whole tiles: the sdf is tile-granular. */
     float mask = 0.0f;
     float carve = 0.0f;
-    const float d = rlk_drain_river_sdf(r->drain, (int)floorf(px), (int)floorf(py),
-                                        r->acc_min);
-    if (d < RLK_DRAIN_FAR) {
+    const float sdf = rlk_drain_flowline_sdf(r->drain, (int)floorf(px), (int)floorf(py),
+                                             r->acc_min);
+    if (sdf < RLK_DRAIN_FAR) {
         /* Water: full mask in the channel, fading over the (possibly
            acc-widened) bank_fade tiles. */
-        mask = rlk_clampf(1.0f - d / bank_fade, 0.0f, 1.0f);
+        mask = rlk_clampf(1.0f - sdf / bank_fade, 0.0f, 1.0f);
         /* Valley: quadratic profile, reach = valley_mult * cellsize. */
         const float reach = r->valley_mult * cell;
-        const float vall = rlk_clampf(1.0f - d / reach, 0.0f, 1.0f);
+        const float vall = rlk_clampf(1.0f - sdf / reach, 0.0f, 1.0f);
         carve = r->carve * vall * vall;
     }
 
@@ -99,7 +99,7 @@ rivers_stage(rlk_wg_ctx_t *ctx, const void *data) {
        elevation is below sea level. Uses the original tile position (not the
        wiggle-displaced one). Lake overlay below is exempt (inland depressions). */
     {
-        const float e_coarse = rlk_grid_sample(r->elev, (float)ctx->wx + 0.5f, (float)ctx->wy + 0.5f);
+        const float e_coarse = rlk_grid_get(r->elev, (float)ctx->wx + 0.5f, (float)ctx->wy + 0.5f);
         if (e_coarse < r->sea) {
             mask = 0.0f;
             carve = 0.0f;
@@ -110,7 +110,7 @@ rivers_stage(rlk_wg_ctx_t *ctx, const void *data) {
        Uses the original tile position (not the wiggle-displaced one):
        a lake is a property of the terrain, not of the meander. */
     if (r->lake_depth && r->lake_min_depth > 0.0f) {
-        const float depth = rlk_grid_sample(r->lake_depth, (float)ctx->wx + 0.5f, (float)ctx->wy + 0.5f);
+        const float depth = rlk_grid_get(r->lake_depth, (float)ctx->wx + 0.5f, (float)ctx->wy + 0.5f);
         if (depth >= r->lake_min_depth) {
             /* Smooth threshold */
             const float lm = (depth - 0.5f * r->lake_min_depth) / (0.5f * r->lake_min_depth);

@@ -15,7 +15,7 @@ static rlk_grid_t g_grid;
 static void
 grid_init(void) {
     g_grid = (rlk_grid_t){ .lattice = { .w = SW, .h = SH, .cellsize = 4,
-                                        .origin_x = 0, .origin_y = 0 }, .v = g_buf };
+                                        .origin_x = 0, .origin_y = 0 }, .values = g_buf };
 }
 
 /* Flat grid: slope is exactly 0 everywhere. */
@@ -27,7 +27,7 @@ test_flat(void) {
     grid_init();
     for (int j = 0; j < SH; j++)
         for (int i = 0; i < SW; i++)
-            assert(rlk_slope_at(&g_grid, i, j, ZSCALE) == 0.0f);
+            assert(rlk_slope_get(&g_grid, i, j, ZSCALE) == 0.0f);
 }
 
 /* Constant eastward gradient: Horn 3x3 gives exactly zscale * GRAD / cellsize. */
@@ -41,7 +41,7 @@ test_east_gradient(void) {
     const float expect = ZSCALE * GRAD / 4.0f;  /* 0.32 */
     for (int j = 1; j < SH - 1; j++)
         for (int i = 1; i < SW - 1; i++)
-            assert(fabsf(rlk_slope_at(&g_grid, i, j, ZSCALE) - expect) < 1e-5f);
+            assert(fabsf(rlk_slope_get(&g_grid, i, j, ZSCALE) - expect) < 1e-5f);
 }
 
 /* zscale scales the slope linearly. */
@@ -52,8 +52,8 @@ test_zscale(void) {
         for (int i = 0; i < SW; i++)
             g_buf[(size_t)j * (size_t)SW + (size_t)i] = (float)i * GRAD;
     grid_init();
-    float s1 = rlk_slope_at(&g_grid, 4, 3, ZSCALE);
-    float s2 = rlk_slope_at(&g_grid, 4, 3, 2.0f * ZSCALE);
+    float s1 = rlk_slope_get(&g_grid, 4, 3, ZSCALE);
+    float s2 = rlk_slope_get(&g_grid, 4, 3, 2.0f * ZSCALE);
     assert(fabsf(s2 - 2.0f * s1) < 1e-5f);
 }
 
@@ -67,7 +67,7 @@ test_edge_replicated(void) {
             g_buf[(size_t)j * (size_t)SW + (size_t)i] = (float)i * GRAD;
     grid_init();
     const float interior = ZSCALE * GRAD / 4.0f;
-    const float edge = rlk_slope_at(&g_grid, 0, 3, ZSCALE);
+    const float edge = rlk_slope_get(&g_grid, 0, 3, ZSCALE);
     assert(fabsf(edge - 0.5f * interior) < 1e-5f);
 }
 
@@ -80,7 +80,7 @@ test_diagonal(void) {
             g_buf[(size_t)j * (size_t)SW + (size_t)i] = (float)(i + j) * GRAD;
     grid_init();
     const float expect = ZSCALE * GRAD / 4.0f * 1.4142135f;
-    assert(fabsf(rlk_slope_at(&g_grid, 4, 3, ZSCALE) - expect) < 1e-3f);
+    assert(fabsf(rlk_slope_get(&g_grid, 4, 3, ZSCALE) - expect) < 1e-3f);
 }
 
 /* Main */

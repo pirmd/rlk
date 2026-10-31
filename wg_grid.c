@@ -14,7 +14,7 @@ grid_stage(rlk_wg_ctx_t *ctx, const void *data) {
     const float scale = g->scale == 0.0f ? 1.0f : g->scale;
     const float wxf = (float)ctx->wx + 0.5f;
     const float wyf = (float)ctx->wy + 0.5f;
-    const float v = rlk_grid_sample(g->grid, wxf, wyf);
+    const float v = rlk_grid_get(g->grid, wxf, wyf);
     ctx->field[idx] = v * scale + g->offset;
 }
 

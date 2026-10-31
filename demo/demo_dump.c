@@ -43,7 +43,7 @@ main(int argc, char **argv) {
     const int gn = GRID_W * GRID_H;
 
     snprintf(path, sizeof path, "%s/%llu_elev.asc", outdir, (unsigned long long)seed);
-    rc |= demo_dump_asc(path, lat, gen.elev_grid.v, -9999.0f);
+    rc |= demo_dump_asc(path, lat, gen.elev_grid.values, -9999.0f);
 
     for (int k = 0; k < gn; k++)
         fbuf[k] = (float)gen.drain.filled[k] / (float)RLK_DRAIN_SCALE;
@@ -56,28 +56,28 @@ main(int argc, char **argv) {
     rc |= demo_dump_asc(path, lat, fbuf, -9999.0f);
 
     snprintf(path, sizeof path, "%s/%llu_lake.asc", outdir, (unsigned long long)seed);
-    rc |= demo_dump_asc(path, &gen.lake_grid.lattice, gen.lake_grid.v, 0.0f);
+    rc |= demo_dump_asc(path, &gen.lake_grid.lattice, gen.lake_grid.values, 0.0f);
 
-    rlk_grid_t slope_grid = { .lattice = gen.drain.lattice, .v = gen.hydro_slope };
+    rlk_grid_t slope_grid = { .lattice = gen.drain.lattice, .values = gen.hydro_slope };
     snprintf(path, sizeof path, "%s/%llu_slope.asc", outdir, (unsigned long long)seed);
-    rc |= demo_dump_asc(path, &slope_grid.lattice, slope_grid.v, -9999.0f);
+    rc |= demo_dump_asc(path, &slope_grid.lattice, slope_grid.values, -9999.0f);
 
     /* Byte rasters (PGM, top-first). */
     snprintf(path, sizeof path, "%s/%llu_strahler.pgm", outdir, (unsigned long long)seed);
     rc |= demo_dump_pgm(path, GRID_W, GRID_H, gen.hydro_strahler);
 
     /* Per-tile fields, sampled on the tilemap lattice (cellsize 1). */
-    rlk_grid_t tile_grid = { .lattice = rlk_tilemap_lattice(&gen.tm), .v = gen.final_elev };
+    rlk_grid_t tile_grid = { .lattice = rlk_tilemap_lattice(&gen.tm), .values = gen.final_elev };
     float lo = 0.0f, hi = 1.0f;
     rlk_grid_minmax(&tile_grid, &lo, &hi);
     snprintf(path, sizeof path, "%s/%llu_final_elev.pgm", outdir, (unsigned long long)seed);
     rc |= demo_dump_grid_pgm(path, &tile_grid, lo, hi, pgm);
 
-    tile_grid.v = gen.river_mask_buf;
+    tile_grid.values = gen.river_mask_buf;
     snprintf(path, sizeof path, "%s/%llu_river_mask.pgm", outdir, (unsigned long long)seed);
     rc |= demo_dump_grid_pgm(path, &tile_grid, 0.0f, 1.0f, pgm);
 
-    tile_grid.v = gen.river_carve_buf;
+    tile_grid.values = gen.river_carve_buf;
     rlk_grid_minmax(&tile_grid, &lo, &hi);
     snprintf(path, sizeof path, "%s/%llu_river_carve.pgm", outdir, (unsigned long long)seed);
     rc |= demo_dump_grid_pgm(path, &tile_grid, lo, hi, pgm);

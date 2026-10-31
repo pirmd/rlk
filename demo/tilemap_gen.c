@@ -59,11 +59,11 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
        otherwise rivers follow a different landscape than what is shown. */
     for (int i = 0; i < F_NSAMPLED; i++) {
         uint64_t s = rlk_hash_sub(seed, 0xF1E1D000ULL + (uint64_t)i);
-        rlk_noise_seed(&gen->relief_noise[i], rlk_hash_sub(s, wg->fields[i].seed));
+        gen->relief_noise[i].seed = rlk_hash_sub(s, wg->fields[i].seed);
     }
     /* Light geology noise (demo-owned, not wg fields) */
     for (int i = 0; i < 3; i++)
-        rlk_noise_seed(&gen->geo_noise[i], rlk_hash_sub(seed, 0x6E0600ULL + (uint64_t)i));
+        gen->geo_noise[i].seed = rlk_hash_sub(seed, 0x6E0600ULL + (uint64_t)i);
     gen_relief_ctx_t elev_ctx = {
         .gen = gen,
         .wg = wg,
@@ -75,7 +75,7 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
         .mountain_amp = 0.45f,
     };
     gen->elev_grid = (rlk_grid_t){ .lattice = { .w = GRID_W, .h = GRID_H, .cellsize = GRID_CELL,
-                                    .origin_x = GRID_ORIGIN_X, .origin_y = GRID_ORIGIN_Y }, .v = gen->elev_buf };
+                                    .origin_x = GRID_ORIGIN_X, .origin_y = GRID_ORIGIN_Y }, .values = gen->elev_buf };
     for (int j = 0; j < GRID_H; j++)
         for (int i = 0; i < GRID_W; i++) {
             float cx, cy;
@@ -94,11 +94,11 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
        Lakes whose outflow drains fewer than RIVER_ACC_MIN cells are dropped:
        they would sit with no visible outlet. */
     gen->lake_grid = (rlk_grid_t){ .lattice = { .w = GRID_W, .h = GRID_H, .cellsize = GRID_CELL,
-                                    .origin_x = GRID_ORIGIN_X, .origin_y = GRID_ORIGIN_Y }, .v = gen->lake_buf };
+                                    .origin_x = GRID_ORIGIN_X, .origin_y = GRID_ORIGIN_Y }, .values = gen->lake_buf };
     for (int j = 0; j < GRID_H; j++)
         for (int i = 0; i < GRID_W; i++)
             gen->lake_buf[(size_t)j * (size_t)GRID_W + (size_t)i] =
-                rlk_drain_lake_depth(&gen->drain, &gen->elev_grid, SEA_LEVEL, i, j);
+                rlk_drain_fill_depth(&gen->drain, &gen->elev_grid, i, j);
     /* Filter: drop lake cells whose outlet accumulation < RIVER_ACC_MIN */
     for (int c = 0; c < GRID_W * GRID_H; c++) {
         if (gen->lake_buf[c] <= 0.0f) continue;

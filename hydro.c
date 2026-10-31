@@ -1,21 +1,10 @@
 #include "hydro.h"
 
+#include <assert.h>
 #include <math.h>
 
 /* Manning roughness coefficient used by the speed estimate. */
 #define RLK_HYDRO_MANNING_N 0.03f
-
-/* Downstream cell index of c, or -1 for an outlet. */
-static inline int
-downstream_cell(const rlk_drain_t *d, int c) {
-    const int w = d->lattice.w;
-    const uint8_t dir = d->dir[c];
-    if (dir == RLK_DRAIN_OUTLET) return -1;
-    int dx, dy;
-    rlk_drain_step(dir, &dx, &dy);
-    const int ni = (c % w) + dx, nj = (c / w) + dy;
-    return nj * w + ni;
-}
 
 void
 rlk_hydro_build(rlk_hydro_t *h, const rlk_drain_t *d, uint32_t acc_min,
@@ -31,9 +20,11 @@ rlk_hydro_build(rlk_hydro_t *h, const rlk_drain_t *d, uint32_t acc_min,
     const float cell = (float)h->lattice.cellsize;
     const float inv_scale = 1.0f / RLK_DRAIN_SCALE;
 
-    /* Pass 1: per-cell slope and Manning speed (independent of topology). */
+    /* Pass 1: per-cell D8 slope and Manning-Strickler speed. Reuses the
+       drain's dir/order (D8 decided once in drain_flood), only decodes them
+       via rlk_drain_downstream; nothing is recomputed. */
     for (int c = 0; c < n; c++) {
-        const int t = downstream_cell(d, c);
+        const int t = rlk_drain_downstream(d, c);
         float slope = 0.0f;
         if (t >= 0) {
             const int df = (int)d->filled[c] - (int)d->filled[t];
@@ -44,20 +35,19 @@ rlk_hydro_build(rlk_hydro_t *h, const rlk_drain_t *d, uint32_t acc_min,
         if (h->slope)
             h->slope[c] = slope;
         if (h->speed) {
-            /* Width law shared with rlk_drain_river_sdf, clamped for
-               headwater cells below acc_min. */
-            float lw = 1.0f + log2f((float)d->acc[c] / (float)acc_min);
+            /* Log-width law (shared via rlk_drain_channel_width), clamped low
+               for headwater cells below acc_min. */
+            float lw = rlk_drain_channel_width(d->acc[c], acc_min, cell);
             if (lw < 0.25f) lw = 0.25f;
-            if (lw > cell) lw = cell;
             const float r = 0.5f * lw;  /* hydraulic radius ~ half width */
             h->speed[c] = (1.0f / RLK_HYDRO_MANNING_N)
                           * powf(r, 2.0f / 3.0f) * sqrtf(slope);
         }
     }
 
-    /* Pass 2: Strahler order. Reverse of the pop order, so every upstream
-       cell is visited before its downstream cell; scratch[c] packs the
-       running (max upstream order << 8) | count. */
+    /* Pass 2: Strahler (1957) order. Reverse of the pop order, so every
+       upstream cell is visited before its downstream cell; scratch[c] packs
+       the running (max upstream order << 8) | count. */
     if (h->strahler) {
         for (int c = 0; c < n; c++)
             scratch[c] = 0;
@@ -67,7 +57,7 @@ rlk_hydro_build(rlk_hydro_t *h, const rlk_drain_t *d, uint32_t acc_min,
             const unsigned cnt = (unsigned)scratch[c] & 0xFFu;
             const uint8_t s = (uint8_t)(cnt >= 2 ? mx + 1 : (cnt == 1 ? mx : 1));
             h->strahler[c] = s;
-            const int t = downstream_cell(d, c);
+            const int t = rlk_drain_downstream(d, c);
             if (t < 0) continue;
             unsigned tmx = (unsigned)scratch[t] >> 8;
             unsigned tcnt = (unsigned)scratch[t] & 0xFFu;

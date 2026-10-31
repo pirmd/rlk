@@ -71,13 +71,16 @@ static const char *const N_NAMES[N_COUNT] = {
     "Grass", "Wall", "Water", "Rock", "Floor"
 };
 
+/* Game-defined flag bits for this viewer (rlk reserves none). */
+enum { N_F_WALKABLE = 1 << 0, N_F_TRANSPARENT = 1 << 1 };
+
 /* Walkability: grass/floor are walkable, water is not, wall/rock not. */
 static const uint8_t N_FLAGS[N_COUNT] = {
-    [N_GRASS] = RLK_TILE_WALKABLE | RLK_TILE_TRANSPARENT,
+    [N_GRASS] = N_F_WALKABLE | N_F_TRANSPARENT,
     [N_WALL]  = 0,
-    [N_WATER] = RLK_TILE_TRANSPARENT,
+    [N_WATER] = N_F_TRANSPARENT,
     [N_ROCK]  = 0,
-    [N_FLOOR] = RLK_TILE_WALKABLE | RLK_TILE_TRANSPARENT,
+    [N_FLOOR] = N_F_WALKABLE | N_F_TRANSPARENT,
 };
 
 static const rlk_tile_props_t N_PROPS = { .flags = N_FLAGS, .ntypes = N_COUNT };
@@ -168,8 +171,8 @@ src_nav_build(src_nav_t *n) {
 
     /* Walkability mask from the tilemap (full recompute). */
     n->mask.lattice = rlk_tilemap_lattice(&n->tm);
-    n->mask.v = n->walk;
-    rlk_mask_from_tilemap(&n->mask, &n->tm, &N_PROPS, RLK_TILE_WALKABLE, NULL);
+    n->mask.weights = n->walk;
+    rlk_mask_from_tilemap(&n->mask, &n->tm, &N_PROPS, N_F_WALKABLE, NULL);
 
     /* Pathfinding setup: scratch + cost callback over the tilemap lattice. */
     n->scr = (rlk_path_scratch_t){ n->p_g, n->p_parent, n->p_heap, n->p_heap_pos, n->p_closed };
@@ -189,7 +192,7 @@ src_nav_build(src_nav_t *n) {
     /* 2. Open the door: flip the tile, incremental 1x1 mask update. */
     rlk_tilemap_set(&n->tm, NAV_DOOR_X, NAV_DOOR_Y, (rlk_tile_t){ .type = N_FLOOR });
     rlk_rect_t dirty = { NAV_DOOR_X, NAV_DOOR_Y, 1, 1 };
-    rlk_mask_from_tilemap(&n->mask, &n->tm, &N_PROPS, RLK_TILE_WALKABLE, &dirty);
+    rlk_mask_from_tilemap(&n->mask, &n->tm, &N_PROPS, N_F_WALKABLE, &dirty);
 
     rlk_err_t err = rlk_path_find(&n->cost, &n->scr, NAV_PLAYER_X, NAV_PLAYER_Y,
                                   NAV_TARGET_X, NAV_TARGET_Y,
@@ -331,7 +334,7 @@ src_nav_tile_info(char *buf, size_t cap, const void *data, int wx, int wy) {
         "Entity  : %s",
         wx, wy,
         t ? N_NAMES[t->type % N_COUNT] : "?", t ? t->type : -1,
-        (t && (N_FLAGS[t->type % N_COUNT] & RLK_TILE_WALKABLE)) ? "yes" : "no",
+        (t && (N_FLAGS[t->type % N_COUNT] & N_F_WALKABLE)) ? "yes" : "no",
         on_path ? "yes" : "no",
         ent >= 0 ? "yes" : "no");
 }

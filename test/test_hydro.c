@@ -29,10 +29,10 @@ static uint16_t hydro_scratch[FW * FH];
 static void
 fixture_slope(void) {
     elev = (rlk_grid_t){ .lattice = { .w = FW, .h = FH, .cellsize = FCELL,
-                                       .origin_x = 0, .origin_y = 0 }, .v = elev_buf };
+                                       .origin_x = 0, .origin_y = 0 }, .values = elev_buf };
     for (int j = 0; j < FH; j++)
         for (int i = 0; i < FW; i++)
-            elev.v[(size_t)j * FW + (size_t)i] = (float)(FW - 1 - i);
+            elev.values[(size_t)j * FW + (size_t)i] = (float)(FW - 1 - i);
     drain = (rlk_drain_t){ .lattice = elev.lattice, .filled = filled_buf,
                            .dir = dir_buf, .acc = acc_buf, .order = order_buf };
     assert(rlk_drain_build(&drain, &elev, -1.0f, drain_scratch) == RLK_OK);
@@ -88,6 +88,20 @@ test_hydro_speed(void) {
         assert(l_speed[i] > 0.0f);
     assert(l_speed[LW - 1] == 0.0f);
     assert(l_speed[2] > l_speed[1] && l_speed[1] > l_speed[0]);
+}
+
+/* Speed with acc_min above headwater acc: width clamped low at 0.25, speed
+   stays > 0 but smaller than with acc_min = 1. */
+static void
+test_hydro_speed_acc_min_clamp(void) {
+    rlk_drain_t d = fixture_linear();
+    rlk_hydro_t h = { .lattice = d.lattice, .slope = NULL,
+                      .strahler = NULL, .speed = l_speed };
+    rlk_hydro_build(&h, &d, 4u, l_scratch);  /* acc 1..4, acc_min 4 */
+    const float clamped = l_speed[0];
+    assert(clamped > 0.0f);  /* headwater clamped, not zero/negative */
+    rlk_hydro_build(&h, &d, 1u, l_scratch);
+    assert(l_speed[0] > clamped);  /* wider law without the clamp */
 }
 
 /* Real drain on a slope: smoke test — slope/speed >= 0, 0 at outlets,
@@ -209,6 +223,7 @@ int
 main(void) {
     test_hydro_slope();
     test_hydro_speed();
+    test_hydro_speed_acc_min_clamp();
     test_hydro_real_drain_signs();
     test_hydro_strahler_linear();
     test_hydro_strahler_confluence();

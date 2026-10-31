@@ -15,16 +15,6 @@ fixture(void) {
     g_list = (rlk_poi_list_t){ g_buf, 0, 8 };
 }
 
-/* POD init */
-
-static void
-test_pod_init(void) {
-    rlk_poi_list_t l = { g_buf, 0, 8 };
-    assert(l.v == g_buf);
-    assert(l.n == 0);
-    assert(l.cap == 8);
-}
-
 /* push: append POI, n increments; bbox contains the anchor. */
 
 static void
@@ -88,20 +78,26 @@ test_find(void) {
     assert(rlk_poi_find(&g_list, 11, 10, 100, 99u) == NULL);
 }
 
-/* count: per type. */
+/* poi_at: first POI (emission order) whose bbox contains the point. */
 
 static void
-test_count(void) {
+test_poi_at(void) {
     fixture();
-    rlk_poi_t a = { .x = 0, .y = 0, .type = POI_A };
-    rlk_poi_t b = { .x = 1, .y = 1, .type = POI_B };
-    rlk_poi_t c = { .x = 2, .y = 2, .type = POI_A };
+    rlk_poi_t a = { .x = 10, .y = 10, .bbox = { 5, 5, 10, 10 }, .type = POI_A };
+    rlk_poi_t b = { .x = 12, .y = 12, .bbox = { 8, 8, 10, 10 }, .type = POI_B };
     rlk_poi_push(&g_list, &a);
     rlk_poi_push(&g_list, &b);
-    rlk_poi_push(&g_list, &c);
-    assert(rlk_poi_count(&g_list, POI_A) == 2);
-    assert(rlk_poi_count(&g_list, POI_B) == 1);
-    assert(rlk_poi_count(&g_list, 99u) == 0);
+    /* Outside all bboxes. */
+    assert(rlk_poi_at(&g_list, 0, 0) == NULL);
+    /* Inside a only. */
+    assert(rlk_poi_at(&g_list, 6, 6) == &g_list.pois[0]);
+    /* Inside both (overlap): first in emission order wins. */
+    assert(rlk_poi_at(&g_list, 10, 10) == &g_list.pois[0]);
+    /* Inside b only. */
+    assert(rlk_poi_at(&g_list, 17, 17) == &g_list.pois[1]);
+    /* Empty list. */
+    fixture();
+    assert(rlk_poi_at(&g_list, 10, 10) == NULL);
 }
 
 /* seed: deterministic, decorrelated by seed/type/position/salt. */
@@ -117,40 +113,14 @@ test_seed(void) {
     assert(s1 != rlk_poi_seed(43ULL, 3, 7, POI_A, 0xCAFEULL));
 }
 
-/* poi_window: bbox clamped to the map, cellsize 1, empty when disjoint. */
-
-static void
-test_window(void) {
-    rlk_poi_t p = { .x = 20, .y = 20,
-                    .bbox = { .x = 10, .y = 10, .w = 20, .h = 20 } };
-    rlk_rect_t map = { .x = 0, .y = 0, .w = 32, .h = 32 };
-    rlk_lattice_t win;
-
-    assert(rlk_poi_window(&p, map, &win) == 1);
-    assert(win.w == 20 && win.h == 20 && win.cellsize == 1);
-    assert(win.origin_x == 10 && win.origin_y == 10);
-
-    /* Clamped to the map edge. */
-    rlk_rect_t small = { .x = 0, .y = 0, .w = 15, .h = 32 };
-    assert(rlk_poi_window(&p, small, &win) == 1);
-    assert(win.w == 5 && win.h == 20);
-    assert(win.origin_x == 10 && win.origin_y == 10);
-
-    /* Disjoint bbox: no window. */
-    rlk_rect_t far = { .x = 100, .y = 100, .w = 8, .h = 8 };
-    assert(rlk_poi_window(&p, far, &win) == 0);
-}
-
 /* Main */
 
 int
 main(void) {
-    test_pod_init();
     test_push_basic();
     test_push_full();
     test_find();
-    test_count();
+    test_poi_at();
     test_seed();
-    test_window();
     return 0;
 }

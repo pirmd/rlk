@@ -11,14 +11,17 @@
    - `init`: prepares a struct; `build`: computes derived data;
    - `find`: a search that can fail; `compute`: computes a result into
      a caller-provided output;
-   - `sample` / `at`: read; `weight`, `allows`: mask query;
+   - `get`: read at a position (value or pointer; tilemap, grid, mask,
+     slope); `allows`: mask query;
    - `fill`: generates content into a tilemap region (generators);
    - `draw`: draws an analysis result into a tilemap;
    - `push`: append to a bounded list; `add`: register a stage;
    - `remove`: removes a property (e.g. depressions, `remove_pits`).
 3. Argument order: computing functions -> output first (`out`, `dst`,
    `m`), like `memcpy`. Tilemap writes -> `(gen, tm, ...)` for `fill`,
-   `(tm, source, ...)` for `draw`.
+   `(tm, source, ...)` for `draw`. `from_` names a function that fills a
+   caller-provided buffer (`rlk_mask_from_tilemap`); a small POD derivation
+   is returned by value instead (`rlk_tilemap_lattice`, `rlk_grid_center`).
 4. Coordinates, positions and regions:
    - `x, y` = world tiles (int); `i, j` = cell indices;
    - `wx, wy` = world coords when `x, y` are already taken (e.g. POI);
@@ -29,3 +32,16 @@
 5. Buffer sizes: in number of elements of the type documented by the
    module, never in bytes.
 6. Return: `rlk_err_t` if the call can fail, else `void` or a value.
+7. POD buffer fields are named after their element (`tiles`, `values`,
+   `weights`, `pois`, `acc`), never a bare `v`.
+8. Suffix `f` marks a float variant only when the bare name would be
+   ambiguous with a non-float sibling (`rlk_clampf`, `rlk_dist_euclideanf`
+   vs `rlk_dist_manhattan`, `rlk_hash_normf` vs a norm/magnitude). A float
+   function with no ambiguous sibling carries no `f` (`rlk_lerp`,
+   `rlk_wg_rand`, `rlk_grid_get`). "Normalized to [0,1]" is `norm`.
+9. Interval notation: `[0,1)` for hash/uniform draws (the max draw is < 1
+   by construction, e.g. rlk_hash_normf), `[0,1]` for normalized fields and
+   masks where 1 is attainable (river centre, acc == w*h, smoothstep at
+   t = 1). Value noise and fBm inherit `[0,1)` from the lattice hashes.
+   Both `[a,b)` and the French-style `]a,b[` are valid per ISO 80000-2, but
+   comments are English and ASCII here: always `[a,b)`, never `]a,b[`.

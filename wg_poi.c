@@ -48,7 +48,7 @@ poi_stage(rlk_wg_ctx_t *ctx, const void *data) {
     if (cfg->grid) {
         const float wxf = (float)ctx->wx + 0.5f;
         const float wyf = (float)ctx->wy + 0.5f;
-        float v = rlk_grid_sample(cfg->grid, wxf, wyf);
+        float v = rlk_grid_get(cfg->grid, wxf, wyf);
         if (v < cfg->grid_min || v > cfg->grid_max)
             return;
     }

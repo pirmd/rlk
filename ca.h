@@ -74,7 +74,7 @@ struct rlk_ca_s {
        with biome preset to the region id (0 = wall, > 0 = floor region).
        Fill type/flags/variant as needed; the produced tile is then stamped
        over the cell's cellsize x cellsize tile block (see rlk_ca_fill).
-       Use rlk_write_wallfloor for simple wall/floor output. */
+       Write your own callback (example: demo/demo_world.c). */
     void (*write)(uint64_t seed, const void *data, int x, int y,
                   rlk_tile_t *out);
 
@@ -113,8 +113,7 @@ struct rlk_ca_s {
 static inline float
 rlk_ca_rand(const rlk_ca_t *ca, int x, int y, uint64_t salt) {
     assert(ca);
-    uint64_t h = rlk_hash_sub(rlk_hash_combine2(ca->seed, x, y), salt);
-    return (float)(h >> 40) * (1.0f / 16777216.0f);
+    return rlk_hash_normf(rlk_hash_at(ca->seed, x, y, salt));
 }
 
 /* --- PUBLIC API ---------------------------------------------------------- */

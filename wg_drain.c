@@ -25,11 +25,11 @@ drain_stage(rlk_wg_ctx_t *ctx, const void *data) {
         acc_val = (float)f->drain->acc[c] / f->acc_scale;
         /* Normalized log10(acc) in [0,1]: acc <= w*h by construction, so the
            lattice size is the map-wide maximum — no runtime pass needed
-           (stages are pure per tile). Hack's law input for wg_rivers. */
+           (stages are pure per tile). Log-width law input for wg_rivers. */
         const float norm = log10f((float)(f->drain->lattice.w * f->drain->lattice.h) + 1.0f);
         acc_log = log10f((float)f->drain->acc[c] + 1.0f) / norm;
         dir_val = (float)f->drain->dir[c];
-        lake_val = rlk_drain_lake_depth(f->drain, f->elev, f->sea, i, j);
+        lake_val = rlk_drain_fill_depth(f->drain, f->elev, i, j);
     }
 
     if (f->slot_acc != RLK_WG_DRAIN_NONE) {

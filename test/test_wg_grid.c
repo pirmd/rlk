@@ -42,7 +42,7 @@ static rlk_grid_t grid;
 
 static void
 grid_setup(void) {
-    grid = (rlk_grid_t){ .lattice = { .w = GW, .h = GH, .cellsize = GCELL, .origin_x = 0, .origin_y = 0 }, .v = grid_buf };
+    grid = (rlk_grid_t){ .lattice = { .w = GW, .h = GH, .cellsize = GCELL, .origin_x = 0, .origin_y = 0 }, .values = grid_buf };
     for (int k = 0; k < GW * GH; k++)
         grid_buf[k] = 0.5f;
 }

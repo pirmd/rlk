@@ -7,7 +7,7 @@
 /* Coordinate naming: x,y chunk-local; wx,wy world tile; origin_x,origin_y
  * rect origin (wx == origin_x + x); wxf,wyf float world position at the tile
  * centre (wxf == (float)wx + 0.5f). Fields are sampled at the tile centre,
- * consistent with rlk_grid_sample / rlk_grid_center. */
+ * consistent with rlk_grid_get / rlk_grid_center. */
 
 /* --- SETUP --------------------------------------------------------------- */
 
@@ -115,7 +115,7 @@ rlk_wg_init(rlk_wg_t *wg) {
     /* Seed noise generators: world seed + index + field seed. */
     for (int i = 0; i < wg->nsampled; i++) {
         uint64_t s = rlk_hash_sub(wg->seed, 0xF1E1D000ULL + (uint64_t)i);
-        rlk_noise_seed(&wg->noise[i], rlk_hash_sub(s, wg->fields[i].seed));
+        wg->noise[i].seed = rlk_hash_sub(s, wg->fields[i].seed);
     }
     return RLK_OK;
 }
@@ -279,7 +279,7 @@ rlk_wg_fill_slot(const rlk_wg_t *wg, uint8_t slot, rlk_grid_t *g) {
                     lat->origin_x + i * lat->cellsize,
                     lat->origin_y + j * lat->cellsize,
                     i, j, &ctx);
-            g->v[(size_t)j * (size_t)lat->w + (size_t)i] = ctx.field[slot];
+            g->values[(size_t)j * (size_t)lat->w + (size_t)i] = ctx.field[slot];
         }
     }
 }

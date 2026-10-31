@@ -57,7 +57,7 @@ rlk_err_t rlk_path_find(const rlk_path_cost_t *cost, rlk_path_scratch_t *scr,
                         int *out, int cap, int *out_len);
 
 /* Draw a path (as produced by rlk_path_find) onto a tilemap: each segment
-   is brushed with rlk_tilemap_line (square brush of `width` tiles). */
+   is brushed with rlk_tilemap_set_line (square brush of `width` tiles). */
 void rlk_path_draw(rlk_tilemap_t *tm, const int *path, int n,
                    int width, rlk_tile_t tile);
 

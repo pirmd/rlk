@@ -78,7 +78,7 @@ struct rlk_bsp_s {
        with biome preset to the cell type (0 = wall, 1 = floor).
        Fill type/flags/variant as needed; the produced tile is then stamped
        over the cell's cellsize x cellsize tile block (see rlk_bsp_fill).
-       Use rlk_write_wallfloor for simple wall/floor output. */
+       Write your own callback (example: demo/demo_world.c). */
     void (*write)(uint64_t seed, const void *data, int x, int y,
                   rlk_tile_t *out);
 
@@ -113,8 +113,7 @@ struct rlk_bsp_s {
 static inline float
 rlk_bsp_rand(const rlk_bsp_t *bsp, int x, int y, uint64_t salt) {
     assert(bsp);
-    uint64_t h = rlk_hash_sub(rlk_hash_combine2(bsp->seed, x, y), salt);
-    return (float)(h >> 40) * (1.0f / 16777216.0f);
+    return rlk_hash_normf(rlk_hash_at(bsp->seed, x, y, salt));
 }
 
 /* --- PUBLIC API ---------------------------------------------------------- */

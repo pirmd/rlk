@@ -23,30 +23,24 @@ static rlk_grid_t g_elev;
 static void
 fixture_setup_slope(void) {
     g_elev = (rlk_grid_t){ .lattice = { .w = FW, .h = FH, .cellsize = 1,
-                                        .origin_x = 0, .origin_y = 0 }, .v = g_elev_buf };
+                                        .origin_x = 0, .origin_y = 0 }, .values = g_elev_buf };
     for (int j = 0; j < FH; j++) {
         for (int i = 0; i < FW; i++) {
-            g_elev.v[(size_t)j * (size_t)FW + (size_t)i] = (float)i;
+            g_elev.values[(size_t)j * (size_t)FW + (size_t)i] = (float)i;
         }
     }
     g_drain = (rlk_drain_t){ .lattice = g_elev.lattice, .filled = g_filled,
                              .dir = g_dir, .acc = g_acc, .order = g_order };
 }
 
-/* POD init via designated initializer */
+/* channel_width: log-width law, 1 + log2(acc/acc_min), capped at cellsize */
 
 static void
-test_rlk_drain_pod_init(void) {
-    rlk_drain_t d = { .lattice = { .w = FW, .h = FH, .cellsize = 1,
-                                   .origin_x = 0, .origin_y = 0 },
-                      .filled = g_filled, .dir = g_dir,
-                      .acc = g_acc, .order = g_order };
-    assert(d.lattice.w == FW);
-    assert(d.lattice.h == FH);
-    assert(d.filled == g_filled);
-    assert(d.dir == g_dir);
-    assert(d.acc == g_acc);
-    assert(d.order == g_order);
+test_rlk_drain_channel_width(void) {
+    assert(fabsf(rlk_drain_channel_width(1, 1, 4.0f) - 1.0f) < 1e-6f);
+    assert(fabsf(rlk_drain_channel_width(2, 2, 8.0f) - 1.0f) < 1e-6f);  /* acc == acc_min */
+    assert(fabsf(rlk_drain_channel_width(4, 1, 4.0f) - 3.0f) < 1e-6f);  /* 1 + log2(4) */
+    assert(fabsf(rlk_drain_channel_width(1024, 1, 4.0f) - 4.0f) < 1e-6f); /* capped at cellsize */
 }
 
 /* quant (absolute: e * RLK_DRAIN_SCALE, clamped below the sentinel) */
@@ -64,15 +58,15 @@ test_rlk_drain_quant(void) {
 static void
 test_rlk_drain_step(void) {
     int dx, dy;
-    rlk_drain_step(0, &dx, &dy);  /* E */
+    rlk_drain_step(RLK_DRAIN_E, &dx, &dy);
     assert(dx == 1 && dy == 0);
-    rlk_drain_step(2, &dx, &dy);  /* S */
+    rlk_drain_step(RLK_DRAIN_S, &dx, &dy);
     assert(dx == 0 && dy == 1);
-    rlk_drain_step(4, &dx, &dy);  /* W */
+    rlk_drain_step(RLK_DRAIN_W, &dx, &dy);
     assert(dx == -1 && dy == 0);
-    rlk_drain_step(6, &dx, &dy);  /* N */
+    rlk_drain_step(RLK_DRAIN_N, &dx, &dy);
     assert(dx == 0 && dy == -1);
-    rlk_drain_step(1, &dx, &dy);  /* SE */
+    rlk_drain_step(RLK_DRAIN_SE, &dx, &dy);
     assert(dx == 1 && dy == 1);
 }
 
@@ -93,7 +87,7 @@ test_rlk_drain_build_slope(void) {
     for (int j = 1; j < FH - 1; j++) {
         for (int i = 1; i < FW - 1; i++) {
             uint8_t d = g_dir[(size_t)j * (size_t)FW + (size_t)i];
-            assert(d == 3 || d == 4 || d == 5);  /* SW, W, NW */
+            assert(d == RLK_DRAIN_SW || d == RLK_DRAIN_W || d == RLK_DRAIN_NW);
         }
     }
 }
@@ -124,9 +118,9 @@ test_rlk_drain_build_accumulation(void) {
 static void
 test_rlk_drain_build_flat(void) {
     float flat_buf[FW * FH];
-    rlk_grid_t flat = { .lattice = { .w = FW, .h = FH, .cellsize = 1, .origin_x = 0, .origin_y = 0 }, .v = flat_buf };
+    rlk_grid_t flat = { .lattice = { .w = FW, .h = FH, .cellsize = 1, .origin_x = 0, .origin_y = 0 }, .values = flat_buf };
     for (int k = 0; k < FW * FH; k++)
-        flat.v[k] = 0.5f;
+        flat.values[k] = 0.5f;
 
     g_drain = (rlk_drain_t){ .lattice = flat.lattice, .filled = g_filled, .dir = g_dir,
                              .acc = g_acc, .order = g_order };
@@ -159,7 +153,7 @@ test_rlk_drain_build_sea(void) {
     }
 }
 
-/* downstream */
+/* downstream (cell index form) */
 
 static void
 test_rlk_drain_downstream(void) {
@@ -167,41 +161,42 @@ test_rlk_drain_downstream(void) {
     assert(rlk_drain_build(&g_drain, &g_elev, -1.0f, g_scratch) == RLK_OK);
 
     /* Interior cell (5,5) flows westward: downstream has i < 5 */
-    int ni, nj;
-    assert(rlk_drain_downstream(&g_drain, 5, 5, &ni, &nj) == 1);
-    assert(ni < 5);  /* west, possibly NW or SW */
+    const int c = 5 * FW + 5;
+    const int t = rlk_drain_downstream(&g_drain, c);
+    assert(t >= 0 && t < FW * FH);
+    assert(t % FW < 5);  /* west, possibly NW or SW */
 
     /* Edge cell (0,0) is an outlet: no downstream */
-    assert(rlk_drain_downstream(&g_drain, 0, 0, &ni, &nj) == 0);
+    assert(rlk_drain_downstream(&g_drain, 0) == -1);
 }
 
-/* fill_elev */
+/* filled encoding: quantized e * RLK_DRAIN_SCALE, back in elevation units */
 
 static void
-test_rlk_drain_fill_elev(void) {
+test_rlk_drain_filled(void) {
     fixture_setup_slope();
     assert(rlk_drain_build(&g_drain, &g_elev, -1.0f, g_scratch) == RLK_OK);
 
     /* On a monotonic slope, filled == original (no depressions) */
     for (int j = 0; j < FH; j++) {
         for (int i = 0; i < FW; i++) {
-            float filled = rlk_drain_fill_elev(&g_drain, i, j);
-            float original = g_elev.v[(size_t)j * (size_t)FW + (size_t)i];
-            assert(fabsf(filled - original) < 0.01f);
+            const size_t c = (size_t)j * (size_t)FW + (size_t)i;
+            float filled = (float)g_filled[c] / RLK_DRAIN_SCALE;
+            assert(fabsf(filled - g_elev.values[c]) < 0.01f);
         }
     }
 }
 
-/* lake_depth and is_lake on a pit */
+/* fill_depth on a pit (lake test: depth > 0 && depth >= min_depth, inlined) */
 
 static void
 test_rlk_drain_lake(void) {
     /* 5x5 grid with a pit at center: surrounded by higher cells */
     float pit_buf[25];
-    rlk_grid_t pit = { .lattice = { .w = 5, .h = 5, .cellsize = 1, .origin_x = 0, .origin_y = 0 }, .v = pit_buf };
+    rlk_grid_t pit = { .lattice = { .w = 5, .h = 5, .cellsize = 1, .origin_x = 0, .origin_y = 0 }, .values = pit_buf };
     for (int k = 0; k < 25; k++)
-        pit.v[k] = 1.0f;
-    pit.v[2 * 5 + 2] = 0.0f;  /* pit at (2,2) */
+        pit.values[k] = 1.0f;
+    pit.values[2 * 5 + 2] = 0.0f;  /* pit at (2,2) */
 
     uint16_t filled[25];
     uint8_t dir[25];
@@ -214,12 +209,14 @@ test_rlk_drain_lake(void) {
     assert(rlk_drain_build(&drain, &pit, -1.0f, scratch) == RLK_OK);
 
     /* The pit cell is filled up to the edge level (1.0) */
-    float depth = rlk_drain_lake_depth(&drain, &pit, -1.0f, 2, 2);
+    const float min_depth = 0.5f;
+    float depth = rlk_drain_fill_depth(&drain, &pit, 2, 2);
     assert(depth > 0.9f && depth < 1.1f);
-    assert(rlk_drain_is_lake(&drain, &pit, -1.0f, 0.5f, 2, 2) == 1);
+    assert(depth > 0.0f && depth >= min_depth);  /* is_lake, inlined */
 
-    /* A cell on the slope is not a lake */
-    assert(rlk_drain_is_lake(&drain, &pit, -1.0f, 0.5f, 0, 0) == 0);
+    /* A cell on the rim is not a lake */
+    float d0 = rlk_drain_fill_depth(&drain, &pit, 0, 0);
+    assert(!(d0 > 0.0f && d0 >= min_depth));
 }
 
 /* remove_pits: fill sinks only, without dir/acc/order */
@@ -228,10 +225,10 @@ static void
 test_rlk_drain_remove_pits(void) {
     /* 5x5 grid with a pit at center: surrounded by higher cells */
     float pit_buf[25];
-    rlk_grid_t pit = { .lattice = { .w = 5, .h = 5, .cellsize = 1, .origin_x = 0, .origin_y = 0 }, .v = pit_buf };
+    rlk_grid_t pit = { .lattice = { .w = 5, .h = 5, .cellsize = 1, .origin_x = 0, .origin_y = 0 }, .values = pit_buf };
     for (int k = 0; k < 25; k++)
-        pit.v[k] = 1.0f;
-    pit.v[2 * 5 + 2] = 0.0f;  /* pit at (2,2) */
+        pit.values[k] = 1.0f;
+    pit.values[2 * 5 + 2] = 0.0f;  /* pit at (2,2) */
 
     uint16_t out[25];
     uint64_t scratch[25];
@@ -243,10 +240,10 @@ test_rlk_drain_remove_pits(void) {
     assert(out[0] == rlk_drain_quant(1.0f));
 }
 
-/* river_sdf on the slope fixture (cellsize 1: half-width capped at 0.5) */
+/* flowline_sdf on the slope fixture (cellsize 1: half-width capped at 0.5) */
 
 static void
-test_rlk_drain_river_sdf(void) {
+test_rlk_drain_flowline_sdf(void) {
     fixture_setup_slope();
     assert(rlk_drain_build(&g_drain, &g_elev, -1.0f, g_scratch) == RLK_OK);
 
@@ -260,32 +257,32 @@ test_rlk_drain_river_sdf(void) {
             const size_t c = (size_t)j * (size_t)FW + (size_t)i;
             if (g_dir[c] == RLK_DRAIN_OUTLET) continue;
             rivers++;
-            assert(rlk_drain_river_sdf(&g_drain, i, j, 1) == -0.5f);
+            assert(rlk_drain_flowline_sdf(&g_drain, i, j, 1) == -0.5f);
         }
     }
     assert(rivers > 0);
 
     /* acc_min above every accumulation: no network -> RLK_DRAIN_FAR */
-    assert(rlk_drain_river_sdf(&g_drain, 5, 5, 1000) == RLK_DRAIN_FAR);
+    assert(rlk_drain_flowline_sdf(&g_drain, 5, 5, 1000) == RLK_DRAIN_FAR);
 
     /* Outside the grid -> RLK_DRAIN_FAR */
-    assert(rlk_drain_river_sdf(&g_drain, -1, 0, 1) == RLK_DRAIN_FAR);
-    assert(rlk_drain_river_sdf(&g_drain, 0, -1, 1) == RLK_DRAIN_FAR);
-    assert(rlk_drain_river_sdf(&g_drain, FW, 0, 1) == RLK_DRAIN_FAR);
-    assert(rlk_drain_river_sdf(&g_drain, 0, FH, 1) == RLK_DRAIN_FAR);
+    assert(rlk_drain_flowline_sdf(&g_drain, -1, 0, 1) == RLK_DRAIN_FAR);
+    assert(rlk_drain_flowline_sdf(&g_drain, 0, -1, 1) == RLK_DRAIN_FAR);
+    assert(rlk_drain_flowline_sdf(&g_drain, FW, 0, 1) == RLK_DRAIN_FAR);
+    assert(rlk_drain_flowline_sdf(&g_drain, 0, FH, 1) == RLK_DRAIN_FAR);
 
     /* Pure: same call, same result */
-    assert(rlk_drain_river_sdf(&g_drain, 5, 5, 1)
-           == rlk_drain_river_sdf(&g_drain, 5, 5, 1));
+    assert(rlk_drain_flowline_sdf(&g_drain, 5, 5, 1)
+           == rlk_drain_flowline_sdf(&g_drain, 5, 5, 1));
 }
 
-/* river_sdf on a coarse grid (cellsize 4): network found, finite sdf */
+/* flowline_sdf on a coarse grid (cellsize 4): network found, finite sdf */
 
 static void
-test_rlk_drain_river_sdf_coarse(void) {
+test_rlk_drain_flowline_sdf_coarse(void) {
     float buf[FW * FH];
     rlk_grid_t elev = { .lattice = { .w = FW, .h = FH, .cellsize = 4,
-                                     .origin_x = -32, .origin_y = -32 }, .v = buf };
+                                     .origin_x = -32, .origin_y = -32 }, .values = buf };
     for (int j = 0; j < FH; j++)
         for (int i = 0; i < FW; i++)
             buf[(size_t)j * (size_t)FW + (size_t)i] = (float)i;
@@ -302,7 +299,7 @@ test_rlk_drain_river_sdf_coarse(void) {
             /* tile at the cell centre: (origin + (i+0.5)*cellsize - 0.5) */
             int x = -32 + (int)(((float)i + 0.5f) * 4.0f - 0.5f);
             int y = -32 + (int)(((float)j + 0.5f) * 4.0f - 0.5f);
-            float sdf = rlk_drain_river_sdf(&drain, x, y, 1);
+            float sdf = rlk_drain_flowline_sdf(&drain, x, y, 1);
             assert(sdf < RLK_DRAIN_FAR);
             found++;
         }
@@ -310,39 +307,16 @@ test_rlk_drain_river_sdf_coarse(void) {
     assert(found > 0);
 }
 
-/* acc_mask: 255 where lo <= acc <= hi */
-
-static void
-test_rlk_drain_acc_mask(void) {
-    fixture_setup_slope();
-    assert(rlk_drain_build(&g_drain, &g_elev, -1.0f, g_scratch) == RLK_OK);
-
-    static uint8_t mbuf[FW * FH];
-    rlk_mask_t m = { .lattice = g_drain.lattice, .v = mbuf };
-    assert(rlk_drain_acc_mask(&m, &g_drain, 1, 1) == RLK_OK);
-    int sources = 0;
-    for (int k = 0; k < FW * FH; k++) {
-        assert(mbuf[k] == (uint8_t)(g_acc[k] == 1 ? 255 : 0));
-        if (mbuf[k] == 255) sources++;
-    }
-    assert(sources > 0);
-
-    /* Geometry mismatch -> RLK_E_INVALID */
-    rlk_mask_t bad = { .lattice = { .w = 2, .h = 2, .cellsize = 1,
-                                    .origin_x = 0, .origin_y = 0 }, .v = mbuf };
-    assert(rlk_drain_acc_mask(&bad, &g_drain, 1, 1) == RLK_E_INVALID);
-}
-
 /* build error: elevation outside [0, 256) */
 
 static void
 test_rlk_drain_build_range_error(void) {
     float buf[4];
-    rlk_grid_t g = { .lattice = { .w = 2, .h = 2, .cellsize = 1, .origin_x = 0, .origin_y = 0 }, .v = buf };
-    g.v[0] = 0.0f;
-    g.v[1] = 300.0f;  /* >= 256 */
-    g.v[2] = 0.0f;
-    g.v[3] = 0.0f;
+    rlk_grid_t g = { .lattice = { .w = 2, .h = 2, .cellsize = 1, .origin_x = 0, .origin_y = 0 }, .values = buf };
+    g.values[0] = 0.0f;
+    g.values[1] = 300.0f;  /* >= 256 */
+    g.values[2] = 0.0f;
+    g.values[3] = 0.0f;
 
     uint16_t filled[4];
     uint8_t dir[4];
@@ -355,7 +329,7 @@ test_rlk_drain_build_range_error(void) {
     assert(rlk_drain_build(&drain, &g, -1.0f, scratch) == RLK_E_INVALID);
 
     /* Negative elevations are rejected too (absolute quantization) */
-    g.v[1] = -0.5f;
+    g.values[1] = -0.5f;
     assert(rlk_drain_build(&drain, &g, -1.0f, scratch) == RLK_E_INVALID);
     assert(rlk_drain_remove_pits(filled, &g, -1.0f, scratch) == RLK_E_INVALID);
 }
@@ -364,7 +338,7 @@ test_rlk_drain_build_range_error(void) {
 
 int
 main(void) {
-    test_rlk_drain_pod_init();
+    test_rlk_drain_channel_width();
     test_rlk_drain_quant();
     test_rlk_drain_step();
     test_rlk_drain_build_slope();
@@ -372,12 +346,11 @@ main(void) {
     test_rlk_drain_build_flat();
     test_rlk_drain_build_sea();
     test_rlk_drain_downstream();
-    test_rlk_drain_fill_elev();
+    test_rlk_drain_filled();
     test_rlk_drain_lake();
     test_rlk_drain_remove_pits();
-    test_rlk_drain_river_sdf();
-    test_rlk_drain_river_sdf_coarse();
-    test_rlk_drain_acc_mask();
+    test_rlk_drain_flowline_sdf();
+    test_rlk_drain_flowline_sdf_coarse();
     test_rlk_drain_build_range_error();
     return 0;
 }

@@ -2,21 +2,30 @@
 #define RLK_HYDRO_H
 
 /*
- * Hydrology derived fields on a coarse grid, computed from a pre-built
- * rlk_drain_t (Priority-Flood + D8 + accumulation). Companion of `drain`:
- * where `drain` stops at filled/dir/acc, `hydro` adds the hydraulic
- * quantities a river renderer or a simulation wants:
+ * Hydrology derived fields, computed from a pre-built rlk_drain_t.
+ * drain gives the flow topology (where water goes, how much accumulates:
+ * filled/dir/acc); hydro adds the per-cell flow intensity that a renderer
+ * or a simulation wants. One value per cell of the drain's lattice (w*h,
+ * same geometry) -- not a separate grid.
+ * Typical chain: rlk_drain_build() on the coarse elevation grid, then
+ * rlk_hydro_build() on the drain; the wg stages (wg_drain, wg_hydro,
+ * wg_rivers) then read both, per tile.
  *
- *   slope    per cell, D8 downslope in elevation units per tile:
- *            (filled[c] - filled[downstream]) / (cellsize * sqrt(2) if diagonal).
- *            0 at outlets. Always >= 0 (Priority-Flood fills uphill).
- *   strahler per cell, Strahler stream order: 1 at sources, max of the
- *            upstream orders, +1 when two or more upstreams reach that max.
- *            Computed in one reverse pass over drain->order (upstream first).
- *   speed    per cell, Manning estimate in relative units:
+ *   slope    per cell, D8 downslope on the filled surface, elevation units
+ *            per tile: (filled[c] - filled[downstream]) / (cellsize * sqrt(2)
+ *            if diagonal). 0 at outlets. Always >= 0 (Priority-Flood fills
+ *            uphill). Used for slope-driven terrain: beaches, cliffs, mills.
+ *   strahler per cell, Strahler (1957) stream order: the size class of the
+ *            stream at that cell. Sources are order 1; when two or more
+ *            upstreams of equal max order join, the order goes up by 1,
+ *            otherwise it keeps the max. So 1-2 = headwater creeks, 5+ =
+ *            large rivers -- used to grade river width. One reverse pass
+ *            over drain->order.
+ *   speed    per cell, Manning-Strickler estimate in relative units:
  *            v = (1/n) * R^(2/3) * sqrt(slope), R = width/2,
- *            width = min(1 + log2(acc/acc_min), cellsize) tiles (same
- *            hydraulic geometry as rlk_drain_river_sdf), clamped >= 0.25.
+ *            width = min(1 + log2(acc/acc_min), cellsize) tiles (same width
+ *            law as rlk_drain_channel_width), clamped >= 0.25.
+ *            Used for flow simulation / rendering (rapids, current).
  *
  * Memory (caller-owned, no allocation): every output buffer is optional
  * (NULL = skip). slope 4B + strahler 1B + speed 4B = 9B per cell,
@@ -30,8 +39,6 @@
  *   rlk_hydro_build(&h, &drain, acc_min, scratch);
  */
 
-#include <assert.h>
-#include <stddef.h>
 #include <stdint.h>
 
 #include "drain.h"
@@ -47,8 +54,9 @@ typedef struct {
 
 /* --- PUBLIC API ---------------------------------------------------------- */
 
-/* Compute the derived fields from a built drain. The hydro lattice must be
-   identical to the drain's. `scratch` is w*h uint16, used to accumulate the
+/* Fill h's per-cell buffers from a built drain (build = compute derived
+   data). The hydro lattice must be identical to the drain's; each buffer is
+   optional (NULL = skip). `scratch` is w*h uint16, used to accumulate the
    upstream orders during the Strahler pass (may be reused afterwards).
    acc_min >= 1 sets the reference drainage area for the width law. */
 void rlk_hydro_build(rlk_hydro_t *h, const rlk_drain_t *d, uint32_t acc_min,

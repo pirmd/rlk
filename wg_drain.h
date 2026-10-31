@@ -8,7 +8,7 @@
  *   slot_acc     -> flow accumulation (normalized by acc_scale)
  *   slot_dir     -> downstream direction (0..7, RLK_DRAIN_OUTLET=8)
  *   slot_lake    -> lake depth (filled minus original elevation)
- *   slot_acc_log -> log10(acc+1) / log10(w*h+1), normalized [0,1]: Hack's law
+ *   slot_acc_log -> log10(acc+1) / log10(w*h+1), normalized [0,1]: log-width law
  *                   input for consumers like wg_rivers' bank fade (specialist
  *                   review 2026-10-30; written here, not in wg_hydro, because
  *                   this stage is the one reading drain->acc)

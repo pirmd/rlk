@@ -7,12 +7,11 @@
  * include individual headers directly.
  */
 
-/* Base: core */
+/* Base: core (user API). Internal helpers such as fmath.h are included
+   transitively by the headers that need them; include directly if wanted. */
 #include "err.h"
 #include "hash.h"
-#include "fmath.h"
 #include "noise.h"
-#include "rng.h"
 
 /* Base: data */
 #include "geom.h"

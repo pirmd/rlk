@@ -36,7 +36,7 @@ stamp_poi(tilemap_gen_t *gen, const rlk_poi_t *p) {
     const int hs = p->bbox.w / 2;
     for (int y = box.y; y < box.y + box.h; y++) {
         for (int x = box.x; x < box.x + box.w; x++) {
-            gen->poi_res[(size_t)y * TM_W + (size_t)x] = (uint8_t)p->type;
+            gen->poi_res[(size_t)y * TM_W + (size_t)x] = p->type;
             rlk_tile_t *t = rlk_tilemap_get(&gen->tm, x, y);
             float r = rlk_wg_rand(&gen->wg, x, y,
                                      rlk_hash_sub(p->seed, 0x57A9ULL));
@@ -121,7 +121,7 @@ gen_poi_content_pass(tilemap_gen_t *gen) {
     for (int i = 0; i < TM_W * TM_H; i++)
         gen->poi_res[i] = 0xFFu;
     for (int i = 0; i < gen->pois.n; i++)
-        stamp_poi(gen, &gen->pois.v[i]);
+        stamp_poi(gen, &gen->pois.pois[i]);
 }
 
 /* --- Cosmetic pass (post-fill, post-POI content) ---------------------------
@@ -237,7 +237,7 @@ gen_cosmetic_pass(tilemap_gen_t *gen) {
 
     /* Karst caves: a cave POI anchor on limestone reads as a sinkhole entrance */
     for (int i = 0; i < gen->pois.n; i++) {
-        const rlk_poi_t *p = &gen->pois.v[i];
+        const rlk_poi_t *p = &gen->pois.pois[i];
         if (p->type != POI_CAVE || p->x < 0 || p->x >= TM_W || p->y < 0 || p->y >= TM_H)
             continue;
         int idx = p->y * TM_W + p->x;

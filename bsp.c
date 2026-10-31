@@ -287,17 +287,6 @@ build_dungeon(rlk_bsp_t *bsp, int node_idx) {
 
 /* --- RENDER HELPERS ------------------------------------------------------ */
 
-/* 1 if the tile (x, y) is inside the bbox of a reserved POI. */
-static int
-reserved(const rlk_poi_list_t *poi, int x, int y) {
-    if (!poi)
-        return 0;
-    for (int i = 0; i < poi->n; i++)
-        if (rlk_rect_contains(&poi->v[(size_t)i].bbox, x, y))
-            return 1;
-    return 0;
-}
-
 /* --- PUBLIC API ---------------------------------------------------------- */
 
 rlk_err_t
@@ -344,7 +333,7 @@ rlk_bsp_fill(rlk_bsp_t *bsp, const rlk_lattice_t *win, rlk_tilemap_t *tm,
     for (int y = 0; y < h; y++) {
         for (int x = 0; x < w; x++) {
             size_t idx = bsp_idx(x, y, w);
-            if (mask && mask->v[idx] == 0)
+            if (mask && mask->weights[idx] == 0)
                 continue;
             const int wx = l->origin_x + x * cs;
             const int wy = l->origin_y + y * cs;
@@ -355,7 +344,7 @@ rlk_bsp_fill(rlk_bsp_t *bsp, const rlk_lattice_t *win, rlk_tilemap_t *tm,
             for (int dy = 0; dy < cs; dy++) {
                 for (int dx = 0; dx < cs; dx++) {
                     const int tx = wx + dx, ty = wy + dy;
-                    if (!reserved(poi, tx, ty))
+                    if (!poi || !rlk_poi_at(poi, tx, ty))
                         rlk_tilemap_set(tm, tx, ty, tile);
                 }
             }

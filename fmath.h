@@ -1,6 +1,8 @@
 #ifndef RLK_FMATH_H
 #define RLK_FMATH_H
 
+/* Small float helpers: clamp, lerp, smoothstep, distances. */
+
 #include <assert.h>
 #include <math.h>
 

@@ -40,7 +40,7 @@
 typedef struct {
     /* --- Target --- */
     rlk_poi_list_t *list;           /* list to populate; must outlive the wg */
-    uint32_t type;                  /* POI type to create (game-defined) */
+    uint8_t type;                   /* POI type to create (game-defined) */
     uint64_t salt;                  /* decorrelates multiple detectors */
 
     /* --- Field condition (required) ---

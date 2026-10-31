@@ -263,7 +263,7 @@ gen_temp_lat_stage(rlk_wg_ctx_t *ctx, const void *data) {
    per tile). */
 
 typedef struct {
-    uint32_t type;
+    uint8_t type;
     uint64_t salt;
     float elev_min, elev_max;       /* on F_ELEV (post-geology, same value classify sees) */
     float temp_min, temp_max;       /* on F_TEMP (-1 = ignore) */

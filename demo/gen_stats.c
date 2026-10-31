@@ -85,7 +85,7 @@ tilemap_gen_stats(const tilemap_gen_t *gen, tilemap_gen_stats_t *st,
     }
 
     for (int i = 0; i < gen->pois.n; i++) {
-        uint32_t t = gen->pois.v[i].type;
+        int t = gen->pois.pois[i].type;
         if (t < POI_KIND_COUNT)
             st->n_poi[t]++;
     }

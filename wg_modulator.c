@@ -27,10 +27,9 @@ modulator_stage(rlk_wg_ctx_t *ctx, const void *data) {
     const float wxf = (float)ctx->wx + 0.5f, wyf = (float)ctx->wy + 0.5f;
     const uint64_t pseed = rlk_hash_sub(rlk_hash_sub(wg->seed, 0x9E0F5C3D11ULL), m->salt);
 
-    rlk_noise_t cn;
-    rlk_noise_seed(&cn, pseed);
-    rlk_noise_cell_t c;
-    rlk_noise_cell(&cn, wxf, wyf, cell, &c);
+    rlk_noise_t cn = { .seed = pseed };
+    rlk_noise_cellular_t c;
+    rlk_noise_cellular(&cn, wxf, wyf, cell, &c);
 
     /* Type of the closest cell, and of the cell containing the point. */
     const uint8_t t1 = (uint8_t)((rlk_hash_sub(c.id, 3) >> 33) % (uint64_t)m->ntypes);

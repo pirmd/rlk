@@ -1,12 +1,15 @@
 #ifndef RLK_TILEMAP_H
 #define RLK_TILEMAP_H
 
+/* World tilemap: caller-owned w*h rlk_tile_t buffer over a world rect.
+ * type/flags/biome/variant are game-defined, opaque to rlk (see
+ * rlk_tile_props_t). */
+
 #include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
 
 #include "geom.h"
-#include "hash.h"
 
 typedef struct {
     uint8_t    type;     /* game-defined tile value (opaque to rlk) */
@@ -16,15 +19,9 @@ typedef struct {
     uint8_t    depth;    /* depth (water, underground): 0 = surface */
 } rlk_tile_t;
 
-/* Tile property flags (positive: a mask built from them is "allowed").
-   A type outside the table has no flag (neither walkable nor transparent). */
-enum {
-    RLK_TILE_WALKABLE    = 1 << 0,
-    RLK_TILE_TRANSPARENT = 1 << 1
-    /* following bits reserved for the application */
-};
-
-/* Per-type properties, provided by the game. */
+/* Per-type property flags, provided by the game: a mask built from them
+   with rlk_mask_from_tilemap is "allowed" where the bit is set. A type
+   outside the table has no flag. */
 typedef struct {
     const uint8_t *flags;   /* ntypes entries */
     int            ntypes;
@@ -85,7 +82,7 @@ rlk_tilemap_lattice(const rlk_tilemap_t *tm) {
 /* Trace a segment from (x0,y0) to (x1,y1), square brush of `width` tiles
    centred on the line (width >= 1). Clipped to the tilemap. Deterministic. */
 static inline void
-rlk_tilemap_line(rlk_tilemap_t *tm, int x0, int y0,
+rlk_tilemap_set_line(rlk_tilemap_t *tm, int x0, int y0,
                  int x1, int y1, int width, rlk_tile_t tile) {
     assert(tm);
     assert(width >= 1);
@@ -104,26 +101,6 @@ rlk_tilemap_line(rlk_tilemap_t *tm, int x0, int y0,
         if (e2 > -dy) { err -= dy; x0 += sx; }
         if (e2 <  dx) { err += dx; y0 += sy; }
     }
-}
-
-/* Ready-made writer data: tile types for wall (biome 0) and floor (biome > 0). */
-typedef struct {
-    uint8_t wall_type;
-    uint8_t floor_type;
-} rlk_wallfloor_t;
-
-/* Ready-made writer: fills out->type from a `rlk_wallfloor_t` given as data,
-   using out->biome preset by the caller (0 = wall, > 0 = floor); variant is
-   deterministic from (seed, x, y). Usable as the `write` callback of ca/bsp. */
-static inline void
-rlk_write_wallfloor(uint64_t seed, const void *data, int x, int y,
-                    rlk_tile_t *out) {
-    assert(out);
-    const rlk_wallfloor_t *wf = (const rlk_wallfloor_t *)data;
-    out->type = (out->biome == 0) ? wf->wall_type : wf->floor_type;
-    uint64_t h = rlk_hash_sub(rlk_hash_combine2(seed, x, y), 0xCAFEULL);
-    float r = (float)(h >> 40) * (1.0f / 16777216.0f);
-    out->variant = (uint8_t)(r * 255.0f);
 }
 
 #endif /* RLK_TILEMAP_H */

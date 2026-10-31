@@ -1,15 +1,27 @@
 #include <assert.h>
 #include <string.h>
 #include "bsp.h"
+#include "hash.h"
 
 #define FIXTURE_MAP_W 64
 #define FIXTURE_MAP_H 64
 #define FIXTURE_GRID_SIZE (FIXTURE_MAP_W * FIXTURE_MAP_H)
 
+/* Local writer (the lib provides no ready-made writer): wall/floor by biome. */
+typedef struct { uint8_t wall_type, floor_type; } test_wf_t;
+
+static void
+test_write_wallfloor(uint64_t seed, const void *data, int x, int y,
+                     rlk_tile_t *out) {
+    const test_wf_t *wf = (const test_wf_t *)data;
+    out->type = (out->biome == 0) ? wf->wall_type : wf->floor_type;
+    out->variant = (uint8_t)(rlk_hash_normf(rlk_hash_at(seed, x, y, 0xCAFEULL)) * 255.0f);
+}
+
 static uint8_t g_grid[FIXTURE_GRID_SIZE];
 static rlk_bsp_node_t g_nodes[RLK_BSP_MAX_NODES];
 static rlk_bsp_t g_bsp;
-static const rlk_wallfloor_t g_wf = { .wall_type = 1, .floor_type = 0 };
+static const test_wf_t g_wf = { .wall_type = 1, .floor_type = 0 };
 
 static rlk_lattice_t g_win;
 static uint8_t g_tile_buf[FIXTURE_MAP_W * FIXTURE_MAP_H * sizeof(rlk_tile_t)];
@@ -19,7 +31,7 @@ static void
 fixture_setup(void) {
     g_bsp = (rlk_bsp_t){
         .seed = 42,
-        .write = rlk_write_wallfloor,
+        .write = test_write_wallfloor,
         .write_data = &g_wf,
         .grid = g_grid,
         .nodes = g_nodes,
@@ -46,7 +58,7 @@ test_init_valid(void) {
     assert(g_bsp.grid == g_grid);
     assert(g_bsp.nodes == g_nodes);
     assert(g_bsp.seed == 42);
-    assert(g_bsp.write == rlk_write_wallfloor);
+    assert(g_bsp.write == test_write_wallfloor);
     assert(g_bsp.write_data == &g_wf);
     /* Defaults resolved from zero. */
     assert(g_bsp.min_room_size == 5);
@@ -61,10 +73,10 @@ test_init_default(void) {
     uint8_t grid[16 * 16];
     rlk_bsp_node_t nodes[RLK_BSP_MAX_NODES];
 
-    static const rlk_wallfloor_t wf = { .wall_type = 1, .floor_type = 0 };
+    static const test_wf_t wf = { .wall_type = 1, .floor_type = 0 };
     bsp = (rlk_bsp_t){
         .seed = 123,
-        .write = rlk_write_wallfloor,
+        .write = test_write_wallfloor,
         .write_data = &wf,
         .grid = grid,
         .nodes = nodes,
@@ -193,7 +205,7 @@ test_fill_deterministic(void) {
     rlk_bsp_node_t nodes1[RLK_BSP_MAX_NODES];
     rlk_bsp_t bsp1 = {
         .seed = 42,
-        .write = rlk_write_wallfloor,
+        .write = test_write_wallfloor,
         .write_data = &g_wf,
         .grid = grid1,
         .nodes = nodes1,
@@ -205,7 +217,7 @@ test_fill_deterministic(void) {
     rlk_bsp_node_t nodes2[RLK_BSP_MAX_NODES];
     rlk_bsp_t bsp2 = {
         .seed = 42,
-        .write = rlk_write_wallfloor,
+        .write = test_write_wallfloor,
         .write_data = &g_wf,
         .grid = grid2,
         .nodes = nodes2,
@@ -249,7 +261,7 @@ test_fill_window_origin(void) {
                           .origin_x = 5, .origin_y = 5 };
     rlk_bsp_t bsp = {
         .seed = 42,
-        .write = rlk_write_wallfloor,
+        .write = test_write_wallfloor,
         .write_data = &g_wf,
         .grid = grid,
         .nodes = nodes,
@@ -303,7 +315,7 @@ test_fill_mask(void) {
     for (int j = 0; j < FIXTURE_MAP_H; j++)
         for (int i = 0; i < FIXTURE_MAP_W; i++)
             m_buf[(size_t)j * FIXTURE_MAP_W + (size_t)i] = (i < 32) ? 0 : 255;
-    rlk_mask_t mask = { .lattice = g_win, .v = m_buf };
+    rlk_mask_t mask = { .lattice = g_win, .weights = m_buf };
 
     /* Sentinel everywhere. */
     for (int y = 0; y < g_tilemap.h; y++)
@@ -426,7 +438,7 @@ test_fill_small_map(void) {
         .seed = 123,
         .min_room_size = 3,
         .max_depth = 3,
-        .write = rlk_write_wallfloor,
+        .write = test_write_wallfloor,
         .write_data = &g_wf,
         .grid = grid,
         .nodes = nodes,
@@ -586,14 +598,14 @@ static void
 test_writer_cb_data(uint64_t seed, const void *data, int x, int y,
                     rlk_tile_t *out) {
     (void)seed; (void)x; (void)y;
-    const rlk_wallfloor_t *d = (const rlk_wallfloor_t *)data;
+    const test_wf_t *d = (const test_wf_t *)data;
     out->type = (out->biome == 0) ? d->wall_type : d->floor_type;
 }
 
 static void
 test_fill_writer_with_data(void) {
     fixture_setup();
-    static const rlk_wallfloor_t wd = { .wall_type = 7, .floor_type = 3 };
+    static const test_wf_t wd = { .wall_type = 7, .floor_type = 3 };
     g_bsp.write = test_writer_cb_data;
     g_bsp.write_data = &wd;
 
@@ -669,7 +681,7 @@ test_fill_different_seeds(void) {
     rlk_bsp_node_t nodes1[RLK_BSP_MAX_NODES];
     rlk_bsp_t bsp1 = {
         .seed = 1,
-        .write = rlk_write_wallfloor, .write_data = &g_wf,
+        .write = test_write_wallfloor, .write_data = &g_wf,
         .grid = grid1, .nodes = nodes1,
     };
     rlk_bsp_init(&bsp1);
@@ -679,7 +691,7 @@ test_fill_different_seeds(void) {
     rlk_bsp_node_t nodes2[RLK_BSP_MAX_NODES];
     rlk_bsp_t bsp2 = {
         .seed = 2,
-        .write = rlk_write_wallfloor, .write_data = &g_wf,
+        .write = test_write_wallfloor, .write_data = &g_wf,
         .grid = grid2, .nodes = nodes2,
     };
     rlk_bsp_init(&bsp2);

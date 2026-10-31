@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <string.h>
 #include "ca.h"
+#include "hash.h"
 
 #define FIXTURE_MAP_W 32
 #define FIXTURE_MAP_H 32
@@ -9,10 +10,21 @@
 
 #define FIXTURE_GRID_SIZE (FIXTURE_MAP_W * FIXTURE_MAP_H)
 
+/* Local writer (the lib provides no ready-made writer): wall/floor by biome. */
+typedef struct { uint8_t wall_type, floor_type; } test_wf_t;
+
+static void
+test_write_wallfloor(uint64_t seed, const void *data, int x, int y,
+                     rlk_tile_t *out) {
+    const test_wf_t *wf = (const test_wf_t *)data;
+    out->type = (out->biome == 0) ? wf->wall_type : wf->floor_type;
+    out->variant = (uint8_t)(rlk_hash_normf(rlk_hash_at(seed, x, y, 0xCAFEULL)) * 255.0f);
+}
+
 static uint8_t g_grid[FIXTURE_GRID_SIZE];
 static int g_region_ids[FIXTURE_MAP_W * FIXTURE_MAP_H];
 static rlk_ca_t g_ca;
-static const rlk_wallfloor_t g_wf = { .wall_type = 1, .floor_type = 0 };
+static const test_wf_t g_wf = { .wall_type = 1, .floor_type = 0 };
 
 static rlk_lattice_t g_win;
 static uint8_t g_tile_buf[FIXTURE_MAP_W * FIXTURE_MAP_H * sizeof(rlk_tile_t)];
@@ -25,7 +37,7 @@ fixture_setup(void) {
         .fill_prob = FIXTURE_FILL_PROB,
         .iterations = FIXTURE_ITERATIONS,
         .connect = 1,
-        .write = rlk_write_wallfloor,
+        .write = test_write_wallfloor,
         .write_data = &g_wf,
         .grid = g_grid,
         .region_ids = g_region_ids,
@@ -53,7 +65,7 @@ test_init_valid(void) {
     assert(g_ca.region_ids == g_region_ids);
     assert(g_ca.seed == 42);
     assert(g_ca.fill_prob == FIXTURE_FILL_PROB);
-    assert(g_ca.write == rlk_write_wallfloor);
+    assert(g_ca.write == test_write_wallfloor);
     assert(g_ca.write_data == &g_wf);
     /* Defaults resolved from zero. */
     assert(g_ca.birth_low == 4);
@@ -70,10 +82,10 @@ test_init_default(void) {
     int region_ids[16 * 16];
 
     /* All zero except required fields — defaults should be resolved. */
-    static const rlk_wallfloor_t wf = { .wall_type = 1, .floor_type = 0 };
+    static const test_wf_t wf = { .wall_type = 1, .floor_type = 0 };
     ca = (rlk_ca_t){
         .seed = 123,
-        .write = rlk_write_wallfloor,
+        .write = test_write_wallfloor,
         .write_data = &wf,
         .grid = grid,
         .region_ids = region_ids,
@@ -151,7 +163,7 @@ test_fill_deterministic(void) {
         .seed = 42,
         .fill_prob = FIXTURE_FILL_PROB,
         .iterations = FIXTURE_ITERATIONS,
-        .write = rlk_write_wallfloor,
+        .write = test_write_wallfloor,
         .write_data = &g_wf,
         .grid = grid1,
         .region_ids = region_ids1,
@@ -165,7 +177,7 @@ test_fill_deterministic(void) {
         .seed = 42,
         .fill_prob = FIXTURE_FILL_PROB,
         .iterations = FIXTURE_ITERATIONS,
-        .write = rlk_write_wallfloor,
+        .write = test_write_wallfloor,
         .write_data = &g_wf,
         .grid = grid2,
         .region_ids = region_ids2,
@@ -211,7 +223,7 @@ test_fill_window_origin(void) {
         .fill_prob = FIXTURE_FILL_PROB,
         .iterations = FIXTURE_ITERATIONS,
         .connect = 1,
-        .write = rlk_write_wallfloor,
+        .write = test_write_wallfloor,
         .write_data = &g_wf,
         .grid = grid,
         .region_ids = region_ids,
@@ -265,7 +277,7 @@ test_fill_mask(void) {
     for (int j = 0; j < FIXTURE_MAP_H; j++)
         for (int i = 0; i < FIXTURE_MAP_W; i++)
             m_buf[(size_t)j * FIXTURE_MAP_W + (size_t)i] = (i < 16) ? 0 : 255;
-    rlk_mask_t mask = { .lattice = g_win, .v = m_buf };
+    rlk_mask_t mask = { .lattice = g_win, .weights = m_buf };
 
     /* Sentinel everywhere. */
     for (int y = 0; y < g_tilemap.h; y++)
@@ -355,7 +367,7 @@ test_fill_cellsize(void) {
         .fill_prob = FIXTURE_FILL_PROB,
         .iterations = FIXTURE_ITERATIONS,
         .connect = 1,
-        .write = rlk_write_wallfloor,
+        .write = test_write_wallfloor,
         .write_data = &g_wf,
         .grid = grid,
         .region_ids = region_ids,
@@ -434,7 +446,7 @@ test_fill_small_map(void) {
         .survive_low = 3,
         .survive_high = 5,
         .iterations = 3,
-        .write = rlk_write_wallfloor,
+        .write = test_write_wallfloor,
         .write_data = &g_wf,
         .grid = grid,
         .region_ids = region_ids,
@@ -574,14 +586,14 @@ static void
 test_writer_cb_data(uint64_t seed, const void *data, int x, int y,
                     rlk_tile_t *out) {
     (void)seed; (void)x; (void)y;
-    const rlk_wallfloor_t *d = (const rlk_wallfloor_t *)data;
+    const test_wf_t *d = (const test_wf_t *)data;
     out->type = (out->biome == 0) ? d->wall_type : d->floor_type;
 }
 
 static void
 test_fill_writer_with_data(void) {
     fixture_setup();
-    static const rlk_wallfloor_t wd = { .wall_type = 7, .floor_type = 3 };
+    static const test_wf_t wd = { .wall_type = 7, .floor_type = 3 };
     g_ca.write = test_writer_cb_data;
     g_ca.write_data = &wd;
 

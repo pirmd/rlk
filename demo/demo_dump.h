@@ -15,7 +15,7 @@
  *
  * All functions return 0 on success, -1 on I/O error.
  *
- *   demo_dump_asc("elev.asc", &g.lattice, g.v, -9999.0f);
+ *   demo_dump_asc("elev.asc", &g.lattice, g.values, -9999.0f);
  *   demo_dump_grid_pgm("elev.pgm", &g, 0.0f, 1.0f, scratch);
  *   demo_dump_mask_pgm("mask.pgm", &m);
  */
@@ -68,7 +68,7 @@ demo_dump_pgm(const char *path, int w, int h, const uint8_t *v) {
 static inline int
 demo_dump_mask_pgm(const char *path, const rlk_mask_t *m) {
     assert(m);
-    return demo_dump_pgm(path, m->lattice.w, m->lattice.h, m->v);
+    return demo_dump_pgm(path, m->lattice.w, m->lattice.h, m->weights);
 }
 
 /* PGM of a float grid, normalized [vmin,vmax] -> [0,255] (clamped;
@@ -80,7 +80,7 @@ demo_dump_grid_pgm(const char *path, const rlk_grid_t *g,
     const int n = g->lattice.w * g->lattice.h;
     const float span = vmax - vmin;
     for (int k = 0; k < n; k++) {
-        float t = span != 0.0f ? (g->v[k] - vmin) / span : 0.0f;
+        float t = span != 0.0f ? (g->values[k] - vmin) / span : 0.0f;
         if (t < 0.0f) t = 0.0f;
         if (t > 1.0f) t = 1.0f;
         scratch[k] = (uint8_t)(t * 255.0f + 0.5f);

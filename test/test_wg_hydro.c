@@ -61,10 +61,10 @@ static rlk_hydro_t hydro;
 static void
 hydro_setup(void) {
     elev = (rlk_grid_t){ .lattice = { .w = FW, .h = FH, .cellsize = FCELL,
-                                       .origin_x = 0, .origin_y = 0 }, .v = elev_buf };
+                                       .origin_x = 0, .origin_y = 0 }, .values = elev_buf };
     for (int j = 0; j < FH; j++)
         for (int i = 0; i < FW; i++)
-            elev.v[(size_t)j * FW + (size_t)i] = (float)i;
+            elev.values[(size_t)j * FW + (size_t)i] = (float)i;
     drain = (rlk_drain_t){ .lattice = elev.lattice, .filled = filled_buf,
                            .dir = dir_buf, .acc = acc_buf, .order = order_buf };
     assert(rlk_drain_build(&drain, &elev, -1.0f, drain_scratch) == RLK_OK);

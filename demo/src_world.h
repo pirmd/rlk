@@ -173,7 +173,7 @@ src_world_elevation_color(float e) {
 /* Sample elevation at a world tile position from the coarse grid. */
 static inline float
 src_world_sample_elevation(const tilemap_gen_t *g, int wx, int wy) {
-    return rlk_grid_sample(&g->elev_grid, (float)wx + 0.5f, (float)wy + 0.5f);
+    return rlk_grid_get(&g->elev_grid, (float)wx + 0.5f, (float)wy + 0.5f);
 }
 
 /* --- SOURCE CALLBACKS ---------------------------------------------------- */
@@ -217,7 +217,7 @@ src_world_color(void *data, int mode, int wx, int wy) {
         int ci = 0, cj = 0;
         float lk = 0.0f;
         if (rlk_grid_cell_of(&w->gen.elev_grid, wx, wy, &ci, &cj))
-            lk = rlk_drain_lake_depth(&w->gen.drain, &w->gen.elev_grid, SEA_LEVEL, ci, cj);
+            lk = rlk_drain_fill_depth(&w->gen.drain, &w->gen.elev_grid, ci, cj);
         float t = lk / 0.10f;
         if (t > 1.0f) t = 1.0f;
         uint32_t g = (uint32_t)(0x40f + t * 0xC0f);
@@ -405,7 +405,7 @@ src_world_draw(pxl_canvas_t *cnv, void *data, int o, int mode, const src_view_t 
 
     int half = v->tile_px / 4;
     for (int i = 0; i < w->gen.pois.n; i++) {
-        const rlk_poi_t *poi = &w->gen.pois.v[i];
+        const rlk_poi_t *poi = &w->gen.pois.pois[i];
         if (poi->type >= POI_KIND_COUNT) continue;
 
         int sx = poi->x - v->wx;
@@ -451,7 +451,7 @@ src_world_tile_info(char *buf, size_t cap, const void *data, int wx, int wy) {
     float lake = 0.0f;
     if (rlk_grid_cell_of(&w->gen.elev_grid, wx, wy, &ci, &cj)) {
         acc = w->gen.drain.acc[(size_t)cj * (size_t)w->gen.drain.lattice.w + (size_t)ci];
-        lake = rlk_drain_lake_depth(&w->gen.drain, &w->gen.elev_grid, SEA_LEVEL, ci, cj);
+        lake = rlk_drain_fill_depth(&w->gen.drain, &w->gen.elev_grid, ci, cj);
     }
 
     /* Captured derived fields */
@@ -464,7 +464,7 @@ src_world_tile_info(char *buf, size_t cap, const void *data, int wx, int wy) {
     const rlk_poi_t *near_poi = NULL;
     int near_dist = 9999;
     for (int i = 0; i < w->gen.pois.n; i++) {
-        const rlk_poi_t *p = &w->gen.pois.v[i];
+        const rlk_poi_t *p = &w->gen.pois.pois[i];
         int ddx = p->x - wx;
         int ddy = p->y - wy;
         int d = ddx * ddx + ddy * ddy;

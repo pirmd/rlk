@@ -79,19 +79,6 @@ test_rlk_hash_sub_avalanche(void) {
 /* Integration tests ----------------------------------------------------------- */
 
 static void
-test_rlk_hash_combine2_then_sub(void) {
-    /* Common pattern: combine seed with coords, then derive sub-seed */
-    uint64_t seed = 12345ULL;
-    int x = 10, y = 20;
-    uint64_t h1 = rlk_hash_sub(rlk_hash_combine2(seed, x, y), 0ULL);
-    uint64_t h2 = rlk_hash_sub(rlk_hash_combine2(seed, x, y), 0ULL);
-    assert(h1 == h2);
-    
-    uint64_t h3 = rlk_hash_sub(rlk_hash_combine2(seed, x, y), 1ULL);
-    assert(h1 != h3); /* Different salt = different hash */
-}
-
-static void
 test_rlk_hash_unique_per_coord(void) {
     /* Deterministic: known coords with same seed must give distinct hashes. */
     uint64_t seed = 999ULL;
@@ -105,6 +92,37 @@ test_rlk_hash_unique_per_coord(void) {
     assert(h1 != h2);
     assert(h1 != h3);
     assert(h2 != h3);
+}
+
+/* rlk_hash_at tests ------------------------------------------------------------ */
+
+static void
+test_rlk_hash_at_equals_combine2_sub(void) {
+    /* salt 0: plain avalanche of combine2 */
+    for (int x = -3; x <= 3; x++)
+        for (int y = -3; y <= 3; y++)
+            assert(rlk_hash_at(42ULL, x, y, 0ULL)
+                   == rlk_hash_sub(rlk_hash_combine2(42ULL, x, y), 0ULL));
+}
+
+static void
+test_rlk_hash_at_deterministic_decorrelated(void) {
+    assert(rlk_hash_at(7ULL, 3, -5, 0xCAFEULL) == rlk_hash_at(7ULL, 3, -5, 0xCAFEULL));
+    assert(rlk_hash_at(7ULL, 3, -5, 0ULL) != rlk_hash_at(7ULL, 3, -5, 1ULL));
+    assert(rlk_hash_at(7ULL, 3, -5, 0ULL) != rlk_hash_at(7ULL, 4, -5, 0ULL));
+    assert(rlk_hash_at(7ULL, 3, -5, 0ULL) != rlk_hash_at(8ULL, 3, -5, 0ULL));
+}
+
+/* rlk_hash_normf tests ---------------------------------------------------------- */
+
+static void
+test_rlk_hash_normf_range(void) {
+    assert(rlk_hash_normf(0ULL) == 0.0f);
+    for (uint64_t h = 0; h < 1000; h++) {
+        float f = rlk_hash_normf(h * 0x9E3779B97F4A7C15ULL + 0x123456789ULL);
+        assert(f >= 0.0f && f < 1.0f);
+    }
+    assert(rlk_hash_normf(0xFFFFFFFFFFFFFFFFULL) < 1.0f);
 }
 
 /* Main test runner ------------------------------------------------------------ */
@@ -123,9 +141,13 @@ main(void) {
     test_rlk_hash_sub_different_base();
     test_rlk_hash_sub_avalanche();
     
+    /* rlk_hash_at / rlk_hash_normf tests */
+    test_rlk_hash_at_equals_combine2_sub();
+    test_rlk_hash_at_deterministic_decorrelated();
+    test_rlk_hash_normf_range();
+
     /* Integration tests */
-    test_rlk_hash_combine2_then_sub();
     test_rlk_hash_unique_per_coord();
-    
+
     return 0;
 }

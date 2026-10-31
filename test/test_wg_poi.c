@@ -67,8 +67,8 @@ test_poi_stage_defaults(void) {
 
     /* size 0 -> default 32: bbox side is 32. */
     assert(list.n > 0);
-    assert(list.v[0].bbox.w == 32);
-    assert(list.v[0].bbox.h == 32);
+    assert(list.pois[0].bbox.w == 32);
+    assert(list.pois[0].bbox.h == 32);
     /* min_separation 0 -> default = size = 32: on a 16x16 map the first POI
        blocks every other tile -> exactly one POI. */
     assert(list.n == 1);
@@ -103,14 +103,14 @@ test_poi_stage_basic(void) {
      * but the list is capped at POI_CAP. */
     assert(list.n > 0);
     assert(list.n <= POI_CAP);
-    assert(list.v[0].type == (uint32_t)POI_CAVE);
-    assert(list.v[0].bbox.w == 16);
-    assert(list.v[0].bbox.h == 16);
+    assert(list.pois[0].type == POI_CAVE);
+    assert(list.pois[0].bbox.w == 16);
+    assert(list.pois[0].bbox.h == 16);
     /* bbox is centred on the anchor and contains it; gen/level are zeroed */
-    assert(list.v[0].bbox.x <= list.v[0].x && list.v[0].x < list.v[0].bbox.x + list.v[0].bbox.w);
-    assert(list.v[0].bbox.y <= list.v[0].y && list.v[0].y < list.v[0].bbox.y + list.v[0].bbox.h);
-    assert(list.v[0].gen == 0);
-    assert(list.v[0].level == 0);
+    assert(list.pois[0].bbox.x <= list.pois[0].x && list.pois[0].x < list.pois[0].bbox.x + list.pois[0].bbox.w);
+    assert(list.pois[0].bbox.y <= list.pois[0].y && list.pois[0].y < list.pois[0].bbox.y + list.pois[0].bbox.h);
+    assert(list.pois[0].gen == 0);
+    assert(list.pois[0].level == 0);
 }
 
 /* Below threshold: field <= threshold -> no POI. */
@@ -169,8 +169,8 @@ test_poi_stage_dedup(void) {
     /* Verify separation: no two POIs closer than 8 tiles. */
     for (int i = 0; i < list.n; i++) {
         for (int j = i + 1; j < list.n; j++) {
-            int dx = list.v[i].x - list.v[j].x;
-            int dy = list.v[i].y - list.v[j].y;
+            int dx = list.pois[i].x - list.pois[j].x;
+            int dy = list.pois[i].y - list.pois[j].y;
             int d2 = dx * dx + dy * dy;
             assert(d2 >= 64);  /* 8^2 */
         }
@@ -213,9 +213,9 @@ test_poi_stage_deterministic(void) {
 
     assert(list1.n == list2.n);
     for (int i = 0; i < list1.n; i++) {
-        assert(list1.v[i].x == list2.v[i].x);
-        assert(list1.v[i].y == list2.v[i].y);
-        assert(list1.v[i].seed == list2.v[i].seed);
+        assert(list1.pois[i].x == list2.pois[i].x);
+        assert(list1.pois[i].y == list2.pois[i].y);
+        assert(list1.pois[i].seed == list2.pois[i].seed);
     }
 }
 
@@ -235,10 +235,10 @@ static rlk_drain_t drain;
 
 static void
 drain_setup(void) {
-    elev_grid = (rlk_grid_t){ .lattice = { .w = FW, .h = FH, .cellsize = FCELL, .origin_x = 0, .origin_y = 0 }, .v = elev_buf };
+    elev_grid = (rlk_grid_t){ .lattice = { .w = FW, .h = FH, .cellsize = FCELL, .origin_x = 0, .origin_y = 0 }, .values = elev_buf };
     for (int j = 0; j < FH; j++)
         for (int i = 0; i < FW; i++)
-            elev_grid.v[(size_t)j * FW + (size_t)i] = (float)i;
+            elev_grid.values[(size_t)j * FW + (size_t)i] = (float)i;
 
     drain = (rlk_drain_t){ .lattice = elev_grid.lattice, .filled = filled_buf, .dir = dir_buf,
                            .acc = acc_buf, .order = order_buf };
@@ -300,7 +300,7 @@ static rlk_grid_t val_grid;
 
 static void
 grid_setup(void) {
-    val_grid = (rlk_grid_t){ .lattice = { .w = GW, .h = GH, .cellsize = GCELL, .origin_x = 0, .origin_y = 0 }, .v = grid_buf };
+    val_grid = (rlk_grid_t){ .lattice = { .w = GW, .h = GH, .cellsize = GCELL, .origin_x = 0, .origin_y = 0 }, .values = grid_buf };
     for (int j = 0; j < GH; j++)
         for (int i = 0; i < GW; i++) {
             float px, py;

@@ -633,7 +633,7 @@ test_rlk_wg_fill_slot_sampled(void) {
 
     static float buf[4 * 3];
     rlk_grid_t g = { .lattice = { .w = 4, .h = 3, .cellsize = 8,
-                                  .origin_x = -16, .origin_y = 24 }, .v = buf };
+                                  .origin_x = -16, .origin_y = 24 }, .values = buf };
     rlk_wg_fill_slot(&wg, 0, &g);
     for (int j = 0; j < 3; j++)
         for (int i = 0; i < 4; i++) {
@@ -658,7 +658,7 @@ test_rlk_wg_fill_slot_derived(void) {
 
     static float buf[3 * 2];
     rlk_grid_t g = { .lattice = { .w = 3, .h = 2, .cellsize = 1,
-                                  .origin_x = 5, .origin_y = 7 }, .v = buf };
+                                  .origin_x = 5, .origin_y = 7 }, .values = buf };
     rlk_wg_fill_slot(&wg, 1, &g);   /* slot 1 = nsampled(1) + derived 0 */
     for (int j = 0; j < 2; j++)
         for (int i = 0; i < 3; i++) {

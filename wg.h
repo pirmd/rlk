@@ -9,7 +9,7 @@
  *
  * Sampling convention: the fields of tile (wx, wy) are sampled at the tile
  * centre ((float)wx + 0.5f, (float)wy + 0.5f), consistent with
- * rlk_grid_sample / rlk_grid_center.
+ * rlk_grid_get / rlk_grid_center.
  */
 
 #include <assert.h>
@@ -164,8 +164,7 @@ rlk_wg_write_const(const rlk_wg_ctx_t *ctx, const void *data, rlk_tile_t *out) {
 static inline float
 rlk_wg_rand(const rlk_wg_t *wg, int wx, int wy, uint64_t salt) {
     assert(wg);
-    uint64_t h = rlk_hash_sub(rlk_hash_combine2(wg->seed, wx, wy), salt);
-    return (float)(h >> 40) * (1.0f / 16777216.0f);
+    return rlk_hash_normf(rlk_hash_at(wg->seed, wx, wy, salt));
 }
 
 /* Re-sample a wg field at an arbitrary float world position.

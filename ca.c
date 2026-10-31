@@ -354,17 +354,6 @@ connect_regions(rlk_ca_t *ca) {
 
 /* --- RENDER HELPERS ------------------------------------------------------ */
 
-/* 1 if the tile (x, y) is inside the bbox of a reserved POI. */
-static int
-reserved(const rlk_poi_list_t *poi, int x, int y) {
-    if (!poi)
-        return 0;
-    for (int i = 0; i < poi->n; i++)
-        if (rlk_rect_contains(&poi->v[(size_t)i].bbox, x, y))
-            return 1;
-    return 0;
-}
-
 /* Largest floor region: id, cell count and bounding box (cell coords). */
 static void
 largest_region(const rlk_ca_t *ca, int *out_rid,
@@ -437,7 +426,7 @@ rlk_ca_fill(rlk_ca_t *ca, const rlk_lattice_t *win, rlk_tilemap_t *tm,
     for (int y = 0; y < h; y++) {
         for (int x = 0; x < w; x++) {
             size_t idx = ca_idx(x, y, w);
-            if (mask && mask->v[idx] == 0)
+            if (mask && mask->weights[idx] == 0)
                 continue;
             const int wx = l->origin_x + x * cs;
             const int wy = l->origin_y + y * cs;
@@ -449,7 +438,7 @@ rlk_ca_fill(rlk_ca_t *ca, const rlk_lattice_t *win, rlk_tilemap_t *tm,
             for (int dy = 0; dy < cs; dy++) {
                 for (int dx = 0; dx < cs; dx++) {
                     const int tx = wx + dx, ty = wy + dy;
-                    if (!reserved(poi, tx, ty))
+                    if (!poi || !rlk_poi_at(poi, tx, ty))
                         rlk_tilemap_set(tm, tx, ty, tile);
                 }
             }

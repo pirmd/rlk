@@ -37,6 +37,25 @@
 #include "wg_relief.h"
 #include "wg_poi.h"
 
+/* --- Game-defined tile flag bits (rlk reserves none) --------------------- */
+
+enum {
+    DEMO_F_WALKABLE    = 1 << 0,
+    DEMO_F_TRANSPARENT = 1 << 1,
+};
+
+/* Ready-made writer for the ca/bsp `write` callback: wall/floor by biome
+   (0 = wall, > 0 = floor), deterministic variant from (seed, x, y). */
+typedef struct { uint8_t wall_type, floor_type; } demo_wallfloor_t;
+
+static inline void
+demo_write_wallfloor(uint64_t seed, const void *data, int x, int y,
+                     rlk_tile_t *out) {
+    const demo_wallfloor_t *wf = (const demo_wallfloor_t *)data;
+    out->type = (out->biome == 0) ? wf->wall_type : wf->floor_type;
+    out->variant = (uint8_t)(rlk_hash_normf(rlk_hash_at(seed, x, y, 0xCAFEULL)) * 255.0f);
+}
+
 /* --- Map geometry -------------------------------------------------------- */
 
 #define TM_W 128
