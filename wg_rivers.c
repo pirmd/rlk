@@ -38,8 +38,19 @@ rivers_stage(rlk_wg_ctx_t *ctx, const void *data) {
        (the constructor does not know the wg). */
     assert(r->slot_mask == RLK_WG_RIVERS_NONE || (int)r->slot_mask < wg->nderived);
     assert(r->slot_carve == RLK_WG_RIVERS_NONE || (int)r->slot_carve < wg->nderived);
+    assert(r->acc_log_field == RLK_WG_RIVERS_NONE || (int)r->acc_log_field < wg->nderived);
 
     const float cell = (float)r->elev->lattice.cellsize;
+
+    /* Hack's law: effective bank fade grows with the normalized log of the
+       upstream accumulation (specialist review 2026-10-30, hydrologist).
+       Larger fade -> wider mask for the same SDF distance. */
+    float bank_fade = r->bank_fade;
+    if (r->acc_log_field != RLK_WG_RIVERS_NONE && r->acc_log_gain > 0.0f) {
+        const int idx = wg->nsampled + r->acc_log_field;
+        assert(idx >= 0 && idx < RLK_WG_MAX_FIELDS);
+        bank_fade *= 1.0f + r->acc_log_gain * ctx->field[idx];
+    }
 
     /* Tile centre in world coords, displaced by optional meanders */
     float px = (float)ctx->wx + 0.5f;
@@ -56,8 +67,9 @@ rivers_stage(rlk_wg_ctx_t *ctx, const void *data) {
     const float d = rlk_drain_river_sdf(r->drain, (int)floorf(px), (int)floorf(py),
                                         r->acc_min);
     if (d < RLK_DRAIN_FAR) {
-        /* Water: full mask in the channel, fading over bank_fade tiles. */
-        mask = rlk_clampf(1.0f - d / r->bank_fade, 0.0f, 1.0f);
+        /* Water: full mask in the channel, fading over the (possibly
+           acc-widened) bank_fade tiles. */
+        mask = rlk_clampf(1.0f - d / bank_fade, 0.0f, 1.0f);
         /* Valley: quadratic profile, reach = valley_mult * cellsize. */
         const float reach = r->valley_mult * cell;
         const float vall = rlk_clampf(1.0f - d / reach, 0.0f, 1.0f);
@@ -131,6 +143,11 @@ rlk_wg_rivers(const rlk_wg_rivers_cfg_t *cfg) {
         st.writes.derived |= RLK_WG_SLOT(cfg->slot_mask);
     if (cfg->slot_carve != RLK_WG_RIVERS_NONE)
         st.writes.derived |= RLK_WG_SLOT(cfg->slot_carve);
+    /* The derived read is declared only when the rule is active (gain > 0):
+       a zero-init cfg has acc_log_field = 0, which would otherwise declare a
+       read of derived slot 0 and fail validation although the rule is off. */
+    if (cfg->acc_log_field != RLK_WG_RIVERS_NONE && cfg->acc_log_gain > 0.0f)
+        st.reads.derived |= RLK_WG_SLOT(cfg->acc_log_field);
     if (cfg->f_wig_x != RLK_WG_RIVERS_NONE)
         st.reads.sampled |= RLK_WG_SLOT(cfg->f_wig_x);
     if (cfg->f_wig_y != RLK_WG_RIVERS_NONE)

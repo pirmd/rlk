@@ -28,7 +28,9 @@ gen_province_mod_field(const tilemap_gen_t *gen, int f, float value, float x, fl
     return ctx.field[f];
 }
 
-/* Stage 0: provinces. Re-sample F_HUM at a large coordinate offset (at low
+/* Stage 0: provinces (specialist review 2026-10-30, geographer P0: 4-5 Voronoi
+   provinces with per-type field bias, applied before relief/rivers).
+   Re-sample F_HUM at a large coordinate offset (at low
    climate freqs the 128x96 map only covers a few lattice cells, so fields
    sampled at the same origin can correlate spuriously; the offset
    decorrelates humidity for any seed), then run the stock Voronoi modulator:
@@ -42,7 +44,8 @@ gen_province_stage(rlk_wg_ctx_t *ctx, const void *data) {
     gen->prov_mod.fn(ctx, gen->prov_mod.data);
 }
 
-/* Stage 3 wrapper: stock wg_relief stage, then rain shadow (post-relief).
+/* Stage 3 wrapper: stock wg_relief stage, then rain shadow (post-relief;
+   specialist review 2026-10-30, geographer P0: orographic rain shadow).
    Dominant wind west -> east: air rising on the west slope of a range
    (elevation increasing eastward) is humid (orographic lift), air sinking
    on the east slope is dry (foehn). The slope is read from the coarse
@@ -66,7 +69,8 @@ gen_relief_rain_stage(rlk_wg_ctx_t *ctx, const void *data) {
     ctx->field[F_HUM] = hum < 0.0f ? 0.0f : (hum > 1.0f ? 1.0f : hum);
 }
 
-/* Stage: modulate the river mask by Strahler order — headwater streams
+/* Stage: modulate the river mask by Strahler order (specialist review
+   2026-10-30, hydrologist P1: width by stream order) — headwater streams
    (order 1-2) run narrow, rivers (3-4) normal, big rivers (5+) wide.
    The mask threshold in the writers (mask > 0.5) turns the scale factor
    into a width change of roughly +/-0.7 tile around the drain SDF width. */
@@ -233,6 +237,23 @@ gen_relief_elev_fn(float px, float py, const void *user) {
     elev += gen_geo_eval(ctx->gen, px, py, elev, NULL, NULL);
 
     return elev;
+}
+
+/* Stage: latitudinal thermal gradient (specialist review 2026-10-30,
+   geographer): F_TEMP only knows altitudinal lapse cooling, no latitude —
+   yet the map is ~64 tiles "tall". Subtract a linear gradient peaking at
+   the map top/bottom edges (|py| / lat_half_span). Runs after the relief
+   stage, which write-backs the lapse-cooled F_TEMP. The Köppen classify
+   axis reads the result (D_TEMP_LAT) instead of raw F_TEMP; POI detectors
+   keep raw F_TEMP. */
+void
+gen_temp_lat_stage(rlk_wg_ctx_t *ctx, const void *data) {
+    const gen_temp_lat_cfg_t *c = (const gen_temp_lat_cfg_t *)data;
+    const rlk_wg_t *wg = ctx->wg;
+    const float py = (float)ctx->wy + 0.5f;
+    const float lat = fabsf(py) / c->lat_half_span;
+    float t = ctx->field[c->f_temp] - c->temp_drop * lat;
+    ctx->field[wg->nsampled + c->slot_out] = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
 }
 
 /* --- POI: terrain-constrained detectors -----------------------------------

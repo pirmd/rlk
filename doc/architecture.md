@@ -52,6 +52,13 @@ Each stage declares the slots it reads and writes (`rlk_wg_stage_t.reads` /
 (or references a slot out of range; same check for the axes, against all
 stages). Stage order is therefore explicit and checked, not implicit.
 
+Specialist-review rules (2026-10-30, archived in TODO.candidats/revues_specialistes.md,
+cited in code comments): Hack's law — `wg_drain` writes the derived slot
+`slot_acc_log` (normalized log10(acc)) and `wg_rivers` widens its bank fade with
+`acc_log_field`/`acc_log_gain`; latitudinal thermal gradient — a demo stage
+writes `D_TEMP_LAT` and the Köppen axis reads it instead of raw temperature;
+roads as an MST over sites (demo_world.c).
+
 Drivers (sinks are pluggable; the tilemap is only one sink):
 
 - `rlk_wg_run(wg, ox, oy, w, h, sink, user)` evaluates the pipeline over the

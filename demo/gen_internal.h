@@ -11,7 +11,9 @@
 
 /* --- Shared thresholds ---------------------------------------------------
    Elevation thresholds (relief stage output ~[0,1]). Beach is a thin slice
-   (0.03, like demo_worldgen) so coasts read naturally. */
+   (0.03, like demo_worldgen) so coasts read naturally. ELEV_LOWLAND 0.70 /
+   ELEV_MOUNTAIN 0.85 put mountains at ~15-20% of emerged land (specialist
+   review 2026-10-30, geographer P1), not 10%. */
 #define ELEV_DEEP     0.33f
 #define ELEV_SHALLOW  0.36f
 #define ELEV_BEACH    0.39f
@@ -56,6 +58,7 @@ float gen_geo_eval(const tilemap_gen_t *gen, float x, float y, float elev,
 void  gen_geology_stage(rlk_wg_ctx_t *ctx, const void *data);
 float gen_relief_elev_fn(float px, float py, const void *user);
 void  gen_poi_terrain_stage(rlk_wg_ctx_t *ctx, const void *data);
+void  gen_temp_lat_stage(rlk_wg_ctx_t *ctx, const void *data);
 
 /* --- gen_write.c: zone writers ------------------------------------------- */
 

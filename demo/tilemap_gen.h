@@ -101,6 +101,8 @@ enum {
     D_SLOPE,         /* D8 downslope, elev units/tile (wg_hydro) */
     D_STRAHLER,      /* Strahler stream order (wg_hydro) */
     D_SPEED,         /* Manning speed estimate (wg_hydro) */
+    D_ACC_LOG,       /* normalized log10(acc) [0,1] (wg_drain slot_acc_log, Hack's law) */
+    D_TEMP_LAT,      /* latitudinal thermal gradient (demo stage, specialist review 2026-10-30) */
     F_NDERIVED
 };
 
@@ -112,11 +114,14 @@ enum {
 #define F_SLOPE       (F_NSAMPLED + D_SLOPE)
 #define F_STRAHLER    (F_NSAMPLED + D_STRAHLER)
 #define F_SPEED       (F_NSAMPLED + D_SPEED)
+#define F_ACC_LOG     (F_NSAMPLED + D_ACC_LOG)
+#define F_TEMP_LAT    (F_NSAMPLED + D_TEMP_LAT)
 
 /* --- Zone (biome) indices ------------------------------------------------ */
 
 /* Zones: water by elevation, then 6 land biomes on the (temp, hum) plane
-   (Köppen simplified), then mountain/snow by elevation. */
+   (Köppen simplified; humidity axis + 6 biomes from specialist review
+   2026-10-30, geographer P0), then mountain/snow by elevation. */
 enum {
     Z_DEEP = 0,
     Z_SHALLOW,
@@ -171,6 +176,17 @@ enum {
 
 /* --- State --------------------------------------------------------------- */
 
+/* Latitudinal thermal gradient stage config (specialist review 2026-10-30,
+   geographer): D_TEMP_LAT = clamp(F_TEMP - temp_drop * |py| / lat_half_span).
+   The Köppen classify axis reads the result instead of raw F_TEMP, so map
+   edges (poles) are colder. Must run after the relief stage (lapse write-back). */
+typedef struct {
+    uint8_t f_temp;          /* sampled field read (post-lapse) */
+    uint8_t slot_out;        /* derived slot written */
+    float   temp_drop;       /* total drop at |py| = lat_half_span (e.g. 0.15) */
+    float   lat_half_span;   /* half map height in tiles (TM_H / 2) */
+} gen_temp_lat_cfg_t;
+
 typedef struct tilemap_gen_s tilemap_gen_t;
 
 /* Capture wrapper: intercepts zone writer calls to store derived fields
@@ -215,6 +231,7 @@ struct tilemap_gen_s {
     rlk_wg_hydro_cfg_t hydro_stage;
     rlk_wg_rivers_cfg_t rivers_stage;
     rlk_wg_relief_cfg_t relief_stage;
+    gen_temp_lat_cfg_t temp_lat_cfg;
 
     /* POI detection */
     rlk_poi_t poi_buf[256];

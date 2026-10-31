@@ -37,8 +37,9 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
     wg->fields[F_CREEK]  = (rlk_wg_field_t){ .kind = RLK_WG_FBM,   .seed = 11, .octaves = 2, .freq = 0.025f, .gain = 0.5f };
     wg->fields[F_HUM]    = (rlk_wg_field_t){ .kind = RLK_WG_FBM,   .seed = 12, .octaves = 4, .freq = 0.040f, .gain = 0.5f };
 
-    /* --- Provinces: stock Voronoi modulator biasing the sampled fields before
-       relief/rivers. Type 0 is neutral; 1..4 are ARID/LUSH/COLD/ISLES.
+    /* --- Provinces (specialist review 2026-10-30, geographer P0): stock
+       Voronoi modulator biasing the sampled fields before relief/rivers.
+       Type 0 is neutral; 1..4 are ARID/LUSH/COLD/ISLES.
        cell 64 tiles, blend 16 tiles: macro-zones a few cells wide. */
     gen->prov_cfg = (rlk_wg_modulator_cfg_t){
         .ntypes = 5,
@@ -130,7 +131,7 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
                                       .reads = { .sampled = RLK_WG_SLOTS_ALL },
                                       .writes = { .sampled = RLK_WG_SLOTS_ALL } });
 
-    /* Stage 1: wg_drain — inject accumulation + lake depth */
+    /* Stage 1: wg_drain — inject lake depth + normalized log10(acc) */
     gen->drain_stage = (rlk_wg_drain_cfg_t){
         .drain = &gen->drain,
         .elev = &gen->elev_grid,
@@ -138,6 +139,7 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
         .slot_acc  = RLK_WG_DRAIN_NONE,   /* acc read straight from the drain grid */
         .slot_dir  = RLK_WG_DRAIN_NONE,
         .slot_lake = D_LAKE,
+        .slot_acc_log = D_ACC_LOG,        /* Hack's law input for wg_rivers (review 2026-10-30) */
         .acc_scale = 1.0f,
     };
     rlk_wg_add(wg, rlk_wg_drain(&gen->drain_stage));
@@ -153,7 +155,8 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
 
     /* Stage 3: wg_rivers — project drainage into per-tile river masks.
        Channel width follows the drain SDF (~log2(acc), capped at cellsize);
-       mask fades 1 tile past the bank, valley reach = 2 * cellsize.
+       mask fades 1 tile past the bank, widened by log(acc) (Hack, review
+       2026-10-30, via D_ACC_LOG); valley reach = 2 * cellsize.
        Meanders from F_WIG_X/Y, creeks from F_CREEK, lakes from the filtered grid. */
     gen->rivers_stage = (rlk_wg_rivers_cfg_t){
         .drain = &gen->drain,
@@ -165,6 +168,9 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
         .carve = 0.03f,
         .slot_mask = D_RIVER_MASK,
         .slot_carve = D_RIVER_CARVE,
+        /* Hack's law (specialist review 2026-10-30): banks widen with log(acc) */
+        .acc_log_field = D_ACC_LOG,
+        .acc_log_gain = 0.3f,
         .lake_depth = &gen->lake_grid,
         .lake_min_depth = LAKE_MIN_DEPTH,
         .f_wig_x = F_WIG_X,
@@ -229,7 +235,19 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
                                       .reads = { .derived = RLK_WG_SLOT(D_ELEV) },
                                       .writes = { .derived = RLK_WG_SLOT(D_ELEV) } });
 
-    /* Stage 7-10: POI detectors */
+    /* Stage 7: latitudinal thermal gradient — after relief (lapse write-back),
+       before classify. The Köppen axis reads D_TEMP_LAT (review 2026-10-30). */
+    gen->temp_lat_cfg = (gen_temp_lat_cfg_t){
+        .f_temp = F_TEMP,
+        .slot_out = D_TEMP_LAT,
+        .temp_drop = 0.15f,
+        .lat_half_span = (float)TM_H / 2.0f,
+    };
+    rlk_wg_add(wg, (rlk_wg_stage_t){ .fn = gen_temp_lat_stage, .data = &gen->temp_lat_cfg,
+                                      .reads = { .sampled = RLK_WG_SLOT(F_TEMP) },
+                                      .writes = { .derived = RLK_WG_SLOT(D_TEMP_LAT) } });
+
+    /* Stage 8-11: POI detectors */
     gen->pois = (rlk_poi_list_t){ gen->poi_buf, 0, 256 };
 
     /* Cave: on hills/mountains, high detail noise */
@@ -295,16 +313,20 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
     };
     rlk_wg_add(wg, rlk_wg_poi(&gen->poi_tower_cfg));
 
-    /* Stage 11: terrain-constrained POI kinds (zone/slope/river/geology) */
+    /* Stage 12: terrain-constrained POI kinds (zone/slope/river/geology) */
     rlk_wg_add(wg, (rlk_wg_stage_t){ .fn = gen_poi_terrain_stage, .data = gen,
                                       .reads = { .sampled = RLK_WG_SLOT(F_TEMP) | RLK_WG_SLOT(F_HUM),
                                                  .derived = RLK_WG_SLOT(D_ELEV) | RLK_WG_SLOT(D_RIVER_MASK) | RLK_WG_SLOT(D_SLOPE) } });
 
-    /* Axes: elevation (relief output), temperature (lapse-cooled), humidity */
+    /* Axes: elevation (relief output), temperature, humidity.
+       3-axis climate plane (elev x temp x hum): specialist review 2026-10-30,
+       geographer P0 (Köppen simplified on temp x hum). Axis 1 reads
+       F_TEMP_LAT (lapse-cooled + latitudinal gradient, stage 7), not raw
+       F_TEMP, so the map edges are colder (review 2026-10-30). */
     wg->naxes = 3;
-    wg->axes[0] = (rlk_wg_axis_t){ .field = F_ELEV,  .jitter_field = F_DETAIL, .jitter_amp = 0.03f };
-    wg->axes[1] = (rlk_wg_axis_t){ .field = F_TEMP, .jitter_field = F_DETAIL, .jitter_amp = 0.03f };
-    wg->axes[2] = (rlk_wg_axis_t){ .field = F_HUM,  .jitter_field = F_DETAIL, .jitter_amp = 0.03f };
+    wg->axes[0] = (rlk_wg_axis_t){ .field = F_ELEV,     .jitter_field = F_DETAIL, .jitter_amp = 0.03f };
+    wg->axes[1] = (rlk_wg_axis_t){ .field = F_TEMP_LAT, .jitter_field = F_DETAIL, .jitter_amp = 0.03f };
+    wg->axes[2] = (rlk_wg_axis_t){ .field = F_HUM,      .jitter_field = F_DETAIL, .jitter_amp = 0.03f };
 
     /* Zones: elevation slices on axis 0; the lowland band splits into the 6
        Köppen biomes on (temp, hum). Unbound axes use +/- RLK_WG_OPEN. */
@@ -334,6 +356,9 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
     wg->depth_scale = 0.15f;
     wg->transition_width = 0.10f;
 
+    /* Guard: a dropped stage (table full) must fail loudly, not silently
+       skip the last detector. */
+    assert(wg->nstages == 13);
     assert(rlk_wg_init(wg) == RLK_OK);
     rlk_wg_fill(wg, 0, 0, &gen->tm);
 

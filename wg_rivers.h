@@ -12,6 +12,12 @@
  * channel, fading to 0 over `bank_fade` tiles past the bank. The valley
  * carve is a quadratic profile with reach = valley_mult * cellsize.
  *
+ * Hack's law (specialist review 2026-10-30, hydrologist): with acc_log_field
+ * set, the effective bank fade grows with the normalized log accumulation —
+ * bank_fade * (1 + acc_log_gain * acc_log) — so big rivers also have wide
+ * banks. acc_log_field typically reads the slot written by wg_drain's
+ * slot_acc_log; the stage order is validated by rlk_wg_init().
+ *
  * Outputs (derived fields):
  *   slot_mask  -> river mask [0,1] (0 = no river, 1 = river centre)
  *   slot_carve -> valley depth to subtract from elevation (optional)
@@ -54,6 +60,12 @@ typedef struct {
 
     uint8_t slot_mask;          /* derived field for river mask [0,1] */
     uint8_t slot_carve;         /* derived field for valley carve, or NONE */
+
+    /* Optional: Hack's law — widen the bank fade with log(acc).
+       Off (no slot read) when acc_log_field is NONE or acc_log_gain <= 0,
+       so a zero-initialized cfg stays valid. */
+    uint8_t acc_log_field;      /* derived field with normalized log10(acc), or NONE */
+    float   acc_log_gain;       /* widening gain (e.g. 0.3); <= 0 = off */
 
     /* Optional: lake overlay */
     const rlk_grid_t *lake_depth;  /* pre-computed lake depths; NULL = none */

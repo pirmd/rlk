@@ -36,15 +36,17 @@ typedef struct {
 static const uint64_t SEEDS[] = { 42ULL, 7ULL, 1ULL, 1337ULL, 2026ULL };
 #define N_SEEDS ((int)(sizeof SEEDS / sizeof SEEDS[0]))
 
-/* Golden values captured 2026-10-30 (refactor/next). Re-record with
+/* Golden values captured 2026-10-30 (refactor/next), re-recorded after the
+   specialist-review changes of 2026-10-30 (Hack bank fade via D_ACC_LOG,
+   latitudinal gradient D_TEMP_LAT on the Köppen axis). Re-record with
    `demo_metrics record` only on an intentional generation change. */
 static const golden_t GOLDEN[N_SEEDS] = {
     /* entropy    water     river    land     comps largest sink poi */
-    { 3.115147f, 0.259115f, 0.044027f, 0.655843f, 41, 4982, 50, 22 },  /* seed 42 */
-    { 2.493517f, 0.398438f, 0.015299f, 0.550049f, 54, 6199, 25, 19 },  /* seed 7 */
-    { 3.097921f, 0.270345f, 0.018555f, 0.683105f, 47, 8241, 42, 26 },  /* seed 1 */
-    { 3.268780f, 0.113932f, 0.086182f, 0.642904f, 68, 4365, 32, 24 },  /* seed 1337 */
-    { 3.190763f, 0.158366f, 0.067952f, 0.636637f, 54, 6189, 52, 30 },  /* seed 2026 */
+    { 3.122547f, 0.259521f, 0.045085f, 0.654541f, 40, 4978, 50, 22 },  /* seed 42 */
+    { 2.596394f, 0.398438f, 0.015706f, 0.549967f, 54, 6198, 25, 19 },  /* seed 7 */
+    { 3.044841f, 0.271484f, 0.018880f, 0.681315f, 46, 8194, 41, 27 },  /* seed 1 */
+    { 3.292967f, 0.113851f, 0.087972f, 0.644613f, 65, 4399, 32, 24 },  /* seed 1337 */
+    { 3.193472f, 0.158691f, 0.069417f, 0.636393f, 55, 6194, 52, 30 },  /* seed 2026 */
 };
 
 #define ENT_TOL   1e-3f

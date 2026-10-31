@@ -7,8 +7,9 @@
  *      over its bbox; already-processed POIs are reserved (no overlap);
  *      each generator emits a spawn entrance POI (gen + 1) that grows the
  *      queue as a marker only (gen > MAX_GEN is not generated)
- *   3. roads connect surface sites (villages, towers): walkability mask +
- *      slope-weighted cost table + rlk_path_find + rlk_path_draw
+ *   3. roads connect surface sites (villages, towers) as a minimum spanning
+ *      tree (Prim over squared distances), outposts link to the nearest site:
+ *      walkability mask + slope-weighted cost table + rlk_path_find/draw
  *
  * Terminal-only: no PXL dependency. Prints an ASCII map plus map stats;
  * argv selects the view: demo_world [seed] [map|elev|rel|flow|lake|river].
@@ -206,6 +207,32 @@ display(const tilemap_gen_t *gen, int mode) {
     }
 }
 
+/* Squared euclidean distance between two POI anchors (MST edge weight). */
+static int
+poi_d2(const rlk_poi_t *pa, const rlk_poi_t *pb) {
+    int dx = pb->x - pa->x, dy = pb->y - pa->y;
+    return dx * dx + dy * dy;
+}
+
+/* Draw one road between two POI anchors over the cost table.
+   Returns the path length, or -1 if no path was found. */
+static int
+road_draw(const rlk_path_cost_t *cost, rlk_path_scratch_t *scr,
+          rlk_tilemap_t *tm, int *path_buf, int cap,
+          const rlk_poi_t *pa, const rlk_poi_t *pb) {
+    int n = 0;
+    rlk_err_t err = rlk_path_find(cost, scr, pa->x, pa->y, pb->x, pb->y,
+                                  path_buf, cap, &n);
+    if (err != RLK_OK) {
+        printf("Road (%d,%d) -> (%d,%d): %s\n",
+               pa->x, pa->y, pb->x, pb->y, rlk_err_to_string(err));
+        return -1;
+    }
+    rlk_path_draw(tm, path_buf, n, 1, (rlk_tile_t){ .type = TILE_ROAD });
+    printf("Road (%d,%d) -> (%d,%d): %d steps\n", pa->x, pa->y, pb->x, pb->y, n);
+    return n;
+}
+
 /* --- MAIN ---------------------------------------------------------------- */
 
 int
@@ -241,6 +268,9 @@ main(int argc, char **argv) {
     static uint8_t p_closed[TM_W * TM_H];
     static int path_buf[2 * TM_W * TM_H];
     static int sites[256];
+    static uint8_t tree_in[256];   /* Prim MST: in-tree flags */
+    static int tree_d2[256];       /* Prim MST: best edge weight per site */
+    static int tree_from[256];     /* Prim MST: parent site per site */
 
     static const rlk_wallfloor_t wf_ca = {
         .wall_type = TILE_CAVE_WALL, .floor_type = TILE_CAVE_FLOOR,
@@ -324,7 +354,8 @@ main(int argc, char **argv) {
         rlk_poi_push(&done, p);
     }
 
-    /* 3. Roads between surface sites (villages, towers): mask + slope cost. */
+    /* 3. Roads: MST over surface sites (villages, towers, hamlets, forts):
+       walkability mask + slope cost, then Prim (see below). */
     rlk_mask_t walkable = { .lattice = rlk_tilemap_lattice(&gen.tm), .v = walk_buf };
     rlk_mask_from_tilemap(&walkable, &gen.tm, &TILE_PROPS, RLK_TILE_WALKABLE, NULL);
 
@@ -359,36 +390,40 @@ main(int argc, char **argv) {
         }
     }
 
+    /* Minimum spanning tree (Prim) over the surface sites — specialist review
+       2026-10-30, game designer: nearest-neighbor pairing gives a graph with
+       dead ends and no hierarchy; an MST connects every site with minimal
+       total length. Edge weight = squared euclidean distance (topology is
+       geometric, the path itself is slope-weighted). O(n^2), n <= 256, no
+       allocation; deterministic (strict < keeps the lowest index on ties). */
     int n_routes = 0, total_len = 0;
-    for (int a = 0; a < nsites; a++) {
-        const rlk_poi_t *pa = &gen.pois.v[sites[a]];
-        int best = -1, best_d2 = INT_MAX;
+    if (nsites > 0) {
+        tree_in[0] = 1;
         for (int b = 0; b < nsites; b++) {
-            if (b == a) continue;
-            const rlk_poi_t *pb = &gen.pois.v[sites[b]];
-            int dx = pb->x - pa->x, dy = pb->y - pa->y;
-            int d2 = dx * dx + dy * dy;
-            if (d2 < best_d2) { best_d2 = d2; best = b; }
+            tree_d2[b] = poi_d2(&gen.pois.v[sites[0]], &gen.pois.v[sites[b]]);
+            tree_from[b] = 0;
         }
-        if (best < 0 || sites[best] < sites[a]) continue;   /* each pair once */
-        const rlk_poi_t *pb = &gen.pois.v[sites[best]];
-
-        int n = 0;
-        rlk_err_t err = rlk_path_find(&cost, &scr, pa->x, pa->y, pb->x, pb->y,
-                                      path_buf, TM_W * TM_H, &n);
-        if (err == RLK_OK) {
-            rlk_path_draw(&gen.tm, path_buf, n, 1, (rlk_tile_t){ .type = TILE_ROAD });
-            n_routes++;
-            total_len += n;
-            printf("Road (%d,%d) -> (%d,%d): %d steps\n", pa->x, pa->y, pb->x, pb->y, n);
-        } else {
-            printf("Road (%d,%d) -> (%d,%d): %s\n",
-                   pa->x, pa->y, pb->x, pb->y, rlk_err_to_string(err));
+        for (int e = 1; e < nsites; e++) {
+            int best = -1, best_d2 = INT_MAX;
+            for (int b = 0; b < nsites; b++)
+                if (!tree_in[b] && tree_d2[b] < best_d2) { best_d2 = tree_d2[b]; best = b; }
+            if (best < 0) break;   /* unreachable remainder (complete graph: cannot happen) */
+            tree_in[best] = 1;
+            const rlk_poi_t *pa = &gen.pois.v[sites[tree_from[best]]];
+            const rlk_poi_t *pb = &gen.pois.v[sites[best]];
+            int n = road_draw(&cost, &scr, &gen.tm, path_buf, TM_W * TM_H, pa, pb);
+            if (n > 0) { n_routes++; total_len += n; }
+            for (int b = 0; b < nsites; b++) {
+                if (tree_in[b]) continue;
+                int d = poi_d2(pb, &gen.pois.v[sites[b]]);
+                if (d < tree_d2[b]) { tree_d2[b] = d; tree_from[b] = best; }
+            }
         }
     }
 
     /* 3b. POI network: each outpost (mine, mill, port, lighthouse) links to
-       its nearest settlement — commerce routes mine -> village -> port. */
+       its nearest settlement in the tree — commerce routes mine -> village
+       -> port (specialist review 2026-10-30, game designer). */
     for (int i = 0; i < gen.pois.n && nsites > 0; i++) {
         const rlk_poi_t *p = &gen.pois.v[i];
         if (p->gen != 0)
@@ -402,23 +437,12 @@ main(int argc, char **argv) {
         int best = -1, best_d2 = INT_MAX;
         for (int b = 0; b < nsites; b++) {
             const rlk_poi_t *pb = &gen.pois.v[sites[b]];
-            int dx = pb->x - p->x, dy = pb->y - p->y;
-            int d2 = dx * dx + dy * dy;
+            int d2 = poi_d2(p, pb);
             if (d2 < best_d2) { best_d2 = d2; best = b; }
         }
         const rlk_poi_t *pb = &gen.pois.v[sites[best]];
-        int n = 0;
-        rlk_err_t err = rlk_path_find(&cost, &scr, p->x, p->y, pb->x, pb->y,
-                                      path_buf, TM_W * TM_H, &n);
-        if (err == RLK_OK) {
-            rlk_path_draw(&gen.tm, path_buf, n, 1, (rlk_tile_t){ .type = TILE_ROAD });
-            n_routes++;
-            total_len += n;
-            printf("Road (%d,%d) -> (%d,%d): %d steps\n", p->x, p->y, pb->x, pb->y, n);
-        } else {
-            printf("Road (%d,%d) -> (%d,%d): %s\n",
-                   p->x, p->y, pb->x, pb->y, rlk_err_to_string(err));
-        }
+        int n = road_draw(&cost, &scr, &gen.tm, path_buf, TM_W * TM_H, p, pb);
+        if (n > 0) { n_routes++; total_len += n; }
     }
 
     /* Output. */

@@ -10,7 +10,8 @@
 
 #include "gen_internal.h"
 
-/* Widen the river mask near the coast: up to 2x at the shoreline.
+/* Widen the river mask near the coast: up to 2x at the shoreline
+   (specialist review 2026-10-30, hydrologist P1: estuary at river mouths).
    Uses the final elevation to estimate distance from the sea.
    shore = 0 at waterline, 1 at ELEV_BEACH (landward edge of beach). */
 static inline float
@@ -50,10 +51,10 @@ rock_variant(const rlk_wg_ctx_t *ctx, const tilemap_gen_t *gen, float depth) {
     }
 }
 
-/* Côtes variées: largeur de plage = f(pente locale, F_SLOPE D8).
-   Pente douce -> le sable remonte loin dans les terres (plage large),
-   pente raide -> falaise (rocher). Ne s'applique que dans la bande
-   côtière [ELEV_BEACH, ELEV_BEACH + COAST_EXT] des zones terrestres. */
+/* Varied coasts (specialist review 2026-10-30, geographer P2): beach width =
+   f(local D8 slope, F_SLOPE). Gentle slope -> wide beach (sand rises inland),
+   steep slope -> cliff (rock). Only in the coastal band
+   [ELEV_BEACH, ELEV_BEACH + COAST_EXT] of land zones. */
 static int
 write_coast(const rlk_wg_ctx_t *ctx, const void *data, rlk_tile_t *out) {
     float elev = ctx->field[F_ELEV];
@@ -155,7 +156,8 @@ write_land_water(const rlk_wg_ctx_t *ctx, rlk_tile_t *out) {
         out->flags = 0x02;
         return 1;
     }
-    /* Marsh: floodplain near the coast (river edge or valley, low elevation) */
+    /* Marsh: floodplain near the coast (review 2026-10-30, hydrologist P1:
+       wetland = river edge or valley at low elevation, not an arbitrary rule) */
     float carve = ctx->field[F_RIVER_CARVE];
     if ((mask > 0.0f || carve > 0.0f) && ctx->field[F_ELEV] < ELEV_BEACH + 0.08f) {
         out->type = TILE_MARSH;
@@ -286,9 +288,10 @@ write_mountain(const rlk_wg_ctx_t *ctx, const void *data, rlk_tile_t *out) {
 static void
 write_snow(const rlk_wg_ctx_t *ctx, const void *data, rlk_tile_t *out) {
     if (write_land_water(ctx, out)) return;
-    /* Snow line = f(temperature): 0.85 when cold (snow at sea level at the
-       poles), 1.00 when hot (~5000 m at the equator). Smoothstep over 0.05
-       of elevation: patchy snow near the line, pure white above. */
+    /* Snow line = f(temperature) (specialist review 2026-10-30, geographer P1):
+       0.85 when cold (snow at sea level at the poles), 1.00 when hot (~5000 m
+       at the equator). Smoothstep over 0.05 of elevation: patchy snow near
+       the line, pure white above. */
     float snow_line = 0.85f + 0.15f * ctx->field[F_TEMP];
     float t = (ctx->field[F_ELEV] - snow_line) / 0.05f;
     if (t <= 0.0f) {

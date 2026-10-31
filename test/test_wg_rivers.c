@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <math.h>
 
+#include "wg_drain.h"
 #include "wg_rivers.h"
 
 #define MAP 16
@@ -322,6 +323,98 @@ test_rivers_stage_creeks(void) {
     assert(has_creek);
 }
 
+/* Hack's law (specialist review 2026-10-30): with acc_log_field + gain > 0 the
+   bank fade widens with log(acc), so the total mask strictly grows. Rule off
+   (gain 0 or field NONE) gives identical deterministic output. */
+static unsigned long
+mask_sum(const rlk_wg_t *wg) {
+    static rlk_tile_t buf[MAP * MAP];
+    rlk_tilemap_t tm;
+    rlk_tilemap_init(&tm, MAP, MAP, buf, sizeof(buf));
+    rlk_wg_fill(wg, 0, 0, &tm);
+    unsigned long sum = 0;
+    for (int y = 0; y < MAP; y++)
+        for (int x = 0; x < MAP; x++)
+            sum += rlk_tilemap_get(&tm, x, y)->variant;
+    return sum;
+}
+
+static void
+test_rivers_stage_hack_acc_log(void) {
+    drain_setup();
+
+    /* wg with 3 derived slots: 0=mask, 1=carve, 2=acc_log (written by wg_drain) */
+    rlk_wg_drain_cfg_t d = {0};
+    d.drain = &drain;
+    d.elev = &elev;
+    d.sea = -1.0f;
+    d.slot_acc_log = 2;
+
+    rlk_wg_rivers_cfg_t r = {0};
+    r.drain = &drain;
+    r.elev = &elev;
+    r.sea = 0.0f;
+    r.acc_min = 1;
+    r.bank_fade = 1.0f;
+    r.valley_mult = 3.0f;
+    r.carve = 0.05f;
+    r.slot_mask = 0;
+    r.slot_carve = 1;
+    r.acc_log_field = 2;
+    r.acc_log_gain = 2.0f;   /* strong gain for a clear widening */
+
+    rlk_wg_t wg = wg_min();
+    wg.nderived = 3;
+    assert(rlk_wg_add(&wg, rlk_wg_drain(&d)) == RLK_OK);
+    assert(rlk_wg_add(&wg, rlk_wg_rivers(&r)) == RLK_OK);
+    assert(rlk_wg_init(&wg) == RLK_OK);
+    const unsigned long sum_hack = mask_sum(&wg);
+    assert(sum_hack > 0);
+
+    /* Rule off: gain 0 */
+    rlk_wg_t wg2 = wg_min();
+    wg2.nderived = 3;
+    assert(rlk_wg_add(&wg2, rlk_wg_drain(&d)) == RLK_OK);
+    rlk_wg_rivers_cfg_t r2 = r;
+    r2.acc_log_gain = 0.0f;
+    assert(rlk_wg_add(&wg2, rlk_wg_rivers(&r2)) == RLK_OK);
+    assert(rlk_wg_init(&wg2) == RLK_OK);
+    const unsigned long sum_off = mask_sum(&wg2);
+
+    /* Rule off: field NONE (gain stays 2.0, ignored) — must equal gain 0 */
+    rlk_wg_t wg3 = wg_min();
+    wg3.nderived = 3;
+    assert(rlk_wg_add(&wg3, rlk_wg_drain(&d)) == RLK_OK);
+    rlk_wg_rivers_cfg_t r3 = r;
+    r3.acc_log_field = RLK_WG_RIVERS_NONE;
+    assert(rlk_wg_add(&wg3, rlk_wg_rivers(&r3)) == RLK_OK);
+    assert(rlk_wg_init(&wg3) == RLK_OK);
+    const unsigned long sum_none = mask_sum(&wg3);
+
+    assert(sum_hack > sum_off);
+    assert(sum_none == sum_off);
+}
+
+/* Validation: acc_log_field on a derived slot no EARLIER stage writes
+   (here: written by the rivers stage itself) -> RLK_E_INVALID at init. */
+static void
+test_rivers_acc_log_unwritten_slot(void) {
+    drain_setup();
+
+    rlk_wg_t wg = wg_min();   /* nderived = 2 */
+    rlk_wg_rivers_cfg_t r = {0};
+    r.drain = &drain;
+    r.elev = &elev;
+    r.sea = 0.0f;
+    r.acc_min = 1;
+    r.slot_mask = 0;
+    r.slot_carve = 1;
+    r.acc_log_field = 1;      /* only this stage writes slot 1 */
+    r.acc_log_gain = 0.3f;
+    assert(rlk_wg_add(&wg, rlk_wg_rivers(&r)) == RLK_OK);
+    assert(rlk_wg_init(&wg) == RLK_E_INVALID);
+}
+
 int
 main(void) {
     test_rivers_stage_basic();
@@ -331,5 +424,7 @@ main(void) {
     test_rivers_stage_all_underwater();
     test_rivers_stage_wiggle();
     test_rivers_stage_creeks();
+    test_rivers_stage_hack_acc_log();
+    test_rivers_acc_log_unwritten_slot();
     return 0;
 }
