@@ -3,7 +3,7 @@
 
 /*
  * Optional wg stage: reader for a pre-built rlk_drain_t — projects the
- * drainage network (acc, downstream dir, lake depth) into per-tile
+ * drainage network (acc, downstream dir, fill depth) into per-tile
  * derived slots for stages and writers. Build the drain and elevation grid
  * after rlk_wg_init() (e.g. rlk_wg_fill_grid + rlk_drain_build) and before
  * the first rlk_wg_fill().
@@ -16,11 +16,12 @@
 /* Drain reader stage configuration; treat as const after construction. */
 typedef struct {
     const rlk_drain_t *drain;  /* pre-built drain */
-    const rlk_grid_t *elev;    /* elevation grid (for lake depth) */
-    float sea;                 /* sea level for lake detection */
+    const rlk_grid_t  *elev;   /* elevation grid (for fill depth) */
     uint8_t slot_acc;          /* derived field for accumulation, or RLK_WG_NONE */
     uint8_t slot_dir;          /* derived field for direction, or RLK_WG_NONE */
-    uint8_t slot_lake;         /* derived field for lake depth, or RLK_WG_NONE */
+    uint8_t slot_fill;         /* derived field for fill depth (filled minus original
+                                  elevation; what a filled cell means is the caller's
+                                  call), or RLK_WG_NONE */
     float acc_scale;           /* accumulation divisor; 0 -> 1.0 */
 } rlk_wg_drain_cfg_t;
 

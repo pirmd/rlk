@@ -6,8 +6,8 @@
 
 static rlk_tile_t tilebuf[MAP * MAP];
 
-/* Writer: derived[0]=acc -> variant, derived[1]=dir -> type, derived[2]=lake -> flags.
-   acc and lake are normalized [0,1] -> 0..255; dir is raw 0..8. */
+/* Writer: derived[0]=acc -> variant, derived[1]=dir -> type, derived[2]=fill depth -> flags.
+   acc and fill depth are normalized [0,1] -> 0..255; dir is raw 0..8. */
 static void
 write_drain(const rlk_wg_ctx_t *ctx, const void *data, rlk_tile_t *out) {
     (void)data;
@@ -63,7 +63,7 @@ drain_setup(void) {
     assert(rlk_drain_build(&drain, &elev, -1.0f, scratch) == RLK_OK);
 }
 
-/* Basic: stage writes acc/dir/lake into derived fields. */
+/* Basic: stage writes acc/dir/fill into derived fields. */
 static void
 test_drain_stage_basic(void) {
     drain_setup();
@@ -72,10 +72,9 @@ test_drain_stage_basic(void) {
     rlk_wg_drain_cfg_t f = {0};
     f.drain = &drain;
     f.elev = &elev;
-    f.sea = -1.0f;
     f.slot_acc = 0;
     f.slot_dir = 1;
-    f.slot_lake = 2;
+    f.slot_fill = 2;
     f.acc_scale = (float)(FW * FH);
 
     assert(rlk_wg_add(&wg, rlk_wg_drain(&f)) == RLK_OK);
@@ -111,10 +110,9 @@ test_drain_stage_none_slots(void) {
     rlk_wg_drain_cfg_t f = {0};
     f.drain = &drain;
     f.elev = &elev;
-    f.sea = -1.0f;
     f.slot_acc = 0;
     f.slot_dir = RLK_WG_NONE;
-    f.slot_lake = RLK_WG_NONE;
+    f.slot_fill = RLK_WG_NONE;
 
     assert(rlk_wg_add(&wg, rlk_wg_drain(&f)) == RLK_OK);
     rlk_wg_init(&wg);
@@ -123,7 +121,7 @@ test_drain_stage_none_slots(void) {
     rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
     rlk_wg_fill(&wg, 0, 0, &tm);
 
-    /* Should not crash; acc written, dir/lake untouched. */
+    /* Should not crash; acc written, dir/fill untouched. */
     const rlk_tile_t *t = rlk_tilemap_get(&tm, 2, 2);
     assert(t);
 }
@@ -138,10 +136,9 @@ test_drain_constructor(void) {
     rlk_wg_drain_cfg_t f = {0};
     f.drain = &drain;
     f.elev = &elev;
-    f.sea = -1.0f;
     f.slot_acc = 0;
     f.slot_dir = 1;
-    f.slot_lake = 2;
+    f.slot_fill = 2;
 
     rlk_wg_stage_t st = rlk_wg_drain(&f);
     assert(st.data == &f);
@@ -170,7 +167,7 @@ test_drain_limit_too_many_stages(void) {
     f.elev = &elev;
     f.slot_acc = 0;
     f.slot_dir = 1;
-    f.slot_lake = 2;
+    f.slot_fill = 2;
     for (int i = 0; i < RLK_WG_MAX_STAGES; i++)
         assert(rlk_wg_add(&wg, rlk_wg_drain(&f)) == RLK_OK);
 

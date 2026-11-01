@@ -8,7 +8,7 @@ set_derived(rlk_wg_ctx_t *ctx, uint8_t slot, float v) {
     if (slot == RLK_WG_NONE)
         return;
     const int idx = ctx->wg->nsampled + slot;
-    assert(idx < RLK_WG_MAX_FIELDS);
+    assert(idx < ctx->wg->nsampled + ctx->wg->nderived);
     ctx->field[idx] = v;
 }
 
@@ -21,7 +21,7 @@ drain_stage(rlk_wg_ctx_t *ctx, const void *data) {
 
     float acc_val = 0.0f;
     float dir_val = (float)RLK_DRAIN_OUTLET;
-    float lake_val = 0.0f;
+    float fill_val = 0.0f;
 
     if (c >= 0) {
         const rlk_drain_t *d = f->drain;
@@ -29,12 +29,12 @@ drain_stage(rlk_wg_ctx_t *ctx, const void *data) {
         const int w = d->lattice.w;
         acc_val = (float)d->acc[k] / f->acc_scale;
         dir_val = (float)d->dir[k];
-        lake_val = rlk_drain_fill_depth(d, f->elev, c % w, c / w);
+        fill_val = rlk_drain_fill_depth(d, f->elev, c % w, c / w);
     }
 
     set_derived(ctx, f->slot_acc, acc_val);
     set_derived(ctx, f->slot_dir, dir_val);
-    set_derived(ctx, f->slot_lake, lake_val);
+    set_derived(ctx, f->slot_fill, fill_val);
 }
 
 rlk_wg_stage_t

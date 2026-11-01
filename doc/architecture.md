@@ -91,7 +91,7 @@ already gives a relief to classify on — each extra stage refines it:
   needed.
 - + `wg_region` before it: macro-areas (Voronoi regions) biasing the sampled
   fields, so biomes read as coherent provinces.
-- + `wg_drain` reader: exposes a pre-built `rlk_drain_t` (acc, dir, lake
+- + `wg_drain` reader: exposes a pre-built `rlk_drain_t` (acc, dir, fill
   depth) as derived slots. Macro build: `rlk_wg_fill_grid` an elevation
   field into a coarse grid, then `rlk_drain_build` (after `rlk_wg_init`,
   before the first `rlk_wg_fill`).
@@ -140,8 +140,8 @@ rlk_drain_t drain = { .lattice = elev.lattice, .filled = drain_filled, .dir = dr
 rlk_drain_build(&drain, &elev, SEA_LEVEL, scratch);
 
 /* stages: readers take the pre-built PODs; register before the first fill */
-rlk_wg_drain_cfg_t dcfg = { .drain = &drain, .elev = &elev, .sea = SEA_LEVEL,
-                            .slot_acc = 0, .slot_dir = 1, .slot_lake = 2 };
+rlk_wg_drain_cfg_t dcfg = { .drain = &drain, .elev = &elev,
+                            .slot_acc = 0, .slot_dir = 1, .slot_fill = 2 };
 rlk_wg_add(&wg, rlk_wg_drain(&dcfg));
 /* ... rlk_wg_rivers, rlk_wg_relief, custom stages ... */
 

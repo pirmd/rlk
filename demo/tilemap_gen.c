@@ -166,14 +166,13 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
        Reads/writes all sampled fields (the region part). */
     rlk_wg_add(wg, (rlk_wg_stage_t){ .fn = gen_province_stage, .data = gen });
 
-    /* Stage 1: wg_drain — inject lake depth + normalized log10(acc) */
+    /* Stage 1: wg_drain — inject fill depth (the demo reads it as lake depth) */
     gen->drain_stage = (rlk_wg_drain_cfg_t){
         .drain = &gen->drain,
         .elev = &gen->elev_grid,
-        .sea = SEA_LEVEL,
         .slot_acc  = RLK_WG_NONE,   /* acc read straight from the drain grid */
         .slot_dir  = RLK_WG_NONE,
-        .slot_lake = D_LAKE,
+        .slot_fill = D_LAKE,
         .acc_scale = 1.0f,
     };
     rlk_wg_add(wg, rlk_wg_drain(&gen->drain_stage));

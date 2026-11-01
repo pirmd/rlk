@@ -116,7 +116,7 @@ enum {
     D_ELEV = 0,       /* final elevation (wg_relief) */
     D_RIVER_MASK,    /* river mask [0,1] (wg_rivers) */
     D_RIVER_CARVE,   /* valley carve depth (wg_rivers) */
-    D_LAKE,          /* lake depth (wg_drain) */
+    D_LAKE,          /* fill depth from wg_drain, read as lake depth by the demo */
     D_SLOPE,         /* D8 downslope, elev units/tile (wg_hydro) */
     D_STRAHLER,      /* Strahler stream order (wg_hydro) */
     D_SPEED,         /* Manning speed estimate (wg_hydro) */
