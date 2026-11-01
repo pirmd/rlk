@@ -94,22 +94,46 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
 
     rlk_wg_init(wg);
 
-    /* --- Coarse elevation grid: fill with the relief terrain ---
-       gen_relief_elev_fn samples the wg fields via rlk_wg_sample_field, so the
-       drain grid sees the SAME terrain the relief stage displays; otherwise
-       rivers would follow a different landscape than what is shown. */
-    /* Light geology noise (demo-owned, not wg fields) */
-    for (int i = 0; i < 3; i++)
-        gen->geo_noise[i].seed = rlk_hash_sub(seed, 0x6E0600ULL + (uint64_t)i);
-    gen_relief_ctx_t elev_ctx = {
-        .gen = gen,
-        .wg = wg,
+    /* --- wg_relief cfg, built now (before the macro grid) so gen_relief_elev_fn
+       can evaluate the SAME terrain on the coarse drain grid; the stage is
+       registered later, in pipeline order (stage 5). --- */
+    gen->relief_stage = (rlk_wg_relief_cfg_t){
+        .f_cont = F_CONT,
+        .f_hills = F_HILLS,
+        .f_ridge = F_RIDGE,
+        .f_warp_x = F_WARP_X,
+        .f_warp_y = F_WARP_Y,
+        .f_fjord = F_FJORD,
+        .f_temp = F_TEMP,
+        .slot_elev = D_ELEV,
+        .river_carve_field = D_RIVER_CARVE,  /* read carve from wg_rivers */
+        .sea = SEA_LEVEL,
         .warp = 8.0f,
         .hills_amp = 0.30f,
         .mountain_lo = 0.60f,
         .mountain_hi = 0.80f,
         .mountain_amp = 0.45f,
+        .lapse = 0.25f,
+        .fjord_dir = { 0.8f, 0.6f },
+        .fjord_stretch = 0.25f,
+        .fjord_width = 0.12f,
+        .fjord_depth = 0.50f,
+        .fjord_steep = 3.0f,
+        .fjord_reach = 0.15f,
+        .fjord_cold0 = 0.45f,
+        .fjord_cold1 = 0.65f,
     };
+
+    /* --- Coarse elevation grid: fill with the relief terrain ---
+       gen_relief_elev_fn evaluates the relief cfg (params from the stage cfg,
+       province bias through the stock region stage) at each cell centre, so
+       the drain grid sees the SAME terrain the relief stage displays;
+       otherwise rivers would follow a different landscape than what is shown.
+       Needs rlk_wg_init first. */
+    /* Light geology noise (demo-owned, not wg fields) */
+    for (int i = 0; i < 3; i++)
+        gen->geo_noise[i].seed = rlk_hash_sub(seed, 0x6E0600ULL + (uint64_t)i);
+    gen_relief_ctx_t elev_ctx = { .gen = gen, .wg = wg, .relief_cfg = &gen->relief_stage };
     gen->elev_grid = (rlk_grid_t){ .lattice = { .w = GRID_W, .h = GRID_H, .cellsize = GRID_CELL,
                                     .origin_x = GRID_ORIGIN_X, .origin_y = GRID_ORIGIN_Y }, .values = gen->elev_buf };
     for (int j = 0; j < GRID_H; j++)
@@ -165,14 +189,16 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
        Reads/writes all sampled fields (the region part). */
     rlk_wg_add(wg, (rlk_wg_stage_t){ .fn = gen_province_stage, .data = gen });
 
-    /* Stage 1: wg_drain — inject fill depth (the demo reads it as lake depth) */
+    /* Stage 1: wg_drain reader — projects fill depth into D_LAKE for the lake
+       writer (a ctx-only consumer). acc/dir stay NONE: wg_rivers and wg_poi
+       already hold the drain pointer (SDF, lattice, min_acc) and read
+       drain->acc directly. */
     gen->drain_stage = (rlk_wg_drain_cfg_t){
         .drain = &gen->drain,
         .elev = &gen->elev_grid,
-        .slot_acc  = RLK_WG_NONE,   /* acc read straight from the drain grid */
+        .slot_acc  = RLK_WG_NONE,
         .slot_dir  = RLK_WG_NONE,
         .slot_fill = D_LAKE,
-        .acc_scale = 1.0f,
     };
     rlk_wg_add(wg, rlk_wg_drain(&gen->drain_stage));
 
@@ -216,33 +242,8 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
     /* Stage 4: Strahler width — narrow headwaters, wide big rivers */
     rlk_wg_add(wg, (rlk_wg_stage_t){ .fn = gen_strahler_stage, .data = gen });
 
-    /* Stage 5: wg_relief — standardised elevation (domain warp, fjords, lapse) */
-    gen->relief_stage = (rlk_wg_relief_cfg_t){
-        .f_cont = F_CONT,
-        .f_hills = F_HILLS,
-        .f_ridge = F_RIDGE,
-        .f_warp_x = F_WARP_X,
-        .f_warp_y = F_WARP_Y,
-        .f_fjord = F_FJORD,
-        .f_temp = F_TEMP,
-        .slot_elev = D_ELEV,
-        .river_carve_field = D_RIVER_CARVE,  /* read carve from wg_rivers */
-        .sea = SEA_LEVEL,
-        .warp = 8.0f,
-        .hills_amp = 0.30f,
-        .mountain_lo = 0.60f,
-        .mountain_hi = 0.80f,
-        .mountain_amp = 0.45f,
-        .lapse = 0.25f,
-        .fjord_dir = { 0.8f, 0.6f },
-        .fjord_stretch = 0.25f,
-        .fjord_width = 0.12f,
-        .fjord_depth = 0.50f,
-        .fjord_steep = 3.0f,
-        .fjord_reach = 0.15f,
-        .fjord_cold0 = 0.45f,
-        .fjord_cold1 = 0.65f,
-    };
+    /* Stage 5: wg_relief — standardised elevation (domain warp, fjords, lapse).
+       The cfg was built above, before the macro grid fill. */
     gen->relief_mod = rlk_wg_relief(&gen->relief_stage);
     /* Wrapper around the stock relief stage, adding the rain shadow on F_HUM.
        data must be the tilemap_gen_t (gen_relief_rain_stage reads gen->relief_mod),

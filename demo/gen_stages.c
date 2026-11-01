@@ -12,9 +12,10 @@
 #include "gen_internal.h"
 
 /* Apply the province region bias to a single field value at float position
-   (x, y), through a throwaway ctx: only the Voronoi weights depend on
-   (x, y), the other field values are irrelevant (their bias/gain are 0).
-   Used to bias the coarse drain grid exactly like the tile pipeline. */
+   (x, y), through the stock region stage on a throwaway ctx: only the Voronoi
+   weights depend on (x, y), the other field values are irrelevant (their
+   bias/gain are 0). Used to bias the coarse drain grid exactly like the tile
+   pipeline. */
 float
 gen_province_mod_field(const tilemap_gen_t *gen, int f, float value, float x, float y) {
     rlk_wg_ctx_t ctx = {0};
@@ -188,40 +189,40 @@ gen_geology_stage(rlk_wg_ctx_t *ctx, const void *data) {
     gen->litho_buf[idx] = litho;
 }
 
-/* Elevation grid function: reproduces the wg_relief stage's BASE elevation
-   (cont + hills + mountains, before river/fjord carving), so the drain grid
-   sees the same terrain that is displayed. Rivers follow the displayed relief.
-   Fields are sampled via rlk_wg_sample_field, so this needs rlk_wg_init first
-   and stays in sync with the stage automatically. */
+/* Elevation grid function: the wg_relief cfg's BASE elevation (cont + hills +
+   mountains, before river/fjord carving) evaluated at an arbitrary float
+   position, so the drain grid sees the same terrain the tile pipeline
+   displays — rivers follow the displayed relief. All relief parameters come
+   from the stage cfg (single source of truth); the province bias goes
+   through the stock region stage. Sampled at the true cell centre
+   (rlk_grid_center convention), like rlk_wg_fill_grid. Needs rlk_wg_init
+   first (fields sampled via rlk_wg_sample_field). */
 float
 gen_relief_elev_fn(float px, float py, const void *user) {
     const gen_relief_ctx_t *ctx = (const gen_relief_ctx_t *)user;
     const rlk_wg_t *wg = ctx->wg;
+    const rlk_wg_relief_cfg_t *rc = ctx->relief_cfg;
 
-    /* Continent at original position, with the province bias applied through
-       the same stock region stage as the tile pipeline: the drain grid and
-       the displayed relief then share the same coastlines. */
-    float cont = rlk_wg_sample_field(wg, F_CONT, px, py);
-    cont = gen_province_mod_field(ctx->gen, F_CONT, cont, px, py);
+    /* Continent at original position, province-biased through the stock
+       region stage: the drain grid and the displayed relief then share the
+       same coastlines. */
+    float cont = rlk_wg_sample_field(wg, rc->f_cont, px, py);
+    cont = gen_province_mod_field(ctx->gen, rc->f_cont, cont, px, py);
 
     /* Domain warp */
-    float vx = rlk_wg_sample_field(wg, F_WARP_X, px, py);
-    float vy = rlk_wg_sample_field(wg, F_WARP_Y, px, py);
-    float qx = px + (vx - 0.5f) * 2.0f * ctx->warp;
-    float qy = py + (vy - 0.5f) * 2.0f * ctx->warp;
+    float vx = rlk_wg_sample_field(wg, rc->f_warp_x, px, py);
+    float vy = rlk_wg_sample_field(wg, rc->f_warp_y, px, py);
+    float qx = px + (vx - 0.5f) * 2.0f * rc->warp;
+    float qy = py + (vy - 0.5f) * 2.0f * rc->warp;
 
     /* Base elevation: cont + hills + mountains */
     float elev = cont;
-
-    float hills = rlk_wg_sample_field(wg, F_HILLS, qx, qy);
-    elev += ctx->hills_amp * (hills - 0.5f);
-
-    /* Mountains: RIDGE kind, only where cont is high enough (smoothstep gate) */
-    float ridge = rlk_wg_sample_field(wg, F_RIDGE, qx, qy);
-    float mt = (cont - ctx->mountain_lo) / (ctx->mountain_hi - ctx->mountain_lo);
-    mt = mt < 0.0f ? 0.0f : (mt > 1.0f ? 1.0f : mt);
-    mt = mt * mt * (3.0f - 2.0f * mt);
-    elev += ctx->mountain_amp * mt * ridge;
+    float hills = rlk_wg_sample_field(wg, rc->f_hills, qx, qy);
+    elev += rc->hills_amp * (hills - 0.5f);
+    float ridge = rlk_wg_sample_field(wg, rc->f_ridge, qx, qy);
+    float mt = rlk_smoothstep(rlk_clampf((cont - rc->mountain_lo) / (rc->mountain_hi - rc->mountain_lo),
+                                         0.0f, 1.0f));
+    elev += rc->mountain_amp * mt * ridge;
 
     /* Light geology: same structural bias as the tile pipeline (gen_geology_stage) */
     elev += gen_geo_eval(ctx->gen, px, py, elev, NULL, NULL);
@@ -247,10 +248,13 @@ gen_temp_lat_stage(rlk_wg_ctx_t *ctx, const void *data) {
 }
 
 /* --- POI: terrain-constrained detectors -----------------------------------
-   The stock rlk_wg_poi stages cover field/grid/drain constraints. This stage
-   adds kinds constrained by zone / slope / river / geology, all readable
-   from the per-tile ctx and the geology buffers (geology stage runs before,
-   per tile). */
+   The stock rlk_wg_poi stages cover one tested field (threshold) plus
+   optional drain/grid constraints. This stage adds kinds constrained by
+   multi-field ranges (elev/temp/hum/river/slope) and geology bitmasks
+   (litho/struct buffers, not wg fields), all readable from the per-tile ctx
+   and the geology buffers (geology stage runs before, per tile). Boundary:
+   multi-field ranges stay here until a second real consumer appears (YAGNI);
+   then generalize rlk_wg_poi_cfg_t to a small table of (field, lo, hi). */
 
 typedef struct {
     uint8_t type;

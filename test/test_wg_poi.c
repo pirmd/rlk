@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <float.h>
 #include <stdint.h>
 
 #include "wg_poi.h"
@@ -39,7 +40,9 @@ wg_min(void) {
     return wg;
 }
 
-/* Zero defaults resolved in the stage: size 0->32, min_separation 0->size. */
+/* Default parameters applied at runtime: size 0->32 (bbox side), and
+   min_separation 0->size, which on a 16x16 map blocks every tile after the
+   first POI. The in-place cfg asserts live in test_poi_constructor. */
 static void
 test_poi_stage_defaults(void) {
     rlk_wg_t wg = wg_min();
@@ -55,9 +58,6 @@ test_poi_stage_defaults(void) {
     /* size and min_separation left at 0 */
 
     assert(rlk_wg_add(&wg, rlk_wg_poi(&cfg)) == RLK_OK);
-    /* Zero defaults are resolved in place by the constructor. */
-    assert(cfg.size == 32);
-    assert(cfg.min_separation == 32);
     rlk_wg_init(&wg);
 
     rlk_tilemap_t tm;
@@ -73,8 +73,8 @@ test_poi_stage_defaults(void) {
     assert(list.n == 1);
 }
 
-/* Basic: density=1.0, threshold=0.0 -> every tile creates a POI
- * (until dedup kicks in with min_separation). */
+/* Basic: density=1.0, threshold=0.0, dedup off -> exactly one POI per
+ * tile, in row-major fill order. */
 static void
 test_poi_stage_basic(void) {
     rlk_wg_t wg = wg_min();
@@ -88,7 +88,7 @@ test_poi_stage_basic(void) {
     cfg.threshold = 0.0f;   /* field[0] in [0,1] always > 0 */
     cfg.density = 1.0f;     /* always trigger */
     cfg.size = 16;
-    cfg.min_separation = 0; /* disable dedup for this test */
+    cfg.min_separation = -1; /* negative = dedup off */
     cfg.salt = 0xABC;
 
     assert(rlk_wg_add(&wg, rlk_wg_poi(&cfg)) == RLK_OK);
@@ -98,11 +98,11 @@ test_poi_stage_basic(void) {
     rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
     rlk_wg_fill(&wg, 0, 0, &tm);
 
-    /* With density=1.0 and no dedup, every tile should create a POI,
-     * but the list is capped at POI_CAP. */
-    assert(list.n > 0);
-    assert(list.n <= POI_CAP);
+    /* Every tile creates a POI (list cap POI_CAP == MAP*MAP, so none drop). */
+    assert(list.n == MAP * MAP);
+    assert(list.pois[0].x == 0 && list.pois[0].y == 0);  /* row-major first tile */
     assert(list.pois[0].type == POI_CAVE);
+    assert(list.pois[0].seed == rlk_poi_seed(wg.seed, 0, 0, POI_CAVE, 0xABC));
     assert(list.pois[0].bbox.w == 16);
     assert(list.pois[0].bbox.h == 16);
     /* bbox is centred on the anchor and contains it; gen/level are zeroed */
@@ -171,7 +171,7 @@ test_poi_stage_dedup(void) {
             int dx = list.pois[i].x - list.pois[j].x;
             int dy = list.pois[i].y - list.pois[j].y;
             int d2 = dx * dx + dy * dy;
-            assert(d2 >= 64);  /* 8^2 */
+            assert(d2 > 64);   /* rlk_poi_find rejects d2 <= radius^2 */
         }
     }
 }
@@ -271,8 +271,14 @@ test_poi_stage_drain_constraint(void) {
     rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
     rlk_wg_fill(&wg, 0, 0, &tm);
 
-    /* Every cell qualifies: POIs are created */
+    /* Every cell qualifies: POIs are created, and each POI sits on a
+       lattice cell with acc >= min_acc. */
     assert(list.n > 0);
+    for (int i = 0; i < list.n; i++) {
+        const int c = rlk_lattice_index(&drain.lattice, list.pois[i].x, list.pois[i].y);
+        assert(c >= 0);
+        assert((float)drain.acc[(size_t)c] >= 1.0f);
+    }
 
     /* min_acc above every accumulation: the constraint rejects all tiles */
     rlk_wg_t wg2 = wg_min();
@@ -287,6 +293,38 @@ test_poi_stage_drain_constraint(void) {
     rlk_wg_fill(&wg2, 0, 0, &tm);
 
     assert(list2.n == 0);
+
+    /* Tiles outside the drain lattice are rejected: a 2x2 lattice with
+       cellsize 4 covers only tiles [0,8) x [0,8). */
+    float elev2_buf[2 * 2];
+    uint16_t filled2[2 * 2];
+    uint8_t dir2[2 * 2];
+    uint32_t acc2[2 * 2];
+    int order2[2 * 2];
+    uint64_t scratch2[2 * 2];
+    rlk_grid_t elev2 = { .lattice = { .w = 2, .h = 2, .cellsize = 4, .origin_x = 0, .origin_y = 0 },
+                         .values = elev2_buf };
+    for (int i = 0; i < 2 * 2; i++)
+        elev2_buf[i] = 0.5f;
+    rlk_drain_t drain2 = { .lattice = elev2.lattice, .filled = filled2, .dir = dir2,
+                           .acc = acc2, .order = order2 };
+    assert(rlk_drain_build(&drain2, &elev2, -1.0f, scratch2) == RLK_OK);
+
+    rlk_wg_t wg3 = wg_min();
+    rlk_poi_t poi_buf3[POI_CAP];
+    rlk_poi_list_t list3 = { poi_buf3, 0, POI_CAP };
+    rlk_wg_poi_cfg_t cfg3 = cfg;
+    cfg3.list = &list3;
+    cfg3.drain = &drain2;
+    cfg3.min_acc = 0.0f;
+
+    assert(rlk_wg_add(&wg3, rlk_wg_poi(&cfg3)) == RLK_OK);
+    rlk_wg_init(&wg3);
+    rlk_wg_fill(&wg3, 0, 0, &tm);
+
+    assert(list3.n > 0);
+    for (int i = 0; i < list3.n; i++)
+        assert(list3.pois[i].x < 8 && list3.pois[i].y < 8);
 }
 
 /* Grid constraint: only tiles with grid value in [min, max] create POIs. */
@@ -336,10 +374,50 @@ test_poi_stage_grid_constraint(void) {
     rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
     rlk_wg_fill(&wg, 0, 0, &tm);
 
-    /* Only tiles with grid value in [0.5, 0.75] should create POIs.
-     * Ramp goes from 0 to ~1 across 16 tiles; ~4 tiles in range. */
+    /* Only tiles with grid value in [0.5, 0.75] create POIs. */
     assert(list.n > 0);
     assert(list.n < MAP * MAP);
+    for (int i = 0; i < list.n; i++) {
+        const float v = rlk_grid_get(&val_grid, (float)list.pois[i].x + 0.5f,
+                                     (float)list.pois[i].y + 0.5f);
+        assert(v >= 0.5f && v <= 0.75f);
+    }
+
+    /* Range above every grid value: the constraint rejects all tiles. */
+    rlk_wg_t wg2 = wg_min();
+    rlk_poi_t poi_buf2[POI_CAP];
+    rlk_poi_list_t list2 = { poi_buf2, 0, POI_CAP };
+    rlk_wg_poi_cfg_t cfg2 = cfg;
+    cfg2.list = &list2;
+    cfg2.grid_min = 2.0f;
+
+    assert(rlk_wg_add(&wg2, rlk_wg_poi(&cfg2)) == RLK_OK);
+    rlk_wg_init(&wg2);
+    rlk_wg_fill(&wg2, 0, 0, &tm);
+
+    assert(list2.n == 0);
+
+    /* A zero bound is unbounded: grid_min=0.5, grid_max=0 -> [0.5, +inf),
+       resolved to FLT_MAX in place by the constructor. */
+    rlk_wg_t wg3 = wg_min();
+    rlk_poi_t poi_buf3[POI_CAP];
+    rlk_poi_list_t list3 = { poi_buf3, 0, POI_CAP };
+    rlk_wg_poi_cfg_t cfg3 = cfg;
+    cfg3.list = &list3;
+    cfg3.grid_min = 0.5f;
+    cfg3.grid_max = 0.0f;
+
+    assert(rlk_wg_add(&wg3, rlk_wg_poi(&cfg3)) == RLK_OK);
+    assert(cfg3.grid_max == FLT_MAX);
+    rlk_wg_init(&wg3);
+    rlk_wg_fill(&wg3, 0, 0, &tm);
+
+    assert(list3.n > 0);
+    for (int i = 0; i < list3.n; i++) {
+        const float v = rlk_grid_get(&val_grid, (float)list3.pois[i].x + 0.5f,
+                                     (float)list3.pois[i].y + 0.5f);
+        assert(v >= 0.5f);
+    }
 }
 
 /* Constructor builds a stage from a config (fn is static, only the
@@ -368,22 +446,71 @@ test_poi_constructor(void) {
     assert(wg.stages[0].data == &cfg);
 }
 
-/* Stage table full -> RLK_E_INVALID. */
+/* Documented behavior: a full list silently drops POIs. With dedup off
+   all MAP*MAP tiles are eligible, but the list holds only 4. */
 static void
-test_poi_limit_too_many_stages(void) {
+test_poi_stage_list_full(void) {
     rlk_wg_t wg = wg_min();
-    rlk_poi_t poi_buf[POI_CAP];
-    rlk_poi_list_t list = { poi_buf, 0, POI_CAP };
+    rlk_poi_t poi_buf[4];
+    rlk_poi_list_t list = { poi_buf, 0, 4 };
 
     rlk_wg_poi_cfg_t cfg = {0};
     cfg.list = &list;
     cfg.type = POI_CAVE;
     cfg.f_sampled = 0;
-    cfg.threshold = 0.5f;
-    for (int i = 0; i < RLK_WG_MAX_STAGES; i++)
-        assert(rlk_wg_add(&wg, rlk_wg_poi(&cfg)) == RLK_OK);
+    cfg.threshold = 0.0f;
+    cfg.density = 1.0f;
+    cfg.size = 8;
+    cfg.min_separation = -1;    /* dedup off */
 
-    assert(rlk_wg_add(&wg, rlk_wg_poi(&cfg)) == RLK_E_INVALID);
+    assert(rlk_wg_add(&wg, rlk_wg_poi(&cfg)) == RLK_OK);
+    rlk_wg_init(&wg);
+
+    rlk_tilemap_t tm;
+    rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
+    rlk_wg_fill(&wg, 0, 0, &tm);
+
+    assert(list.n == 4);
+}
+
+/* Salt decorrelates detectors: two detectors on the same field with
+   different salts pick the same tiles here (density=1) but every POI
+   seed differs. */
+static void
+test_poi_stage_salt(void) {
+    rlk_wg_t wg = wg_min();
+    rlk_poi_t buf1[POI_CAP], buf2[POI_CAP];
+    rlk_poi_list_t list1 = { buf1, 0, POI_CAP };
+    rlk_poi_list_t list2 = { buf2, 0, POI_CAP };
+
+    rlk_wg_poi_cfg_t cfg1 = {0};
+    cfg1.list = &list1;
+    cfg1.type = POI_CAVE;
+    cfg1.f_sampled = 0;
+    cfg1.threshold = 0.0f;
+    cfg1.density = 1.0f;
+    cfg1.size = 8;
+    cfg1.min_separation = -1;   /* dedup off */
+    cfg1.salt = 0x111;
+    rlk_wg_poi_cfg_t cfg2 = cfg1;
+    cfg2.list = &list2;
+    cfg2.salt = 0x222;
+
+    assert(rlk_wg_add(&wg, rlk_wg_poi(&cfg1)) == RLK_OK);
+    assert(rlk_wg_add(&wg, rlk_wg_poi(&cfg2)) == RLK_OK);
+    rlk_wg_init(&wg);
+
+    rlk_tilemap_t tm;
+    rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
+    rlk_wg_fill(&wg, 0, 0, &tm);
+
+    assert(list1.n == MAP * MAP);
+    assert(list2.n == MAP * MAP);
+    for (int i = 0; i < list1.n; i++) {
+        assert(list1.pois[i].x == list2.pois[i].x);
+        assert(list1.pois[i].y == list2.pois[i].y);
+        assert(list1.pois[i].seed != list2.pois[i].seed);
+    }
 }
 
 /* Verifies the usage example documented on rlk_wg_poi (wg_poi.h):
@@ -424,7 +551,8 @@ main(void) {
     test_poi_stage_drain_constraint();
     test_poi_stage_grid_constraint();
     test_poi_constructor();
-    test_poi_limit_too_many_stages();
+    test_poi_stage_list_full();
+    test_poi_stage_salt();
     test_example_rlk_wg_poi();
     return 0;
 }

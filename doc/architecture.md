@@ -105,10 +105,16 @@ already gives a relief to classify on — each extra stage refines it:
 
 Rules of thumb:
 
-- A reader stage (`wg_drain`, `wg_hydro`) is worth it when several
-  consumers (writers + stages) read its slots; with a single consumer,
-  that consumer reads the source POD directly (e.g. `wg_poi`'s `min_acc`
-  reads `drain->acc`, `wg_rivers` computes log10(acc) itself).
+- Reader stages (`wg_drain`, `wg_hydro`) project a pre-built POD into
+  per-tile derived slots. Rule: consumers that only see the per-tile ctx
+  (zone writers, axes, `wg_poi`'s field threshold) must go through the
+  slots; stages that already hold the source pointer for other data
+  (`wg_rivers` needs the drain SDF and lattice too, `wg_poi`'s `min_acc`)
+  read the POD directly and leave the slot RLK_WG_NONE.
+- Accumulation in a slot is normalized to [0,1] (raw cell count in
+  [1, w*h] divided by the lattice cells): the space in which zone boxes
+  and writers operate. The raw count stays available via the drain
+  pointer for stages that hold it.
 - Macro builds (grid -> drain -> hydro) happen once, outside the wg
   pipeline, on a coarse lattice; the pipeline stages just read them.
 
@@ -124,6 +130,8 @@ float    elev_buf[GW*GH];
 uint16_t drain_filled[GW*GH];  uint8_t drain_dir[GW*GH];
 uint32_t drain_acc[GW*GH];     int drain_order[GW*GH];
 uint64_t scratch[GW*GH];
+float    hydro_slope[GW*GH];   uint8_t hydro_strahler[GW*GH];
+float    hydro_speed[GW*GH];   uint16_t hydro_scratch[GW*GH];
 rlk_tile_t tiles[TM_W*TM_H];
 
 rlk_wg_t wg = {0};
@@ -138,11 +146,18 @@ rlk_wg_fill_grid(&wg, 0, &elev);
 rlk_drain_t drain = { .lattice = elev.lattice, .filled = drain_filled, .dir = drain_dir,
                       .acc = drain_acc, .order = drain_order };
 rlk_drain_build(&drain, &elev, SEA_LEVEL, scratch);
+rlk_hydro_t hydro = { .lattice = drain.lattice, .slope = hydro_slope,
+                      .strahler = hydro_strahler, .speed = hydro_speed };
+rlk_hydro_build(&hydro, &drain, ACC_MIN, hydro_scratch);
 
-/* stages: readers take the pre-built PODs; register before the first fill */
+/* stages: readers take the pre-built PODs; register before the first fill.
+   slot_acc is normalized to [0,1] (raw cell count / lattice cells). */
 rlk_wg_drain_cfg_t dcfg = { .drain = &drain, .elev = &elev,
                             .slot_acc = 0, .slot_dir = 1, .slot_fill = 2 };
 rlk_wg_add(&wg, rlk_wg_drain(&dcfg));
+rlk_wg_hydro_cfg_t hcfg = { .hydro = &hydro, .slot_slope = 3,
+                            .slot_strahler = 4, .slot_speed = 5 };
+rlk_wg_add(&wg, rlk_wg_hydro(&hcfg));
 /* ... rlk_wg_rivers, rlk_wg_relief, custom stages ... */
 
 rlk_tilemap_t tm;

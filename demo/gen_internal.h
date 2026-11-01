@@ -37,14 +37,13 @@
 
 /* --- gen_stages.c: pipeline stages --------------------------------------- */
 
-/* Context for gen_relief_elev_fn: samples wg fields via rlk_wg_sample_field
-   (needs rlk_wg_init first), mirrors the wg_relief stage. */
+/* Context for gen_relief_elev_fn: evaluates the wg_relief cfg at an arbitrary
+   float position (needs rlk_wg_init first); the province bias goes through
+   the stock region stage. */
 typedef struct {
-    const tilemap_gen_t *gen;    /* for the province region stage */
-    const rlk_wg_t *wg;          /* field configs (freq, octaves, gain, kind) */
-    float warp;
-    float hills_amp;
-    float mountain_lo, mountain_hi, mountain_amp;
+    const tilemap_gen_t *gen;           /* for the province region stage */
+    const rlk_wg_t *wg;
+    const rlk_wg_relief_cfg_t *relief_cfg;  /* single source of relief params */
 } gen_relief_ctx_t;
 
 float gen_province_mod_field(const tilemap_gen_t *gen, int f, float value,

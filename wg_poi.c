@@ -1,6 +1,7 @@
 #include "wg_poi.h"
 
 #include <assert.h>
+#include <float.h>
 #include <stddef.h>
 
 static void
@@ -9,12 +10,10 @@ poi_stage(rlk_wg_ctx_t *ctx, const void *data) {
     const rlk_wg_poi_cfg_t *cfg = (const rlk_wg_poi_cfg_t *)data;
     const rlk_wg_t *wg = ctx->wg;
 
-    /* Field threshold slot: f_sampled if set, else slot_derived. */
-    const int idx = cfg->f_sampled != RLK_WG_NONE
-        ? (int)cfg->f_sampled
-        : wg->nsampled + (int)cfg->slot_derived;
-    assert(idx < RLK_WG_MAX_FIELDS);
-    assert(cfg->f_sampled == RLK_WG_NONE || (int)cfg->f_sampled < wg->nsampled);
+    /* Sampled field index must be in [0, nsampled) — checked here (the
+       constructor does not know the wg). */
+    assert((int)cfg->f_sampled < wg->nsampled);
+    const int idx = cfg->f_sampled;
     if (ctx->field[idx] <= cfg->threshold)
         return;
 
@@ -36,7 +35,7 @@ poi_stage(rlk_wg_ctx_t *ctx, const void *data) {
     if (cfg->grid) {
         const float wxf = (float)ctx->wx + 0.5f;
         const float wyf = (float)ctx->wy + 0.5f;
-        float v = rlk_grid_get(cfg->grid, wxf, wyf);
+        const float v = rlk_grid_get(cfg->grid, wxf, wyf);
         if (v < cfg->grid_min || v > cfg->grid_max)
             return;
     }
@@ -69,15 +68,21 @@ rlk_wg_stage_t
 rlk_wg_poi(rlk_wg_poi_cfg_t *cfg) {
     assert(cfg);
     assert(cfg->list);
-    /* At least one field source; f_sampled has priority over slot_derived. */
-    assert(cfg->f_sampled != RLK_WG_NONE || cfg->slot_derived != RLK_WG_NONE);
-    /* Resolve zero defaults in place (density 0->0.001, size 0->32,
-       min_separation 0->size). */
+    assert(cfg->f_sampled != RLK_WG_NONE);
+    /* Resolve zero defaults in place; the default of each parameter is
+       documented on the cfg field in the header. */
     if (cfg->density == 0.0f)
         cfg->density = 0.001f;
     if (cfg->size == 0)
         cfg->size = 32;
     if (cfg->min_separation == 0)
         cfg->min_separation = (int)cfg->size;
+    /* A zero grid bound means unbounded on that side. */
+    if (cfg->grid) {
+        if (cfg->grid_min == 0.0f)
+            cfg->grid_min = -FLT_MAX;
+        if (cfg->grid_max == 0.0f)
+            cfg->grid_max = FLT_MAX;
+    }
     return (rlk_wg_stage_t){ .fn = poi_stage, .data = cfg };
 }

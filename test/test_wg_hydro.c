@@ -72,20 +72,22 @@ hydro_setup(void) {
     rlk_hydro_build(&hydro, &drain, 1u, hydro_scratch);
 }
 
+static rlk_wg_t
+wg_with_hydro(const rlk_hydro_t *h, rlk_wg_hydro_cfg_t *f) {
+    rlk_wg_t wg = wg_min();
+    f->hydro = h;
+    assert(rlk_wg_add(&wg, rlk_wg_hydro(f)) == RLK_OK);
+    rlk_wg_init(&wg);
+    return wg;
+}
+
 /* Basic: stage projects slope/strahler/speed into derived fields. */
 static void
 test_hydro_stage_basic(void) {
     hydro_setup();
 
-    rlk_wg_t wg = wg_min();
-    rlk_wg_hydro_cfg_t f = {0};
-    f.hydro = &hydro;
-    f.slot_slope = 0;
-    f.slot_strahler = 1;
-    f.slot_speed = 2;
-
-    assert(rlk_wg_add(&wg, rlk_wg_hydro(&f)) == RLK_OK);
-    rlk_wg_init(&wg);
+    rlk_wg_hydro_cfg_t f = { .slot_slope = 0, .slot_strahler = 1, .slot_speed = 2 };
+    rlk_wg_t wg = wg_with_hydro(&hydro, &f);
 
     rlk_tilemap_t tm;
     rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
@@ -106,28 +108,52 @@ test_hydro_stage_basic(void) {
     assert(t->variant == 1);
 }
 
-/* NONE slots: disabled outputs are not written (no crash). */
+/* NONE slots: disabled outputs are not written (slots stay 0.0f). */
 static void
 test_hydro_stage_none_slots(void) {
     hydro_setup();
 
-    rlk_wg_t wg = wg_min();
-    rlk_wg_hydro_cfg_t f = {0};
-    f.hydro = &hydro;
-    f.slot_slope = RLK_WG_NONE;
-    f.slot_strahler = 1;
-    f.slot_speed = RLK_WG_NONE;
-
-    assert(rlk_wg_add(&wg, rlk_wg_hydro(&f)) == RLK_OK);
-    rlk_wg_init(&wg);
+    rlk_wg_hydro_cfg_t f = { .slot_slope = RLK_WG_NONE, .slot_strahler = 1,
+                             .slot_speed = RLK_WG_NONE };
+    rlk_wg_t wg = wg_with_hydro(&hydro, &f);
 
     rlk_tilemap_t tm;
     rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
     rlk_wg_fill(&wg, 0, 0, &tm);
 
+    /* Interior tile (6,6): strahler written, slope/speed untouched (they
+       would be > 0 here if written). */
     const rlk_tile_t *t = rlk_tilemap_get(&tm, 6, 6);
     assert(t);
     assert(t->variant == 1);
+    assert(t->type == 0);
+    assert(t->flags == 0);
+}
+
+/* NULL hydro buffers (skipped at build) read as 0; present buffers still work. */
+static void
+test_hydro_stage_null_buffers(void) {
+    hydro_setup();
+
+    static float speed2_buf[FW * FH];
+    static uint16_t scratch2[FW * FH];
+    rlk_hydro_t h2 = { .lattice = drain.lattice, .slope = NULL,
+                       .strahler = NULL, .speed = speed2_buf };
+    rlk_hydro_build(&h2, &drain, 1u, scratch2);
+
+    rlk_wg_hydro_cfg_t f = { .slot_slope = 0, .slot_strahler = 1, .slot_speed = 2 };
+    rlk_wg_t wg = wg_with_hydro(&h2, &f);
+
+    rlk_tilemap_t tm;
+    rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
+    rlk_wg_fill(&wg, 0, 0, &tm);
+
+    /* Interior tile (6,6) -> cell (1,1): slope/strahler NULL -> 0, speed > 0. */
+    const rlk_tile_t *t = rlk_tilemap_get(&tm, 6, 6);
+    assert(t);
+    assert(t->type == 0);
+    assert(t->variant == 0);
+    assert(t->flags == 255);
 }
 
 /* Tiles outside the hydro grid get 0. */
@@ -135,15 +161,8 @@ static void
 test_hydro_stage_outside(void) {
     hydro_setup();
 
-    rlk_wg_t wg = wg_min();
-    rlk_wg_hydro_cfg_t f = {0};
-    f.hydro = &hydro;
-    f.slot_slope = 0;
-    f.slot_strahler = 1;
-    f.slot_speed = 2;
-
-    assert(rlk_wg_add(&wg, rlk_wg_hydro(&f)) == RLK_OK);
-    rlk_wg_init(&wg);
+    rlk_wg_hydro_cfg_t f = { .slot_slope = 0, .slot_strahler = 1, .slot_speed = 2 };
+    rlk_wg_t wg = wg_with_hydro(&hydro, &f);
 
     rlk_tilemap_t tm;
     rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
@@ -163,6 +182,7 @@ int
 main(void) {
     test_hydro_stage_basic();
     test_hydro_stage_none_slots();
+    test_hydro_stage_null_buffers();
     test_hydro_stage_outside();
     return 0;
 }

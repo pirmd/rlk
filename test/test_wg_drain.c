@@ -7,7 +7,7 @@
 static rlk_tile_t tilebuf[MAP * MAP];
 
 /* Writer: derived[0]=acc -> variant, derived[1]=dir -> type, derived[2]=fill depth -> flags.
-   acc and fill depth are normalized [0,1] -> 0..255; dir is raw 0..8. */
+   acc and fill depth are clamped [0,1] -> 0..255; dir is raw 0..8. */
 static void
 write_drain(const rlk_wg_ctx_t *ctx, const void *data, rlk_tile_t *out) {
     (void)data;
@@ -62,37 +62,41 @@ drain_setup(void) {
     assert(rlk_drain_build(&drain, &elev, -1.0f, scratch) == RLK_OK);
 }
 
-/* Basic: stage writes acc/dir/fill into derived fields. */
+static rlk_wg_t
+wg_with_drain(rlk_wg_drain_cfg_t *f) {
+    rlk_wg_t wg = wg_min();
+    f->drain = &drain;
+    f->elev = &elev;
+    assert(rlk_wg_add(&wg, rlk_wg_drain(f)) == RLK_OK);
+    rlk_wg_init(&wg);
+    return wg;
+}
+
+/* Basic: stage projects dir and normalized acc (acc / w*h in [0,1]). */
 static void
 test_drain_stage_basic(void) {
     drain_setup();
 
-    rlk_wg_t wg = wg_min();
-    rlk_wg_drain_cfg_t f = {0};
-    f.drain = &drain;
-    f.elev = &elev;
-    f.slot_acc = 0;
-    f.slot_dir = 1;
-    f.slot_fill = 2;
-    f.acc_scale = (float)(FW * FH);
-
-    assert(rlk_wg_add(&wg, rlk_wg_drain(&f)) == RLK_OK);
-    rlk_wg_init(&wg);
+    rlk_wg_drain_cfg_t f = { .slot_acc = 0, .slot_dir = 1, .slot_fill = 2 };
+    rlk_wg_t wg = wg_with_drain(&f);
 
     rlk_tilemap_t tm;
     rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
     rlk_wg_fill(&wg, 0, 0, &tm);
 
-    /* Tile (2,2) -> cell (0,0): west edge = outlet -> dir = 8 */
+    /* Tile (2,2) -> cell (0,0): west edge = outlet -> dir = 8.
+       acc = 2 there, normalized 2/16 = 0.125 -> (uint8_t)(0.125*255) = 31. */
     const rlk_tile_t *t = rlk_tilemap_get(&tm, 2, 2);
     assert(t);
     assert(t->type == RLK_DRAIN_OUTLET);
-    assert(t->variant >= 1);  /* acc >= 1 */
+    assert(t->variant == 31);
 
-    /* Tile (14,2) -> cell (3,0): east edge = outlet too (grid edge) */
+    /* Tile (14,2) -> cell (3,0): east edge = outlet too (grid edge);
+       only itself drains through it: acc = 1, normalized 1/16 -> 15. */
     t = rlk_tilemap_get(&tm, 14, 2);
     assert(t);
     assert(t->type == RLK_DRAIN_OUTLET);
+    assert(t->variant == 15);
 
     /* Interior tile (6,6) -> cell (1,1): flows westward (dir 3,4,5) */
     t = rlk_tilemap_get(&tm, 6, 6);
@@ -100,84 +104,80 @@ test_drain_stage_basic(void) {
     assert(t->type >= 3 && t->type <= 5);
 }
 
-/* NONE slots: disabled outputs are not written (no crash). */
+/* Fill depth: a pit gets filled -> slot_fill > 0 there, 0 elsewhere. */
+static void
+test_drain_stage_fill_depth(void) {
+    drain_setup();
+    /* Flat at 2.0 with a pit at cell (1,1): priority-flood fills it to 2.0. */
+    for (int k = 0; k < FW * FH; k++)
+        elev_buf[k] = 2.0f;
+    elev_buf[1 * FW + 1] = 0.0f;
+    assert(rlk_drain_build(&drain, &elev, -1.0f, scratch) == RLK_OK);
+
+    rlk_wg_drain_cfg_t f = { .slot_acc = 0, .slot_dir = 1, .slot_fill = 2 };
+    rlk_wg_t wg = wg_with_drain(&f);
+
+    rlk_tilemap_t tm;
+    rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
+    rlk_wg_fill(&wg, 0, 0, &tm);
+
+    /* Tile (6,6) -> pit cell (1,1): fill depth 2.0 -> clamped -> 255. */
+    const rlk_tile_t *t = rlk_tilemap_get(&tm, 6, 6);
+    assert(t);
+    assert(t->flags == 255);
+
+    /* Tile (2,2) -> cell (0,0): nothing filled -> 0. */
+    t = rlk_tilemap_get(&tm, 2, 2);
+    assert(t);
+    assert(t->flags == 0);
+}
+
+/* NONE slots: disabled outputs are not written (slots stay 0.0f). */
 static void
 test_drain_stage_none_slots(void) {
     drain_setup();
 
-    rlk_wg_t wg = wg_min();
-    rlk_wg_drain_cfg_t f = {0};
-    f.drain = &drain;
-    f.elev = &elev;
-    f.slot_acc = 0;
-    f.slot_dir = RLK_WG_NONE;
-    f.slot_fill = RLK_WG_NONE;
-
-    assert(rlk_wg_add(&wg, rlk_wg_drain(&f)) == RLK_OK);
-    rlk_wg_init(&wg);
+    rlk_wg_drain_cfg_t f = { .slot_acc = 0, .slot_dir = RLK_WG_NONE, .slot_fill = RLK_WG_NONE };
+    rlk_wg_t wg = wg_with_drain(&f);
 
     rlk_tilemap_t tm;
     rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
     rlk_wg_fill(&wg, 0, 0, &tm);
 
-    /* Should not crash; acc written, dir/fill untouched. */
+    /* acc written, dir/fill untouched (zeroed per tile). */
     const rlk_tile_t *t = rlk_tilemap_get(&tm, 2, 2);
     assert(t);
+    assert(t->variant == 31);
+    assert(t->type == 0);
+    assert(t->flags == 0);
 }
 
-/* Constructor builds a stage from a config (fn is static, only the
-   data pointer is checkable). */
+/* Tiles outside the macro grid read defaults: acc 0, dir OUTLET, fill 0. */
 static void
-test_drain_constructor(void) {
+test_drain_stage_outside_grid(void) {
     drain_setup();
 
-    rlk_wg_t wg = wg_min();
-    rlk_wg_drain_cfg_t f = {0};
-    f.drain = &drain;
-    f.elev = &elev;
-    f.slot_acc = 0;
-    f.slot_dir = 1;
-    f.slot_fill = 2;
-
-    rlk_wg_stage_t st = rlk_wg_drain(&f);
-    assert(st.data == &f);
-    /* Zero defaults are resolved in place by the constructor. */
-    assert(f.acc_scale == 1.0f);
-
-    assert(rlk_wg_add(&wg, st) == RLK_OK);
-    assert(wg.nstages == 1);
-    assert(wg.stages[0].data == &f);
-
-    rlk_wg_init(&wg);
+    rlk_wg_drain_cfg_t f = { .slot_acc = 0, .slot_dir = 1, .slot_fill = 2 };
+    rlk_wg_t wg = wg_with_drain(&f);
 
     rlk_tilemap_t tm;
     rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
-    rlk_wg_fill(&wg, 0, 0, &tm);
-}
+    tm.origin_x = 100;
+    tm.origin_y = 100;
+    rlk_wg_fill(&wg, 100, 100, &tm);
 
-/* Stage table full -> RLK_E_INVALID. */
-static void
-test_drain_limit_too_many_stages(void) {
-    drain_setup();
-
-    rlk_wg_t wg = wg_min();
-    rlk_wg_drain_cfg_t f = {0};
-    f.drain = &drain;
-    f.elev = &elev;
-    f.slot_acc = 0;
-    f.slot_dir = 1;
-    f.slot_fill = 2;
-    for (int i = 0; i < RLK_WG_MAX_STAGES; i++)
-        assert(rlk_wg_add(&wg, rlk_wg_drain(&f)) == RLK_OK);
-
-    assert(rlk_wg_add(&wg, rlk_wg_drain(&f)) == RLK_E_INVALID);
+    const rlk_tile_t *t = rlk_tilemap_get(&tm, 100, 100);
+    assert(t);
+    assert(t->variant == 0);
+    assert(t->type == RLK_DRAIN_OUTLET);
+    assert(t->flags == 0);
 }
 
 int
 main(void) {
     test_drain_stage_basic();
+    test_drain_stage_fill_depth();
     test_drain_stage_none_slots();
-    test_drain_constructor();
-    test_drain_limit_too_many_stages();
+    test_drain_stage_outside_grid();
     return 0;
 }
