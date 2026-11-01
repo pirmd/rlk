@@ -25,6 +25,9 @@
 4. Coordinates, positions and regions:
    - `x, y` = world tiles (int); `i, j` = cell indices;
    - `wx, wy` = world coords when `x, y` are already taken (e.g. POI);
+   - `wxf, wyf` = float world position, typically the tile centre
+     (`wxf == (float)wx + 0.5f`); noise sampling at a tile in wg stages
+     uses it (int lookups and hashing use `wx, wy`);
    - `px, py` = continuous position (float, e.g. noise sampling) or
      screen pixel in viewers; `cx, cy` = cell center (float);
    - `x0, y0, x1, y1` = segment endpoints; `mx, my` = mouse pixel;

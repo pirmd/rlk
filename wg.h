@@ -11,10 +11,6 @@
  * Sampling convention: the fields of tile (wx, wy) are sampled at the tile
  * centre ((float)wx + 0.5f, (float)wy + 0.5f), consistent with
  * rlk_grid_get / rlk_grid_center.
- *
- * Naming: wx, wy = integer world tile (lattice lookups, hashing);
- * wxf, wyf = float world position, typically the tile centre
- * (wxf == (float)wx + 0.5f), used for noise sampling.
  */
 
 #include <assert.h>
@@ -101,7 +97,7 @@ struct rlk_wg_ctx_s {
     const rlk_wg_t *wg;
 
     int   x, y;                            /* run-local tile index */
-    int   wx, wy;                          /* world tile (int lookups; noise sampled at wxf/wyf) */
+    int   wx, wy;                          /* world tile coords */
 
     uint8_t zone;    /* index into zones[] */
     uint8_t zone2;   /* runner-up zone (== zone if only one) */
@@ -147,7 +143,7 @@ struct rlk_wg_s {
 /* Register a pipeline stage. Stages run in registration order: a stage may
  * only read derived slots written by stages registered before it (contract,
  * not checked). Returns RLK_E_INVALID if the stage table is full.
- * The stage's `data` must outlive the wg. Call before the first rlk_wg_fill().
+ * Call before the first rlk_wg_fill().
  * Ready-made stages: rlk_wg_<module>(&cfg) builds a stage from a config,
  * resolving its zero defaults in place (treat the cfg as const afterwards).
  * A custom stage is registered as

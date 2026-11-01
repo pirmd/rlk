@@ -12,8 +12,7 @@
 
 #include "wg.h"
 
-/* Relief stage configuration. The constructor resolves the zero defaults
-   in place; treat the cfg as const afterwards. */
+/* Relief stage configuration; treat as const after construction. */
 typedef struct {
     /* --- Sampled field indices (0..nsampled-1, or RLK_WG_NONE) --- */
     uint8_t f_cont;       /* continent field (required, low freq ~0.004) */
@@ -50,10 +49,8 @@ typedef struct {
     float fjord_cold1;    /* off above temp = cold1 */
 } rlk_wg_relief_cfg_t;
 
-/* Build a stage that computes the standardised elevation into `slot_elev`
-   at each tile: domain warp, continent + hills + mountains, fjord and
-   external river carve subtracted, altitudinal cooling of the temperature
-   field. The cfg must outlive the wg. */
+/* Build the relief stage; zero defaults are resolved in place.
+   The cfg must outlive the wg. */
 rlk_wg_stage_t rlk_wg_relief(rlk_wg_relief_cfg_t *cfg);
 
 #endif /* RLK_WG_RELIEF_H */

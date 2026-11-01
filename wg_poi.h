@@ -30,12 +30,10 @@
 #include "drain.h"
 #include "grid.h"
 
-/* POI detector stage configuration. The constructor resolves the zero
-   defaults in place (density 0->0.001, size 0->32, min_separation 0->size);
-   treat the cfg as const afterwards. */
+/* POI detector stage configuration; treat as const after construction. */
 typedef struct {
     /* --- Target --- */
-    rlk_poi_list_t *list;           /* list to populate; must outlive the wg */
+    rlk_poi_list_t *list;           /* list to populate */
     uint8_t type;                   /* POI type to create (game-defined) */
     uint64_t salt;                  /* decorrelates multiple detectors */
 
@@ -59,9 +57,9 @@ typedef struct {
     int min_separation;             /* min tiles between POIs of same type (0->size) */
 } rlk_wg_poi_cfg_t;
 
-/* Build a stage that pushes a POI into `list` for each tile passing the
-   field threshold, the density draw and the optional drain/grid
-   constraints. The cfg must outlive the wg. */
+/* Build the POI detector stage; zero defaults (density 0->0.001, size
+   0->32, min_separation 0->size) are resolved in place. The cfg must
+   outlive the wg. */
 rlk_wg_stage_t rlk_wg_poi(rlk_wg_poi_cfg_t *cfg);
 
 #endif /* RLK_WG_POI_H */

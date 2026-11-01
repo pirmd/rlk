@@ -35,11 +35,8 @@ typedef struct {
     uint64_t salt; /* decorrelates several region layers */
 } rlk_wg_region_cfg_t;
 
-/* Build a stage giving the world macro-regions: each Voronoi cell (of
-   `cell` tiles) carries a type whose bias/gain is applied to every
-   sampled field, blended over `blend` tiles at region borders:
-   field[i] = (field[i] + bias[i]) * (1 + gain[i]). The cfg must outlive
-   the wg. */
+/* Build the region stage; zero defaults (cell, blend) are resolved in
+   place. The cfg must outlive the wg. */
 rlk_wg_stage_t rlk_wg_region(rlk_wg_region_cfg_t *cfg);
 
 #endif /* RLK_WG_REGION_H */

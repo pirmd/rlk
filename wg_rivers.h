@@ -6,8 +6,7 @@
  * into a per-tile river mask and valley carve (SDF projection; optional
  * log(acc) bank widening, meanders, creeks, lake overlay — see the cfg
  * fields). Build the drain and elevation grid after rlk_wg_init() (e.g.
- * rlk_wg_fill_grid + rlk_drain_build) and before the first rlk_wg_fill();
- * they must outlive the wg.
+ * rlk_wg_fill_grid + rlk_drain_build) and before the first rlk_wg_fill().
  *
  * Stage order (contract, not checked): a consumer of the carve slot (e.g.
  * wg_relief via river_carve_field) must be registered AFTER this stage.
@@ -17,11 +16,10 @@
 #include "drain.h"
 #include "grid.h"
 
-/* Rivers stage configuration. The constructor resolves the zero defaults
-   in place; treat the cfg as const afterwards. */
+/* Rivers stage configuration; treat as const after construction. */
 typedef struct {
-    const rlk_drain_t *drain; /* pre-built drainage; must outlive the wg */
-    const rlk_grid_t *elev;   /* elevation grid matching drain; must outlive the wg */
+    const rlk_drain_t *drain; /* pre-built drainage */
+    const rlk_grid_t *elev;   /* elevation grid matching drain */
     float sea;                /* sea level (rivers only on land) */
 
     uint32_t acc_min;           /* min drainage area (cells) for a river segment */
@@ -52,9 +50,8 @@ typedef struct {
     float   creek_carve;        /* creek valley depth, elevation units */
 } rlk_wg_rivers_cfg_t;
 
-/* Build a stage that projects the drainage network at each tile into a
-   river mask (bank fade, optional log(acc) widening, meanders, creeks,
-   lake overlay) and a valley carve. The cfg must outlive the wg. */
+/* Build the rivers stage; zero defaults are resolved in place.
+   The cfg must outlive the wg. */
 rlk_wg_stage_t rlk_wg_rivers(rlk_wg_rivers_cfg_t *cfg);
 
 #endif /* RLK_WG_RIVERS_H */
