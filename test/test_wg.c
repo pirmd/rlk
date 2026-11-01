@@ -380,7 +380,6 @@ test_stages_derive(void) {
     rlk_wg_t wg = wg_min();
     wg.nsampled = 2;
     wg.fields[1] = (rlk_wg_field_t){ .freq = 0.02f };
-    wg.nderived = 1;
     assert(rlk_wg_add(&wg, (rlk_wg_stage_t){ .fn = stage_derive_avg, .data = NULL }) == RLK_OK);
     wg.zones[0].write = write_fields012;
     rlk_wg_init(&wg);
@@ -407,7 +406,6 @@ test_derived_slot_axis(void) {
     wg.border_width = 0.20f;
     wg.nsampled = 1;
     wg.fields[0] = (rlk_wg_field_t){ .freq = 0.05f };
-    wg.nderived = 1;
     wg.naxes = 2;
     wg.axes[0] = (rlk_wg_axis_t){ .slot = 0 };
     wg.axes[1] = (rlk_wg_axis_t){ .slot = 1 };

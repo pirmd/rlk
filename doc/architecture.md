@@ -127,7 +127,7 @@ uint64_t scratch[GW*GH];
 rlk_tile_t tiles[TM_W*TM_H];
 
 rlk_wg_t wg = {0};
-wg.seed = 42;  wg.nsampled = 1;  wg.nderived = 3;
+wg.seed = 42;  wg.nsampled = 1;
 wg.fields[0] = (rlk_wg_field_t){ .kind = RLK_WG_FBM, .freq = 0.005f, .salt = 1 };
 /* axes, zones, inside_scale, border_width ... */
 rlk_wg_init(&wg);

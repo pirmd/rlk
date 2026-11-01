@@ -26,7 +26,6 @@ wg_min(void) {
     wg.inside_scale = 0.20f;
     wg.border_width = 0.20f;
     wg.nsampled = 3;
-    wg.nderived = 1;
     wg.fields[0] = (rlk_wg_field_t){ .kind = RLK_WG_FBM, .salt = 1, .octaves = 3, .freq = 0.015f, .gain = 0.5f };
     wg.fields[1] = (rlk_wg_field_t){ .kind = RLK_WG_FBM, .salt = 2, .octaves = 4, .freq = 0.020f, .gain = 0.5f };
     wg.fields[2] = (rlk_wg_field_t){ .kind = RLK_WG_FBM, .salt = 3, .octaves = 3, .freq = 0.020f, .gain = 0.5f };

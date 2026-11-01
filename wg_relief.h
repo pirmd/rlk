@@ -23,7 +23,7 @@ typedef struct {
     uint8_t f_fjord;      /* fjord noise field (RLK_WG_NONE = no fjords) */
     uint8_t f_temp;       /* temperature (RLK_WG_NONE = no cooling, no cold fjords) */
 
-    /* --- Derived field slot (0..nderived-1) --- */
+    /* --- Derived field slots (absolute index = nsampled + slot) --- */
     uint8_t slot_elev;    /* output: final elevation */
 
     /* --- Derived field input (optional, e.g. from wg_rivers) --- */

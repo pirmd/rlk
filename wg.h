@@ -105,7 +105,8 @@ struct rlk_wg_ctx_s {
     float inside;    /* 0 at the zone border, 1 deep inside (inside_scale) */
     float border;    /* 0 far from zone2, 1 on the zone2 border */
 
-    /* field slots: [0,nsampled) noise-sampled, [nsampled,..) stage-written */
+    /* field slots: [0,nsampled) noise-sampled; [nsampled,RLK_WG_MAX_FIELDS)
+       stage-written (0.0f until a stage writes them) */
     float field[RLK_WG_MAX_FIELDS];
 };
 
@@ -117,8 +118,7 @@ struct rlk_wg_s {
 
     /* FIELDS */
     rlk_wg_field_t fields[RLK_WG_MAX_FIELDS];
-    int nsampled;                /* 1..RLK_WG_MAX_FIELDS; [0,nsampled) sampled */
-    int nderived;                /* [nsampled,nsampled+nderived) stage-written */
+    int nsampled;                /* 1..RLK_WG_MAX_FIELDS; [0,nsampled) noise-sampled, the rest stage-written */
 
     /* STAGES (run in order). nstages is managed by rlk_wg_add(). */
     rlk_wg_stage_t stages[RLK_WG_MAX_STAGES];

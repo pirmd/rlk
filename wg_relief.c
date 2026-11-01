@@ -88,7 +88,7 @@ relief_stage(rlk_wg_ctx_t *ctx, const void *data) {
     float river_carve = 0.0f;
     if (h0 > 0.0f && r->river_carve_field != RLK_WG_NONE) {
         const int cidx = wg->nsampled + r->river_carve_field;
-        assert(cidx < wg->nsampled + wg->nderived);
+        assert(cidx < RLK_WG_MAX_FIELDS);
         river_carve = ctx->field[cidx];
     }
 
@@ -108,7 +108,7 @@ relief_stage(rlk_wg_ctx_t *ctx, const void *data) {
 
     /* Write output */
     const int eidx = wg->nsampled + r->slot_elev;
-    assert(eidx < wg->nsampled + wg->nderived);
+    assert(eidx < RLK_WG_MAX_FIELDS);
     ctx->field[eidx] = elev;
 }
 

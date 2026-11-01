@@ -13,7 +13,8 @@ poi_stage(rlk_wg_ctx_t *ctx, const void *data) {
     const int idx = cfg->f_sampled != RLK_WG_NONE
         ? (int)cfg->f_sampled
         : wg->nsampled + (int)cfg->slot_derived;
-    assert(idx < wg->nsampled + wg->nderived);
+    assert(idx < RLK_WG_MAX_FIELDS);
+    assert(cfg->f_sampled == RLK_WG_NONE || (int)cfg->f_sampled < wg->nsampled);
     if (ctx->field[idx] <= cfg->threshold)
         return;
 

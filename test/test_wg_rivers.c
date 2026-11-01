@@ -27,7 +27,6 @@ wg_min(void) {
     wg.inside_scale = 0.20f;
     wg.border_width = 0.20f;
     wg.nsampled = 1;
-    wg.nderived = 2;
     wg.fields[0] = (rlk_wg_field_t){ .freq = 0.01f };
     wg.naxes = 1;
     wg.axes[0] = (rlk_wg_axis_t){ .slot = 0 };
@@ -46,7 +45,6 @@ wg_wiggle(void) {
     wg.inside_scale = 0.20f;
     wg.border_width = 0.20f;
     wg.nsampled = 4;
-    wg.nderived = 2;
     wg.fields[0] = (rlk_wg_field_t){ .freq = 0.01f };
     wg.fields[1] = (rlk_wg_field_t){ .freq = 0.10f, .salt = 100 };
     wg.fields[2] = (rlk_wg_field_t){ .freq = 0.12f, .salt = 101 };
@@ -357,7 +355,6 @@ test_rivers_stage_hack_acc_log(void) {
     r.acc_log_gain = 2.0f;   /* strong gain for a clear widening */
 
     rlk_wg_t wg = wg_min();
-    wg.nderived = 2;
     assert(rlk_wg_add(&wg, rlk_wg_rivers(&r)) == RLK_OK);
     rlk_wg_init(&wg);
     const unsigned long sum_hack = mask_sum(&wg);
@@ -365,7 +362,6 @@ test_rivers_stage_hack_acc_log(void) {
 
     /* Rule off: gain 0 */
     rlk_wg_t wg2 = wg_min();
-    wg2.nderived = 2;
     rlk_wg_rivers_cfg_t r2 = r;
     r2.acc_log_gain = 0.0f;
     assert(rlk_wg_add(&wg2, rlk_wg_rivers(&r2)) == RLK_OK);

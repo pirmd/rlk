@@ -26,7 +26,6 @@ wg_min(void) {
     wg.inside_scale = 0.20f;
     wg.border_width = 0.20f;
     wg.nsampled = 1;
-    wg.nderived = 3;
     wg.fields[0] = (rlk_wg_field_t){ .freq = 0.01f };
     wg.naxes = 1;
     wg.axes[0] = (rlk_wg_axis_t){ .slot = 0 };

@@ -8,7 +8,7 @@ set_derived(rlk_wg_ctx_t *ctx, uint8_t slot, float v) {
     if (slot == RLK_WG_NONE)
         return;
     const int idx = ctx->wg->nsampled + slot;
-    assert(idx < ctx->wg->nsampled + ctx->wg->nderived);
+    assert(idx < RLK_WG_MAX_FIELDS);
     ctx->field[idx] = v;
 }
 

@@ -23,7 +23,6 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
     wg->seed = seed;
     wg->nstages = 0;
     wg->nsampled = F_NSAMPLED;
-    wg->nderived = F_NDERIVED;
     wg->fields[F_CONT]   = (rlk_wg_field_t){ .kind = RLK_WG_FBM,   .salt = 1, .octaves = 3, .freq = 0.012f, .gain = 0.5f };
     wg->fields[F_HILLS]  = (rlk_wg_field_t){ .kind = RLK_WG_FBM,   .salt = 2, .octaves = 4, .freq = 0.050f, .gain = 0.5f };
     wg->fields[F_RIDGE]  = (rlk_wg_field_t){ .kind = RLK_WG_RIDGE, .salt = 3, .octaves = 4, .freq = 0.030f, .gain = 0.5f };

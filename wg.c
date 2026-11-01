@@ -20,7 +20,6 @@ static void
 assert_wg_cfg(const rlk_wg_t *wg) {
     assert(wg);
     assert(wg->nsampled >= 1 && wg->nsampled <= RLK_WG_MAX_FIELDS);
-    assert(wg->nderived >= 0 && wg->nsampled + wg->nderived <= RLK_WG_MAX_FIELDS);
     assert(wg->nstages >= 0 && wg->nstages <= RLK_WG_MAX_STAGES);
     for (int i = 0; i < wg->nstages; i++)
         assert(wg->stages[i].fn);
@@ -31,11 +30,10 @@ assert_wg_cfg(const rlk_wg_t *wg) {
     for (int i = 0; i < wg->nsampled; i++)
         assert(wg->fields[i].freq > 0.0f);
 
-    const int nslots = wg->nsampled + wg->nderived;
     for (int a = 0; a < wg->naxes; a++) {
         const rlk_wg_axis_t *ax = &wg->axes[a];
-        assert(ax->slot < nslots);
-        assert(ax->jitter_amp == 0.0f || ax->jitter_slot < nslots);
+        assert(ax->slot < RLK_WG_MAX_FIELDS);
+        assert(ax->jitter_amp == 0.0f || ax->jitter_slot < RLK_WG_MAX_FIELDS);
     }
 
     for (int i = 0; i < wg->nzones; i++) {

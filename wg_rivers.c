@@ -11,7 +11,7 @@ set_derived(rlk_wg_ctx_t *ctx, uint8_t slot, float v) {
     if (slot == RLK_WG_NONE)
         return;
     const int idx = ctx->wg->nsampled + slot;
-    assert(idx < ctx->wg->nsampled + ctx->wg->nderived);
+    assert(idx < RLK_WG_MAX_FIELDS);
     ctx->field[idx] = v;
 }
 
@@ -84,9 +84,10 @@ rivers_stage(rlk_wg_ctx_t *ctx, const void *data) {
     const rlk_wg_rivers_cfg_t *r = (const rlk_wg_rivers_cfg_t *)data;
     const rlk_wg_t *wg = ctx->wg;
 
-    /* Slot bounds are checked here (the constructor does not know the wg). */
-    assert(r->slot_mask == RLK_WG_NONE || (int)r->slot_mask < wg->nderived);
-    assert(r->slot_carve == RLK_WG_NONE || (int)r->slot_carve < wg->nderived);
+    /* Slot bounds are checked here (the constructor does not know the wg):
+       a derived slot's absolute index is nsampled + slot. */
+    assert(r->slot_mask == RLK_WG_NONE || wg->nsampled + (int)r->slot_mask < RLK_WG_MAX_FIELDS);
+    assert(r->slot_carve == RLK_WG_NONE || wg->nsampled + (int)r->slot_carve < RLK_WG_MAX_FIELDS);
 
     /* Log-width law: the effective bank fade grows with the normalized
        log10(acc) read from the drain (acc <= w*h by construction, so the
