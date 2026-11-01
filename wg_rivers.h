@@ -5,8 +5,9 @@
  * Optional wg stage: the water layer — projects a pre-built rlk_drain_t
  * into a per-tile river mask and valley carve (SDF projection; optional
  * log(acc) bank widening, meanders, creeks, lake overlay — see the cfg
- * fields). The drain and elevation grid must be built before rlk_wg_init()
- * and must outlive the wg.
+ * fields). Build the drain and elevation grid after rlk_wg_init() (e.g.
+ * rlk_wg_fill_grid + rlk_drain_build) and before the first rlk_wg_fill();
+ * they must outlive the wg.
  *
  * Stage order (contract, not checked): a consumer of the carve slot (e.g.
  * wg_relief via river_carve_field) must be registered AFTER this stage.

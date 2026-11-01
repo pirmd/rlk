@@ -4,7 +4,8 @@
 /*
  * Optional wg stage: reader for a pre-built rlk_hydro_t — projects the
  * hydraulic per-cell data (slope, Strahler order, speed) into derived
- * slots. The hydro must be built before rlk_wg_init() and must outlive
+ * slots. Build the hydro after rlk_wg_init() (rlk_hydro_build on a drain
+ * built the same way) and before the first rlk_wg_fill(); it must outlive
  * the wg.
  */
 

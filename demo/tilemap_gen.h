@@ -237,7 +237,6 @@ struct tilemap_gen_s {
     uint8_t hydro_strahler[GRID_W * GRID_H];
     float hydro_speed[GRID_W * GRID_H];
     uint16_t hydro_scratch[GRID_W * GRID_H];
-    rlk_noise_t relief_noise[F_NSAMPLED];
     rlk_noise_t geo_noise[3];   /* light geology: faults / folds / domes */
 
     /* wg stage configs (must outlive wg) */

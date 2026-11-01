@@ -147,7 +147,7 @@ struct rlk_wg_s {
 /* Register a pipeline stage. Stages run in registration order: a stage may
  * only read derived slots written by stages registered before it (contract,
  * not checked). Returns RLK_E_INVALID if the stage table is full.
- * The stage's `data` must outlive the wg. Call before rlk_wg_init().
+ * The stage's `data` must outlive the wg. Call before the first rlk_wg_fill().
  * Ready-made stages: rlk_wg_<module>(&cfg) builds a stage from a config,
  * resolving its zero defaults in place (treat the cfg as const afterwards).
  * A custom stage is registered as
@@ -156,7 +156,8 @@ rlk_err_t rlk_wg_add(rlk_wg_t *wg, rlk_wg_stage_t stage);
 
 /* Initialize: resolves zero defaults (octaves->3, gain->0.5), asserts the
    config (safety checks), and seeds the noise generators. Call once after
-   filling the config fields and registering stages. Stage order is the
+   filling the config fields (fields, axes, zones); stages may be registered
+   before or after init, but before the first rlk_wg_fill. Stage order is the
    registration order (see rlk_wg_add). */
 void rlk_wg_init(rlk_wg_t *wg);
 
@@ -166,6 +167,13 @@ void rlk_wg_init(rlk_wg_t *wg);
    Chunked generation: one tilemap per chunk, its origin set to
    (cx*tm->w, cy*tm->h), then rlk_wg_fill(wg, cx*tm->w, cy*tm->h, tm). */
 void rlk_wg_fill(const rlk_wg_t *wg, int origin_x, int origin_y, rlk_tilemap_t *tm);
+
+/* Fill grid g with wg field idx: each cell gets the field sampled at its
+   centre (rlk_grid_center), the same convention as the per-tile field pass.
+   Macro driver: project a field onto a coarse caller-owned grid (e.g. the
+   elevation grid a drain runs on). Call after rlk_wg_init; g->values must
+   hold g->lattice.w * g->lattice.h floats. */
+void rlk_wg_fill_grid(const rlk_wg_t *wg, int idx, rlk_grid_t *g);
 
 /* --- HELPERS ------------------------------------------------------------- */
 

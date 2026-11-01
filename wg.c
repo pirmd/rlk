@@ -83,6 +83,20 @@ rlk_wg_sample_field(const rlk_wg_t *wg, int idx, float x, float y) {
     return v;
 }
 
+void
+rlk_wg_fill_grid(const rlk_wg_t *wg, int idx, rlk_grid_t *g) {
+    assert(wg && g && g->values);
+    assert(g->lattice.w > 0 && g->lattice.h > 0);
+    assert(idx >= 0 && idx < wg->nsampled);
+    for (int j = 0; j < g->lattice.h; j++)
+        for (int i = 0; i < g->lattice.w; i++) {
+            float cx, cy;
+            rlk_grid_center(g, i, j, &cx, &cy);
+            g->values[(size_t)j * (size_t)g->lattice.w + (size_t)i] =
+                rlk_wg_sample_field(wg, idx, cx, cy);
+        }
+}
+
 /* --- CLASSIFY ------------------------------------------------------------ */
 
 /* Signed distance to zone bounds: > 0 inside, < 0 outside. */

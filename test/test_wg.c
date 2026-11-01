@@ -544,6 +544,27 @@ test_fill_samples_tile_centre(void) {
     assert(fabsf(g_ctx.field[0] - want) < 1e-6f);
 }
 
+/* rlk_wg_fill_grid: each cell gets the field sampled at its centre
+   (rlk_grid_center), i.e. exactly rlk_wg_sample_field at that position. */
+static void
+test_rlk_wg_fill_grid(void) {
+    rlk_wg_t wg = wg_min();
+    rlk_wg_init(&wg);
+
+    float buf[6 * 4];
+    rlk_grid_t g = { .lattice = { .w = 6, .h = 4, .cellsize = 4,
+                                  .origin_x = 8, .origin_y = -4 },
+                     .values = buf };
+    rlk_wg_fill_grid(&wg, 0, &g);
+    for (int j = 0; j < 4; j++)
+        for (int i = 0; i < 6; i++) {
+            float cx, cy;
+            rlk_grid_center(&g, i, j, &cx, &cy);
+            float want = rlk_wg_sample_field(&wg, 0, cx, cy);
+            assert(fabsf(buf[j * 6 + i] - want) < 1e-6f);
+        }
+}
+
 int
 main(void) {
     test_rlk_wg_init_defaults();
@@ -565,5 +586,6 @@ main(void) {
     test_rlk_wg_add();
     test_rlk_wg_fill_order();
     test_fill_samples_tile_centre();
+    test_rlk_wg_fill_grid();
     return 0;
 }

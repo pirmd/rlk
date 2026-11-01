@@ -75,9 +75,11 @@ Generation:
   world rect, row-major, and writes each tile (chunked generation is
   repeated calls with the tilemap origin set per chunk).
 - To fill a grid with a sampled field (macro -> micro, e.g. the elevation
-  grid a drain runs on), sample `rlk_wg_sample_field` at each cell centre
-  (`rlk_grid_center`, so `cellsize > 1` samples at the true cell centre) --
-  see demo/tilemap_gen.c.
+  grid a drain runs on), call `rlk_wg_fill_grid(wg, field, &grid)` after
+  `rlk_wg_init`: each cell gets the field sampled at its centre
+  (`rlk_grid_center`, so `cellsize > 1` samples at the true cell centre).
+  Then compose the macro products yourself in user land, e.g.
+  `rlk_drain_build(&drain, &grid, sea, scratch)`.
 
 ### Composing stages (recipes)
 
@@ -90,7 +92,9 @@ already gives a relief to classify on — each extra stage refines it:
 - + `wg_region` before it: macro-areas (Voronoi regions) biasing the sampled
   fields, so biomes read as coherent provinces.
 - + `wg_drain` reader: exposes a pre-built `rlk_drain_t` (acc, dir, lake
-  depth) as derived slots. Needs the macro build `elev grid -> rlk_drain_build`.
+  depth) as derived slots. Macro build: `rlk_wg_fill_grid` an elevation
+  field into a coarse grid, then `rlk_drain_build` (after `rlk_wg_init`,
+  before the first `rlk_wg_fill`).
 - + `wg_hydro` reader: exposes a pre-built `rlk_hydro_t` (slope, Strahler
   order, speed). Needs `-> rlk_hydro_build` on top of the drain.
 - + `wg_rivers` after the drain reader, before `wg_relief`: river mask +
@@ -107,6 +111,48 @@ Rules of thumb:
   reads `drain->acc`, `wg_rivers` computes log10(acc) itself).
 - Macro builds (grid -> drain -> hydro) happen once, outside the wg
   pipeline, on a coarse lattice; the pipeline stages just read them.
+
+### Boilerplate: full pipeline with hydrology
+
+Order contract: fill the wg config -> `rlk_wg_init` (seeds the noise) ->
+macro build (after init) -> register stages (before the first fill) ->
+`rlk_wg_fill`. All buffers caller-owned, no allocation:
+
+```c
+/* caller-owned buffers */
+float    elev_buf[GW*GH];
+uint16_t drain_filled[GW*GH];  uint8_t drain_dir[GW*GH];
+uint32_t drain_acc[GW*GH];     int drain_order[GW*GH];
+uint64_t scratch[GW*GH];
+rlk_tile_t tiles[TM_W*TM_H];
+
+rlk_wg_t wg = {0};
+wg.seed = 42;  wg.nsampled = 1;  wg.nderived = 3;
+wg.fields[0] = (rlk_wg_field_t){ .kind = RLK_WG_FBM, .freq = 0.005f, .salt = 1 };
+/* axes, zones, inside_scale, border_width ... */
+rlk_wg_init(&wg);
+
+/* macro: project field 0 onto a coarse grid, build the drain on it */
+rlk_grid_t elev = { .lattice = { .w = GW, .h = GH, .cellsize = 4 }, .values = elev_buf };
+rlk_wg_fill_grid(&wg, 0, &elev);
+rlk_drain_t drain = { .lattice = elev.lattice, .filled = drain_filled, .dir = drain_dir,
+                      .acc = drain_acc, .order = drain_order };
+rlk_drain_build(&drain, &elev, SEA_LEVEL, scratch);
+
+/* stages: readers take the pre-built PODs; register before the first fill */
+rlk_wg_drain_cfg_t dcfg = { .drain = &drain, .elev = &elev, .sea = SEA_LEVEL,
+                            .slot_acc = 0, .slot_dir = 1, .slot_lake = 2 };
+rlk_wg_add(&wg, rlk_wg_drain(&dcfg));
+/* ... rlk_wg_rivers, rlk_wg_relief, custom stages ... */
+
+rlk_tilemap_t tm;
+rlk_tilemap_init(&tm, TM_W, TM_H, tiles, sizeof(tiles));
+rlk_wg_fill(&wg, 0, 0, &tm);
+```
+
+The macro grid is fixed per wg (same lattice as the world rect it covers);
+tiles outside it read default slot values. `rlk_wg_fill_grid` works for any
+field, not just elevation — the link field -> grid -> drain is user land.
 
 ## Two-level generation
 

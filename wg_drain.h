@@ -4,8 +4,9 @@
 /*
  * Optional wg stage: reader for a pre-built rlk_drain_t — projects the
  * drainage network (acc, downstream dir, lake depth) into per-tile
- * derived slots for stages and writers. The drain and elevation grid
- * must be built before rlk_wg_init() and must outlive the wg.
+ * derived slots for stages and writers. Build the drain and elevation grid
+ * after rlk_wg_init() (e.g. rlk_wg_fill_grid + rlk_drain_build) and before
+ * the first rlk_wg_fill(); they must outlive the wg.
  */
 
 #include "wg.h"

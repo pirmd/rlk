@@ -18,7 +18,7 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
 
     rlk_tilemap_init(&gen->tm, TM_W, TM_H, gen->buffer, sizeof(gen->buffer));
 
-    /* --- wg field config (before grid fill: relief_noise seeding needs field seeds) --- */
+    /* --- wg field config --- */
     rlk_wg_t *wg = &gen->wg;
     wg->seed = seed;
     wg->nstages = 0;
@@ -54,20 +54,57 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
     gen->prov_cfg.types[4].bias[F_CONT] = -0.10f;  /* ISLES: more sea   */
     gen->prov_mod = rlk_wg_region(&gen->prov_cfg);
 
-    /* --- Coarse elevation grid: seed noise like wg, fill with relief terrain ---
-       The drain grid must see the SAME terrain the relief stage displays,
-       otherwise rivers follow a different landscape than what is shown. */
-    for (int i = 0; i < F_NSAMPLED; i++) {
-        uint64_t s = rlk_hash_sub(seed, 0xF1E1D000ULL + (uint64_t)i);
-        gen->relief_noise[i].seed = rlk_hash_sub(s, wg->fields[i].salt);
-    }
+    /* --- Axes & zones (full wg config), then init: seeds the wg noise, so the
+       macro grid below can sample the wg fields directly (rlk_wg_sample_field).
+       3-axis climate plane (elev x temp x hum): specialist review 2026-10-30,
+       geographer P0 (Köppen simplified on temp x hum). Axis 1 reads
+       F_TEMP_LAT (lapse-cooled + latitudinal gradient, stage 7), not raw
+       F_TEMP, so the map edges are colder (review 2026-10-30). --- */
+    wg->naxes = 3;
+    wg->axes[0] = (rlk_wg_axis_t){ .slot = F_ELEV,     .jitter_slot = F_DETAIL, .jitter_amp = 0.03f };
+    wg->axes[1] = (rlk_wg_axis_t){ .slot = F_TEMP_LAT, .jitter_slot = F_DETAIL, .jitter_amp = 0.03f };
+    wg->axes[2] = (rlk_wg_axis_t){ .slot = F_HUM,      .jitter_slot = F_DETAIL, .jitter_amp = 0.03f };
+
+    /* Zones: elevation slices on axis 0; the lowland band splits into the 6
+       Köppen biomes on (temp, hum). Unbound axes use +/- RLK_WG_AXIS_UNBOUNDED. */
+    wg->nzones = Z_COUNT;
+
+    /* Each zone writes through gen_capture_write, dispatched to the zone
+       writer table (gen_write.c). */
+    gen_setup_captures(gen);
+
+#define Z_UNBOUNDED_LO (-RLK_WG_AXIS_UNBOUNDED)
+#define Z_UNBOUNDED_HI ( RLK_WG_AXIS_UNBOUNDED)
+    wg->zones[Z_DEEP]     = (rlk_wg_zone_t){ .lo = {0.0f,        Z_UNBOUNDED_LO, Z_UNBOUNDED_LO}, .hi = {ELEV_DEEP,    Z_UNBOUNDED_HI, Z_UNBOUNDED_HI}, .write = gen_capture_write, .data = &gen->cap[Z_DEEP] };
+    wg->zones[Z_SHALLOW]  = (rlk_wg_zone_t){ .lo = {ELEV_DEEP,   Z_UNBOUNDED_LO, Z_UNBOUNDED_LO}, .hi = {ELEV_SHALLOW, Z_UNBOUNDED_HI, Z_UNBOUNDED_HI}, .write = gen_capture_write, .data = &gen->cap[Z_SHALLOW] };
+    wg->zones[Z_BEACH]    = (rlk_wg_zone_t){ .lo = {ELEV_SHALLOW, Z_UNBOUNDED_LO, Z_UNBOUNDED_LO}, .hi = {ELEV_BEACH,  Z_UNBOUNDED_HI, Z_UNBOUNDED_HI}, .write = gen_capture_write, .data = &gen->cap[Z_BEACH] };
+    /* Lowland: 6 biomes on (temp, hum) */
+    wg->zones[Z_DESERT]   = (rlk_wg_zone_t){ .lo = {ELEV_BEACH,   TEMP_HOT,  0.0f},     .hi = {ELEV_LOWLAND, Z_UNBOUNDED_HI, HUM_DRY},   .write = gen_capture_write, .data = &gen->cap[Z_DESERT] };
+    wg->zones[Z_FOREST]   = (rlk_wg_zone_t){ .lo = {ELEV_BEACH,   TEMP_HOT,  HUM_DRY},  .hi = {ELEV_LOWLAND, Z_UNBOUNDED_HI, Z_UNBOUNDED_HI}, .write = gen_capture_write, .data = &gen->cap[Z_FOREST] };
+    wg->zones[Z_STEPPE]   = (rlk_wg_zone_t){ .lo = {ELEV_BEACH,   TEMP_COLD, 0.0f},     .hi = {ELEV_LOWLAND, TEMP_HOT,  HUM_DRY},   .write = gen_capture_write, .data = &gen->cap[Z_STEPPE] };
+    wg->zones[Z_PLAINS]   = (rlk_wg_zone_t){ .lo = {ELEV_BEACH,   TEMP_COLD, HUM_DRY},  .hi = {ELEV_LOWLAND, TEMP_HOT,  Z_UNBOUNDED_HI}, .write = gen_capture_write, .data = &gen->cap[Z_PLAINS] };
+    wg->zones[Z_TUNDRA]   = (rlk_wg_zone_t){ .lo = {ELEV_BEACH,   Z_UNBOUNDED_LO, 0.0f},     .hi = {ELEV_LOWLAND, TEMP_COLD, HUM_DRY},   .write = gen_capture_write, .data = &gen->cap[Z_TUNDRA] };
+    wg->zones[Z_TAIGA]    = (rlk_wg_zone_t){ .lo = {ELEV_BEACH,   Z_UNBOUNDED_LO, HUM_DRY},  .hi = {ELEV_LOWLAND, TEMP_COLD, Z_UNBOUNDED_HI}, .write = gen_capture_write, .data = &gen->cap[Z_TAIGA] };
+    wg->zones[Z_MOUNTAIN] = (rlk_wg_zone_t){ .lo = {ELEV_LOWLAND, Z_UNBOUNDED_LO, Z_UNBOUNDED_LO}, .hi = {ELEV_MOUNTAIN, Z_UNBOUNDED_HI, Z_UNBOUNDED_HI}, .write = gen_capture_write, .data = &gen->cap[Z_MOUNTAIN] };
+    wg->zones[Z_SNOW]     = (rlk_wg_zone_t){ .lo = {ELEV_MOUNTAIN, Z_UNBOUNDED_LO, Z_UNBOUNDED_LO}, .hi = {1.0f,         Z_UNBOUNDED_HI, Z_UNBOUNDED_HI}, .write = gen_capture_write, .data = &gen->cap[Z_SNOW] };
+#undef Z_UNBOUNDED_LO
+#undef Z_UNBOUNDED_HI
+
+    wg->inside_scale = 0.15f;
+    wg->border_width = 0.10f;
+
+    rlk_wg_init(wg);
+
+    /* --- Coarse elevation grid: fill with the relief terrain ---
+       gen_relief_elev_fn samples the wg fields via rlk_wg_sample_field, so the
+       drain grid sees the SAME terrain the relief stage displays; otherwise
+       rivers would follow a different landscape than what is shown. */
     /* Light geology noise (demo-owned, not wg fields) */
     for (int i = 0; i < 3; i++)
         gen->geo_noise[i].seed = rlk_hash_sub(seed, 0x6E0600ULL + (uint64_t)i);
     gen_relief_ctx_t elev_ctx = {
         .gen = gen,
         .wg = wg,
-        .noise = gen->relief_noise,
         .warp = 8.0f,
         .hills_amp = 0.30f,
         .mountain_lo = 0.60f,
@@ -299,48 +336,9 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
     /* Stage 12: terrain-constrained POI kinds (zone/slope/river/geology) */
     rlk_wg_add(wg, (rlk_wg_stage_t){ .fn = gen_poi_terrain_stage, .data = gen });
 
-    /* Axes: elevation (relief output), temperature, humidity.
-       3-axis climate plane (elev x temp x hum): specialist review 2026-10-30,
-       geographer P0 (Köppen simplified on temp x hum). Axis 1 reads
-       F_TEMP_LAT (lapse-cooled + latitudinal gradient, stage 7), not raw
-       F_TEMP, so the map edges are colder (review 2026-10-30). */
-    wg->naxes = 3;
-    wg->axes[0] = (rlk_wg_axis_t){ .slot = F_ELEV,     .jitter_slot = F_DETAIL, .jitter_amp = 0.03f };
-    wg->axes[1] = (rlk_wg_axis_t){ .slot = F_TEMP_LAT, .jitter_slot = F_DETAIL, .jitter_amp = 0.03f };
-    wg->axes[2] = (rlk_wg_axis_t){ .slot = F_HUM,      .jitter_slot = F_DETAIL, .jitter_amp = 0.03f };
-
-    /* Zones: elevation slices on axis 0; the lowland band splits into the 6
-       Köppen biomes on (temp, hum). Unbound axes use +/- RLK_WG_AXIS_UNBOUNDED. */
-    wg->nzones = Z_COUNT;
-
-    /* Each zone writes through gen_capture_write, dispatched to the zone
-       writer table (gen_write.c). */
-    gen_setup_captures(gen);
-
-#define Z_UNBOUNDED_LO (-RLK_WG_AXIS_UNBOUNDED)
-#define Z_UNBOUNDED_HI ( RLK_WG_AXIS_UNBOUNDED)
-    wg->zones[Z_DEEP]     = (rlk_wg_zone_t){ .lo = {0.0f,        Z_UNBOUNDED_LO, Z_UNBOUNDED_LO}, .hi = {ELEV_DEEP,    Z_UNBOUNDED_HI, Z_UNBOUNDED_HI}, .write = gen_capture_write, .data = &gen->cap[Z_DEEP] };
-    wg->zones[Z_SHALLOW]  = (rlk_wg_zone_t){ .lo = {ELEV_DEEP,   Z_UNBOUNDED_LO, Z_UNBOUNDED_LO}, .hi = {ELEV_SHALLOW, Z_UNBOUNDED_HI, Z_UNBOUNDED_HI}, .write = gen_capture_write, .data = &gen->cap[Z_SHALLOW] };
-    wg->zones[Z_BEACH]    = (rlk_wg_zone_t){ .lo = {ELEV_SHALLOW, Z_UNBOUNDED_LO, Z_UNBOUNDED_LO}, .hi = {ELEV_BEACH,  Z_UNBOUNDED_HI, Z_UNBOUNDED_HI}, .write = gen_capture_write, .data = &gen->cap[Z_BEACH] };
-    /* Lowland: 6 biomes on (temp, hum) */
-    wg->zones[Z_DESERT]   = (rlk_wg_zone_t){ .lo = {ELEV_BEACH,   TEMP_HOT,  0.0f},     .hi = {ELEV_LOWLAND, Z_UNBOUNDED_HI, HUM_DRY},   .write = gen_capture_write, .data = &gen->cap[Z_DESERT] };
-    wg->zones[Z_FOREST]   = (rlk_wg_zone_t){ .lo = {ELEV_BEACH,   TEMP_HOT,  HUM_DRY},  .hi = {ELEV_LOWLAND, Z_UNBOUNDED_HI, Z_UNBOUNDED_HI}, .write = gen_capture_write, .data = &gen->cap[Z_FOREST] };
-    wg->zones[Z_STEPPE]   = (rlk_wg_zone_t){ .lo = {ELEV_BEACH,   TEMP_COLD, 0.0f},     .hi = {ELEV_LOWLAND, TEMP_HOT,  HUM_DRY},   .write = gen_capture_write, .data = &gen->cap[Z_STEPPE] };
-    wg->zones[Z_PLAINS]   = (rlk_wg_zone_t){ .lo = {ELEV_BEACH,   TEMP_COLD, HUM_DRY},  .hi = {ELEV_LOWLAND, TEMP_HOT,  Z_UNBOUNDED_HI}, .write = gen_capture_write, .data = &gen->cap[Z_PLAINS] };
-    wg->zones[Z_TUNDRA]   = (rlk_wg_zone_t){ .lo = {ELEV_BEACH,   Z_UNBOUNDED_LO, 0.0f},     .hi = {ELEV_LOWLAND, TEMP_COLD, HUM_DRY},   .write = gen_capture_write, .data = &gen->cap[Z_TUNDRA] };
-    wg->zones[Z_TAIGA]    = (rlk_wg_zone_t){ .lo = {ELEV_BEACH,   Z_UNBOUNDED_LO, HUM_DRY},  .hi = {ELEV_LOWLAND, TEMP_COLD, Z_UNBOUNDED_HI}, .write = gen_capture_write, .data = &gen->cap[Z_TAIGA] };
-    wg->zones[Z_MOUNTAIN] = (rlk_wg_zone_t){ .lo = {ELEV_LOWLAND, Z_UNBOUNDED_LO, Z_UNBOUNDED_LO}, .hi = {ELEV_MOUNTAIN, Z_UNBOUNDED_HI, Z_UNBOUNDED_HI}, .write = gen_capture_write, .data = &gen->cap[Z_MOUNTAIN] };
-    wg->zones[Z_SNOW]     = (rlk_wg_zone_t){ .lo = {ELEV_MOUNTAIN, Z_UNBOUNDED_LO, Z_UNBOUNDED_LO}, .hi = {1.0f,         Z_UNBOUNDED_HI, Z_UNBOUNDED_HI}, .write = gen_capture_write, .data = &gen->cap[Z_SNOW] };
-#undef Z_UNBOUNDED_LO
-#undef Z_UNBOUNDED_HI
-
-    wg->inside_scale = 0.15f;
-    wg->border_width = 0.10f;
-
     /* Guard: a dropped stage (table full) must fail loudly, not silently
        skip the last detector. */
     assert(wg->nstages == 13);
-    rlk_wg_init(wg);
     rlk_wg_fill(wg, 0, 0, &gen->tm);
 
     /* Multi-tile content inside each POI bbox (first POI wins on overlap) */

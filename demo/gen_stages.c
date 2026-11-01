@@ -188,21 +188,11 @@ gen_geology_stage(rlk_wg_ctx_t *ctx, const void *data) {
     gen->litho_buf[idx] = litho;
 }
 
-/* Sample a wg field at (x,y), reading parameters from wg->fields[idx]. */
-static inline float
-sample_wg_field(const rlk_wg_t *wg, const rlk_noise_t *noise,
-                int idx, float x, float y) {
-    const rlk_wg_field_t *f = &wg->fields[idx];
-    float v = rlk_noise_fbm(&noise[idx], x, y, f->octaves, f->freq, f->gain);
-    if (f->kind == RLK_WG_RIDGE)
-        v = 1.0f - fabsf(2.0f * v - 1.0f);
-    return v;
-}
-
 /* Elevation grid function: reproduces the wg_relief stage's BASE elevation
    (cont + hills + mountains, before river/fjord carving), so the drain grid
    sees the same terrain that is displayed. Rivers follow the displayed relief.
-   Field parameters are read from wg->fields[] to stay in sync with the stage. */
+   Fields are sampled via rlk_wg_sample_field, so this needs rlk_wg_init first
+   and stays in sync with the stage automatically. */
 float
 gen_relief_elev_fn(float px, float py, const void *user) {
     const gen_relief_ctx_t *ctx = (const gen_relief_ctx_t *)user;
@@ -211,23 +201,23 @@ gen_relief_elev_fn(float px, float py, const void *user) {
     /* Continent at original position, with the province bias applied through
        the same stock region stage as the tile pipeline: the drain grid and
        the displayed relief then share the same coastlines. */
-    float cont = sample_wg_field(wg, ctx->noise, F_CONT, px, py);
+    float cont = rlk_wg_sample_field(wg, F_CONT, px, py);
     cont = gen_province_mod_field(ctx->gen, F_CONT, cont, px, py);
 
     /* Domain warp */
-    float vx = sample_wg_field(wg, ctx->noise, F_WARP_X, px, py);
-    float vy = sample_wg_field(wg, ctx->noise, F_WARP_Y, px, py);
+    float vx = rlk_wg_sample_field(wg, F_WARP_X, px, py);
+    float vy = rlk_wg_sample_field(wg, F_WARP_Y, px, py);
     float qx = px + (vx - 0.5f) * 2.0f * ctx->warp;
     float qy = py + (vy - 0.5f) * 2.0f * ctx->warp;
 
     /* Base elevation: cont + hills + mountains */
     float elev = cont;
 
-    float hills = sample_wg_field(wg, ctx->noise, F_HILLS, qx, qy);
+    float hills = rlk_wg_sample_field(wg, F_HILLS, qx, qy);
     elev += ctx->hills_amp * (hills - 0.5f);
 
     /* Mountains: RIDGE kind, only where cont is high enough (smoothstep gate) */
-    float ridge = sample_wg_field(wg, ctx->noise, F_RIDGE, qx, qy);
+    float ridge = rlk_wg_sample_field(wg, F_RIDGE, qx, qy);
     float mt = (cont - ctx->mountain_lo) / (ctx->mountain_hi - ctx->mountain_lo);
     mt = mt < 0.0f ? 0.0f : (mt > 1.0f ? 1.0f : mt);
     mt = mt * mt * (3.0f - 2.0f * mt);
