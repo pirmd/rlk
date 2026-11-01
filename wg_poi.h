@@ -2,12 +2,10 @@
 #define RLK_WG_POI_H
 
 /*
- * Optional wg stage: detect Points of Interest and populate a rlk_poi_list_t.
- *
- * For each tile, evaluates conditions (field threshold, optional drain/grid
- * constraints, density) and creates a POI when all conditions are met.
- * The POI anchor is the tile; its bbox is a square of `size` tiles centred
- * on the anchor. type is game-defined (the library defines no POI types).
+ * Optional wg stage: POI detector — fills a rlk_poi_list_t during the
+ * fill pass; the POI list is the work queue for the second (local)
+ * generation level. POI anchor = the tile, bbox = `size` x `size` around
+ * it, type game-defined (the library defines none).
  *
  * Usage:
  *   rlk_poi_t poi_buf[256];
@@ -23,8 +21,8 @@
  *       .min_acc = 300.0f,
  *       .salt = 0xCAFE,
  *   };
- *   rlk_wg_add(&nf, rlk_wg_poi(&poi_cfg));
- *   rlk_wg_fill(&nf, 0, 0, &tm);  // fills tm AND pois
+ *   rlk_wg_add(&wg, rlk_wg_poi(&poi_cfg));
+ *   rlk_wg_fill(&wg, 0, 0, &tm);  // fills tm AND pois
  */
 
 #include "wg.h"
@@ -32,22 +30,19 @@
 #include "drain.h"
 #include "grid.h"
 
-#define RLK_WG_POI_NONE 255  /* slot value: none */
-
-/* POI detector stage configuration. Const after construction: zero defaults
-   (density 0->0.001, size 0->32, min_separation 0->size) are resolved inside
-   the stage, the cfg is never mutated. */
+/* POI detector stage configuration. The constructor resolves the zero
+   defaults in place (density 0->0.001, size 0->32, min_separation 0->size);
+   treat the cfg as const afterwards. */
 typedef struct {
     /* --- Target --- */
     rlk_poi_list_t *list;           /* list to populate; must outlive the wg */
     uint8_t type;                   /* POI type to create (game-defined) */
     uint64_t salt;                  /* decorrelates multiple detectors */
 
-    /* --- Field condition (required) ---
-       f_sampled is used if != RLK_WG_POI_NONE, else slot_derived. */
-    uint8_t f_sampled;              /* sampled field to test, or RLK_WG_POI_NONE */
-    uint8_t slot_derived;           /* derived slot to test (fallback), or RLK_WG_POI_NONE */
-    float threshold;                /* create POI if the slot value > threshold */
+    /* --- Field condition (required): f_sampled if set, else slot_derived --- */
+    uint8_t f_sampled;              /* sampled field to test, or RLK_WG_NONE */
+    uint8_t slot_derived;           /* derived slot to test, or RLK_WG_NONE */
+    float threshold;                /* create POI if the field value > threshold */
     float density;                  /* probability per eligible tile (0..1) */
     uint16_t size;                  /* suggested footprint side in tiles (-> bbox) */
 
@@ -61,10 +56,12 @@ typedef struct {
     float grid_max;                 /* max grid value (inclusive) */
 
     /* --- Deduplication --- */
-    int min_separation;             /* min tiles between POIs of same type (0=off) */
+    int min_separation;             /* min tiles between POIs of same type (0->size) */
 } rlk_wg_poi_cfg_t;
 
-/* Build a stage from a const config. The cfg must outlive the wg. */
-rlk_wg_stage_t rlk_wg_poi(const rlk_wg_poi_cfg_t *cfg);
+/* Build a stage that pushes a POI into `list` for each tile passing the
+   field threshold, the density draw and the optional drain/grid
+   constraints. The cfg must outlive the wg. */
+rlk_wg_stage_t rlk_wg_poi(rlk_wg_poi_cfg_t *cfg);
 
 #endif /* RLK_WG_POI_H */

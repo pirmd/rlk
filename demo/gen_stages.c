@@ -11,7 +11,7 @@
 
 #include "gen_internal.h"
 
-/* Apply the province modulator to a single field value at float position
+/* Apply the province region bias to a single field value at float position
    (x, y), through a throwaway ctx: only the Voronoi weights depend on
    (x, y), the other field values are irrelevant (their bias/gain are 0).
    Used to bias the coarse drain grid exactly like the tile pipeline. */
@@ -33,7 +33,7 @@ gen_province_mod_field(const tilemap_gen_t *gen, int f, float value, float x, fl
    Re-sample F_HUM at a large coordinate offset (at low
    climate freqs the 128x96 map only covers a few lattice cells, so fields
    sampled at the same origin can correlate spuriously; the offset
-   decorrelates humidity for any seed), then run the stock Voronoi modulator:
+   decorrelates humidity for any seed), then run the stock region stage:
    per-province bias/gain on the sampled fields, before relief/rivers. */
 void
 gen_province_stage(rlk_wg_ctx_t *ctx, const void *data) {
@@ -209,7 +209,7 @@ gen_relief_elev_fn(float px, float py, const void *user) {
     const rlk_wg_t *wg = ctx->wg;
 
     /* Continent at original position, with the province bias applied through
-       the same stock modulator stage as the tile pipeline: the drain grid and
+       the same stock region stage as the tile pipeline: the drain grid and
        the displayed relief then share the same coastlines. */
     float cont = sample_wg_field(wg, ctx->noise, F_CONT, px, py);
     cont = gen_province_mod_field(ctx->gen, F_CONT, cont, px, py);

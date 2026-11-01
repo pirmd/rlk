@@ -2,7 +2,7 @@
 
 LIB = librlk.a
 
-SRC = wg.c wg_modulator.c wg_grid.c wg_drain.c wg_hydro.c wg_rivers.c wg_relief.c ca.c bsp.c drain.c hydro.c wg_poi.c path.c fov.c
+SRC = wg.c wg_region.c wg_drain.c wg_hydro.c wg_rivers.c wg_relief.c ca.c bsp.c drain.c hydro.c wg_poi.c path.c fov.c
 
 include Makefile.inc
 

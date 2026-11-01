@@ -3,30 +3,17 @@
 #include <assert.h>
 #include <stddef.h>
 
-/* Resolve zero defaults: density 0->0.001, size 0->32, min_separation 0->size. */
-static void
-poi_resolve(rlk_wg_poi_cfg_t *cfg) {
-    if (cfg->density == 0.0f)
-        cfg->density = 0.001f;
-    if (cfg->size == 0)
-        cfg->size = 32;
-    if (cfg->min_separation == 0)
-        cfg->min_separation = (int)cfg->size;
-}
-
 static void
 poi_stage(rlk_wg_ctx_t *ctx, const void *data) {
     assert(ctx && data);
-    rlk_wg_poi_cfg_t rc = *(const rlk_wg_poi_cfg_t *)data;
-    poi_resolve(&rc);
-    const rlk_wg_poi_cfg_t *cfg = &rc;
+    const rlk_wg_poi_cfg_t *cfg = (const rlk_wg_poi_cfg_t *)data;
     const rlk_wg_t *wg = ctx->wg;
 
-    /* Field threshold (slot range validated by rlk_wg_init). */
-    const int idx = cfg->f_sampled != RLK_WG_POI_NONE
+    /* Field threshold slot: f_sampled if set, else slot_derived. */
+    const int idx = cfg->f_sampled != RLK_WG_NONE
         ? (int)cfg->f_sampled
         : wg->nsampled + (int)cfg->slot_derived;
-    assert(idx >= 0 && idx < wg->nsampled + wg->nderived);
+    assert(idx < wg->nsampled + wg->nderived);
     if (ctx->field[idx] <= cfg->threshold)
         return;
 
@@ -78,15 +65,18 @@ poi_stage(rlk_wg_ctx_t *ctx, const void *data) {
 }
 
 rlk_wg_stage_t
-rlk_wg_poi(const rlk_wg_poi_cfg_t *cfg) {
+rlk_wg_poi(rlk_wg_poi_cfg_t *cfg) {
     assert(cfg);
     assert(cfg->list);
-    /* Exactly one of the two slot spaces must be set. */
-    assert(cfg->f_sampled != RLK_WG_POI_NONE || cfg->slot_derived != RLK_WG_POI_NONE);
-    rlk_wg_stage_t st = { .fn = poi_stage, .data = cfg };
-    if (cfg->f_sampled != RLK_WG_POI_NONE)
-        st.reads.sampled = RLK_WG_SLOT(cfg->f_sampled);
-    else
-        st.reads.derived = RLK_WG_SLOT(cfg->slot_derived);
-    return st;
+    /* At least one field source; f_sampled has priority over slot_derived. */
+    assert(cfg->f_sampled != RLK_WG_NONE || cfg->slot_derived != RLK_WG_NONE);
+    /* Resolve zero defaults in place (density 0->0.001, size 0->32,
+       min_separation 0->size). */
+    if (cfg->density == 0.0f)
+        cfg->density = 0.001f;
+    if (cfg->size == 0)
+        cfg->size = 32;
+    if (cfg->min_separation == 0)
+        cfg->min_separation = (int)cfg->size;
+    return (rlk_wg_stage_t){ .fn = poi_stage, .data = cfg };
 }

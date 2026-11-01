@@ -32,7 +32,7 @@
 #include "wg.h"
 #include "wg_drain.h"
 #include "wg_hydro.h"
-#include "wg_modulator.h"
+#include "wg_region.h"
 #include "wg_rivers.h"
 #include "wg_relief.h"
 #include "wg_poi.h"
@@ -120,7 +120,6 @@ enum {
     D_SLOPE,         /* D8 downslope, elev units/tile (wg_hydro) */
     D_STRAHLER,      /* Strahler stream order (wg_hydro) */
     D_SPEED,         /* Manning speed estimate (wg_hydro) */
-    D_ACC_LOG,       /* normalized log10(acc) [0,1] (wg_drain slot_acc_log, Hack's law) */
     D_TEMP_LAT,      /* latitudinal thermal gradient (demo stage, specialist review 2026-10-30) */
     F_NDERIVED
 };
@@ -133,7 +132,6 @@ enum {
 #define F_SLOPE       (F_NSAMPLED + D_SLOPE)
 #define F_STRAHLER    (F_NSAMPLED + D_STRAHLER)
 #define F_SPEED       (F_NSAMPLED + D_SPEED)
-#define F_ACC_LOG     (F_NSAMPLED + D_ACC_LOG)
 #define F_TEMP_LAT    (F_NSAMPLED + D_TEMP_LAT)
 
 /* --- Zone (biome) indices ------------------------------------------------ */
@@ -243,8 +241,8 @@ struct tilemap_gen_s {
     rlk_noise_t geo_noise[3];   /* light geology: faults / folds / domes */
 
     /* wg stage configs (must outlive wg) */
-    rlk_wg_modulator_cfg_t prov_cfg;   /* provinces: Voronoi bias on sampled fields */
-    rlk_wg_stage_t prov_mod;           /* stock modulator stage built from prov_cfg */
+    rlk_wg_region_cfg_t prov_cfg;      /* provinces: per-region bias on sampled fields */
+    rlk_wg_stage_t prov_mod;           /* stock region stage built from prov_cfg */
     rlk_wg_stage_t relief_mod;         /* stock relief stage, wrapped with rain shadow */
     rlk_wg_drain_cfg_t drain_stage;
     rlk_wg_hydro_cfg_t hydro_stage;

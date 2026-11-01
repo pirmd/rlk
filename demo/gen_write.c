@@ -63,7 +63,7 @@ write_coast(const rlk_wg_ctx_t *ctx, const void *data, rlk_tile_t *out) {
     if (slope > SLOPE_STEEP) {
         out->type = TILE_ROCK;
         out->flags = 0x01;
-        out->variant = rock_variant(ctx, (const tilemap_gen_t *)data, ctx->depth);
+        out->variant = rock_variant(ctx, (const tilemap_gen_t *)data, ctx->inside);
         return 1;
     }
     if (slope < SLOPE_GENTLE) {
@@ -82,7 +82,7 @@ write_deep(const rlk_wg_ctx_t *ctx, const void *data, rlk_tile_t *out) {
     if (ctx->field[F_RIVER_MASK] > 0.0f) {
         out->variant = 1;
     } else {
-        out->variant = (uint8_t)(ctx->depth * 3.0f);
+        out->variant = (uint8_t)(ctx->inside * 3.0f);
     }
 }
 
@@ -104,8 +104,8 @@ write_beach(const rlk_wg_ctx_t *ctx, const void *data, rlk_tile_t *out) {
 
     if (mask > 0.0f) {
         /* Estuary: gradient from water (at shoreline) to marsh (inland).
-           ctx->depth = 0 at waterline, 1 at landward edge of beach. */
-        float eff = mask * (1.0f - 0.5f * ctx->depth);
+           ctx->inside = 0 at waterline, 1 at landward edge of beach. */
+        float eff = mask * (1.0f - 0.5f * ctx->inside);
         if (eff > 0.45f) {
             out->type = TILE_WATER;
             out->variant = 0;
@@ -121,12 +121,12 @@ write_beach(const rlk_wg_ctx_t *ctx, const void *data, rlk_tile_t *out) {
     if (ctx->field[F_SLOPE] > SLOPE_STEEP) {
         out->type = TILE_ROCK;
         out->flags = 0x01;
-        out->variant = rock_variant(ctx, (const tilemap_gen_t *)data, ctx->depth);
+        out->variant = rock_variant(ctx, (const tilemap_gen_t *)data, ctx->inside);
         return;
     }
     out->type = TILE_SAND;
     /* Wet sand near the waterline (depth=0, darker), dry sand inland (depth=1, lighter) */
-    out->variant = (uint8_t)((1.0f - ctx->depth) * 3.0f);
+    out->variant = (uint8_t)((1.0f - ctx->inside) * 3.0f);
 }
 
 /* Shared land prelude: lake, river channel, marsh floodplain.
@@ -171,11 +171,11 @@ write_land_water(const rlk_wg_ctx_t *ctx, rlk_tile_t *out) {
 /* Rocky outcrops near mountain borders (shared by lowland biomes). */
 static void
 land_rock_outcrop(const rlk_wg_ctx_t *ctx, const void *data, rlk_tile_t *out) {
-    if (ctx->zone2 == Z_MOUNTAIN && ctx->edge > 0.6f &&
+    if (ctx->zone2 == Z_MOUNTAIN && ctx->border > 0.6f &&
         rlk_wg_rand(ctx->wg, ctx->wx, ctx->wy, 2) < 0.3f) {
         out->type = TILE_ROCK;
         out->flags = 0x01;
-        out->variant = rock_variant(ctx, (const tilemap_gen_t *)data, ctx->depth);
+        out->variant = rock_variant(ctx, (const tilemap_gen_t *)data, ctx->inside);
     }
 }
 
@@ -192,7 +192,7 @@ write_steppe(const rlk_wg_ctx_t *ctx, const void *data, rlk_tile_t *out) {
     if (write_land_water(ctx, out)) return;
     if (write_coast(ctx, data, out)) return;
     /* Écotone: near a desert border, sand spills over (50%) */
-    if (ctx->zone2 == Z_DESERT && ctx->edge > 0.5f &&
+    if (ctx->zone2 == Z_DESERT && ctx->border > 0.5f &&
         rlk_wg_rand(ctx->wg, ctx->wx, ctx->wy, 22) < 0.5f) {
         out->type = TILE_SAND;
         out->variant = (uint8_t)(ctx->field[F_DETAIL] * 3.0f);
@@ -209,7 +209,7 @@ write_plains(const rlk_wg_ctx_t *ctx, const void *data, rlk_tile_t *out) {
     if (write_land_water(ctx, out)) return;
     if (write_coast(ctx, data, out)) return;
     /* Écotone: near a forest border, trees spill over (30%) */
-    if (ctx->zone2 == Z_FOREST && ctx->edge > 0.5f &&
+    if (ctx->zone2 == Z_FOREST && ctx->border > 0.5f &&
         rlk_wg_rand(ctx->wg, ctx->wx, ctx->wy, 21) < 0.3f) {
         out->type = TILE_TREE;
         out->flags = 0x01;
@@ -218,7 +218,7 @@ write_plains(const rlk_wg_ctx_t *ctx, const void *data, rlk_tile_t *out) {
     }
     out->type = TILE_GRASS;
     /* Variant: mix detail noise with depth (darker green in the biome centre) */
-    out->variant = (uint8_t)((ctx->field[F_DETAIL] * 0.6f + ctx->depth * 0.4f) * 3.0f);
+    out->variant = (uint8_t)((ctx->field[F_DETAIL] * 0.6f + ctx->inside * 0.4f) * 3.0f);
     land_rock_outcrop(ctx, data, out);
 }
 
@@ -227,9 +227,9 @@ write_forest(const rlk_wg_ctx_t *ctx, const void *data, rlk_tile_t *out) {
     if (write_land_water(ctx, out)) return;
     if (write_coast(ctx, data, out)) return;
     /* Tree density */
-    float density = (0.3f + ctx->depth * 0.5f) * (0.5f + ctx->field[F_DETAIL]);
+    float density = (0.3f + ctx->inside * 0.5f) * (0.5f + ctx->field[F_DETAIL]);
     /* Variant: mix detail noise with depth (darker in the forest centre) */
-    out->variant = (uint8_t)((ctx->field[F_DETAIL] * 0.5f + ctx->depth * 0.5f) * 3.0f);
+    out->variant = (uint8_t)((ctx->field[F_DETAIL] * 0.5f + ctx->inside * 0.5f) * 3.0f);
     if (rlk_wg_rand(ctx->wg, ctx->wx, ctx->wy, 1) < density) {
         out->type = TILE_TREE;  /* hot + wet: broadleaf */
         out->flags = 0x01;
@@ -258,7 +258,7 @@ write_taiga(const rlk_wg_ctx_t *ctx, const void *data, rlk_tile_t *out) {
     if (write_land_water(ctx, out)) return;
     if (write_coast(ctx, data, out)) return;
     /* Écotone: near a tundra border, snow creeps down (50%) */
-    if (ctx->zone2 == Z_TUNDRA && ctx->edge > 0.5f &&
+    if (ctx->zone2 == Z_TUNDRA && ctx->border > 0.5f &&
         rlk_wg_rand(ctx->wg, ctx->wx, ctx->wy, 23) < 0.5f) {
         out->type = TILE_SNOW;
         out->flags = 0x01;
@@ -266,8 +266,8 @@ write_taiga(const rlk_wg_ctx_t *ctx, const void *data, rlk_tile_t *out) {
         return;
     }
     /* cold + wet: conifers over forest floor */
-    float density = (0.3f + ctx->depth * 0.5f) * (0.5f + ctx->field[F_DETAIL]);
-    out->variant = (uint8_t)((ctx->field[F_DETAIL] * 0.5f + ctx->depth * 0.5f) * 3.0f);
+    float density = (0.3f + ctx->inside * 0.5f) * (0.5f + ctx->field[F_DETAIL]);
+    out->variant = (uint8_t)((ctx->field[F_DETAIL] * 0.5f + ctx->inside * 0.5f) * 3.0f);
     if (rlk_wg_rand(ctx->wg, ctx->wx, ctx->wy, 5) < density) {
         out->type = TILE_PINE;
         out->flags = 0x01;
@@ -282,7 +282,7 @@ write_mountain(const rlk_wg_ctx_t *ctx, const void *data, rlk_tile_t *out) {
     out->type = TILE_ROCK;
     out->flags = 0x01;
     /* Variant: lithology-based (basalt dark, granite light), depth-mixed */
-    out->variant = rock_variant(ctx, (const tilemap_gen_t *)data, ctx->depth);
+    out->variant = rock_variant(ctx, (const tilemap_gen_t *)data, ctx->inside);
 }
 
 static void
@@ -297,7 +297,7 @@ write_snow(const rlk_wg_ctx_t *ctx, const void *data, rlk_tile_t *out) {
     if (t <= 0.0f) {
         out->type = TILE_ROCK;
         out->flags = 0x01;
-        out->variant = rock_variant(ctx, (const tilemap_gen_t *)data, ctx->depth);
+        out->variant = rock_variant(ctx, (const tilemap_gen_t *)data, ctx->inside);
         return;
     }
     float s = t >= 1.0f ? 1.0f : t * t * (3.0f - 2.0f * t);

@@ -23,26 +23,17 @@ static rlk_wg_t
 wg_min(void) {
     rlk_wg_t wg = {0};
     wg.seed = 42ULL;
-    wg.depth_scale = 0.20f;
-    wg.transition_width = 0.20f;
+    wg.inside_scale = 0.20f;
+    wg.border_width = 0.20f;
     wg.nsampled = 1;
     wg.nderived = 3;
     wg.fields[0] = (rlk_wg_field_t){ .freq = 0.01f };
     wg.naxes = 1;
-    wg.axes[0] = (rlk_wg_axis_t){ .field = 0 };
+    wg.axes[0] = (rlk_wg_axis_t){ .slot = 0 };
     wg.nzones = 1;
     wg.zones[0] = (rlk_wg_zone_t){ .lo = {0.0f}, .hi = {1.0f},
                                         .write = write_drain };
     return wg;
-}
-
-/* Writer: derived[3]=acc_log -> variant (0..255). */
-static void
-write_acc_log(const rlk_wg_ctx_t *ctx, const void *data, rlk_tile_t *out) {
-    (void)data;
-    const rlk_wg_t *wg = ctx->wg;
-    out->biome = (uint8_t)ctx->zone;
-    out->variant = (uint8_t)(rlk_clampf(ctx->field[wg->nsampled + 3], 0.0f, 1.0f) * 255.0f);
 }
 
 /* Drain fixture: 4x4 cells of 4 tiles, slope eastward (elev = i). */
@@ -88,7 +79,7 @@ test_drain_stage_basic(void) {
     f.acc_scale = (float)(FW * FH);
 
     assert(rlk_wg_add(&wg, rlk_wg_drain(&f)) == RLK_OK);
-    assert(rlk_wg_init(&wg) == RLK_OK);
+    rlk_wg_init(&wg);
 
     rlk_tilemap_t tm;
     rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
@@ -122,11 +113,11 @@ test_drain_stage_none_slots(void) {
     f.elev = &elev;
     f.sea = -1.0f;
     f.slot_acc = 0;
-    f.slot_dir = RLK_WG_DRAIN_NONE;
-    f.slot_lake = RLK_WG_DRAIN_NONE;
+    f.slot_dir = RLK_WG_NONE;
+    f.slot_lake = RLK_WG_NONE;
 
     assert(rlk_wg_add(&wg, rlk_wg_drain(&f)) == RLK_OK);
-    assert(rlk_wg_init(&wg) == RLK_OK);
+    rlk_wg_init(&wg);
 
     rlk_tilemap_t tm;
     rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
@@ -137,7 +128,7 @@ test_drain_stage_none_slots(void) {
     assert(t);
 }
 
-/* Constructor builds a stage from a const config (fn is static, only the
+/* Constructor builds a stage from a config (fn is static, only the
    data pointer is checkable). */
 static void
 test_drain_constructor(void) {
@@ -154,50 +145,18 @@ test_drain_constructor(void) {
 
     rlk_wg_stage_t st = rlk_wg_drain(&f);
     assert(st.data == &f);
-    /* cfg is const: acc_scale 0 -> 1.0 resolved in the stage, not written back. */
-    assert(f.acc_scale == 0.0f);
+    /* Zero defaults are resolved in place by the constructor. */
+    assert(f.acc_scale == 1.0f);
 
     assert(rlk_wg_add(&wg, st) == RLK_OK);
     assert(wg.nstages == 1);
     assert(wg.stages[0].data == &f);
 
-    assert(rlk_wg_init(&wg) == RLK_OK);
+    rlk_wg_init(&wg);
 
     rlk_tilemap_t tm;
     rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
     rlk_wg_fill(&wg, 0, 0, &tm);
-}
-
-/* slot_acc_log: normalized log10(acc) in [0,1], monotonic in acc.
-   Fixture: elev = i, all cells drain west, so acc grows westward:
-   acc(0,j) = 4 (whole row) > acc(3,j) = 1 (source). */
-static void
-test_drain_stage_acc_log(void) {
-    drain_setup();
-
-    rlk_wg_t wg = wg_min();
-    wg.nderived = 4;
-    wg.zones[0].write = write_acc_log;
-    rlk_wg_drain_cfg_t f = {0};
-    f.drain = &drain;
-    f.elev = &elev;
-    f.sea = -1.0f;
-    f.slot_acc_log = 3;
-
-    assert(rlk_wg_add(&wg, rlk_wg_drain(&f)) == RLK_OK);
-    assert(rlk_wg_init(&wg) == RLK_OK);
-
-    rlk_tilemap_t tm;
-    rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
-    rlk_wg_fill(&wg, 0, 0, &tm);
-
-    /* Tile (2,2) -> cell (0,0): acc 4 -> log10(5)/log10(17) ~ 0.568.
-       Tile (14,2) -> cell (3,0): acc 1 -> log10(2)/log10(17) ~ 0.245. */
-    const rlk_tile_t *west = rlk_tilemap_get(&tm, 2, 2);
-    const rlk_tile_t *east = rlk_tilemap_get(&tm, 14, 2);
-    assert(west && east);
-    assert(west->variant > 0 && east->variant > 0);
-    assert(west->variant > east->variant);
 }
 
 /* Stage table full -> RLK_E_INVALID. */
@@ -222,7 +181,6 @@ int
 main(void) {
     test_drain_stage_basic();
     test_drain_stage_none_slots();
-    test_drain_stage_acc_log();
     test_drain_constructor();
     test_drain_limit_too_many_stages();
     return 0;

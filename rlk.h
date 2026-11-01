@@ -33,8 +33,7 @@
 
 /* Domain worldgen: pipeline engine and stages (wg_ prefix) */
 #include "wg.h"
-#include "wg_modulator.h"
-#include "wg_grid.h"
+#include "wg_region.h"
 #include "wg_drain.h"
 #include "wg_hydro.h"
 #include "wg_relief.h"

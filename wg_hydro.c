@@ -2,50 +2,40 @@
 
 #include <assert.h>
 
+/* Write v into derived slot `slot` (RLK_WG_NONE = skip). */
+static void
+set_derived(rlk_wg_ctx_t *ctx, uint8_t slot, float v) {
+    if (slot == RLK_WG_NONE)
+        return;
+    const int idx = ctx->wg->nsampled + slot;
+    assert(idx < RLK_WG_MAX_FIELDS);
+    ctx->field[idx] = v;
+}
+
 static void
 hydro_stage(rlk_wg_ctx_t *ctx, const void *data) {
     assert(ctx && data);
     const rlk_wg_hydro_cfg_t *f = (const rlk_wg_hydro_cfg_t *)data;
-    const rlk_wg_t *wg = ctx->wg;
 
     const rlk_hydro_t *h = f->hydro;
-    const int idx0 = rlk_lattice_index(&h->lattice, ctx->wx, ctx->wy);
+    const int c = rlk_lattice_index(&h->lattice, ctx->wx, ctx->wy);
 
     float slope = 0.0f, strahler = 0.0f, speed = 0.0f;
-    if (idx0 >= 0) {
-        const size_t c = (size_t)idx0;
-        if (h->slope)    slope    = h->slope[c];
-        if (h->strahler) strahler = (float)h->strahler[c];
-        if (h->speed)    speed    = h->speed[c];
+    if (c >= 0) {
+        const size_t k = (size_t)c;
+        if (h->slope)    slope    = h->slope[k];
+        if (h->strahler) strahler = (float)h->strahler[k];
+        if (h->speed)    speed    = h->speed[k];
     }
 
-    if (f->slot_slope != RLK_WG_HYDRO_NONE) {
-        const int idx = wg->nsampled + f->slot_slope;
-        assert(idx >= 0 && idx < RLK_WG_MAX_FIELDS);
-        ctx->field[idx] = slope;
-    }
-    if (f->slot_strahler != RLK_WG_HYDRO_NONE) {
-        const int idx = wg->nsampled + f->slot_strahler;
-        assert(idx >= 0 && idx < RLK_WG_MAX_FIELDS);
-        ctx->field[idx] = strahler;
-    }
-    if (f->slot_speed != RLK_WG_HYDRO_NONE) {
-        const int idx = wg->nsampled + f->slot_speed;
-        assert(idx >= 0 && idx < RLK_WG_MAX_FIELDS);
-        ctx->field[idx] = speed;
-    }
+    set_derived(ctx, f->slot_slope, slope);
+    set_derived(ctx, f->slot_strahler, strahler);
+    set_derived(ctx, f->slot_speed, speed);
 }
 
 rlk_wg_stage_t
-rlk_wg_hydro(const rlk_wg_hydro_cfg_t *cfg) {
+rlk_wg_hydro(rlk_wg_hydro_cfg_t *cfg) {
     assert(cfg);
     assert(cfg->hydro);
-    rlk_wg_stage_t st = { .fn = hydro_stage, .data = cfg };
-    if (cfg->slot_slope != RLK_WG_HYDRO_NONE)
-        st.writes.derived |= RLK_WG_SLOT(cfg->slot_slope);
-    if (cfg->slot_strahler != RLK_WG_HYDRO_NONE)
-        st.writes.derived |= RLK_WG_SLOT(cfg->slot_strahler);
-    if (cfg->slot_speed != RLK_WG_HYDRO_NONE)
-        st.writes.derived |= RLK_WG_SLOT(cfg->slot_speed);
-    return st;
+    return (rlk_wg_stage_t){ .fn = hydro_stage, .data = cfg };
 }

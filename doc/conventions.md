@@ -45,3 +45,10 @@
    t = 1). Value noise and fBm inherit `[0,1)` from the lattice hashes.
    Both `[a,b)` and the French-style `]a,b[` are valid per ISO 80000-2, but
    comments are English and ASCII here: always `[a,b)`, never `]a,b[`.
+10. Randomness: `seed` is the root of a random source (a world, a noise
+    generator, a structure, a POI: `rlk_wg_t.seed`, `rlk_noise_t.seed`,
+    `rlk_poi_t.seed`). `salt` is a decorrelating value mixed into an
+    existing seed to distinguish several uses or instances of the same
+    source: parameters of `rlk_hash_sub` / `rlk_hash_at` / `rlk_wg_rand`
+    / `rlk_ca_rand`, and cfg fields such as `rlk_wg_field_t.salt`,
+    `rlk_wg_region_cfg_t.salt`, `rlk_wg_poi_cfg_t.salt`.

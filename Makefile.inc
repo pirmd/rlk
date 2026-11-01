@@ -29,8 +29,7 @@ RLK_HDR = $(RLK_DIR)/err.h $(RLK_DIR)/hash.h $(RLK_DIR)/fmath.h \
 	$(RLK_DIR)/tilemap.h $(RLK_DIR)/slope.h $(RLK_DIR)/drain.h \
 	$(RLK_DIR)/hydro.h $(RLK_DIR)/path.h $(RLK_DIR)/fov.h \
 	$(RLK_DIR)/rlk.h \
-	$(RLK_DIR)/wg.h $(RLK_DIR)/wg_modulator.h \
-	$(RLK_DIR)/wg_grid.h $(RLK_DIR)/wg_drain.h \
-	$(RLK_DIR)/wg_hydro.h \
+	$(RLK_DIR)/wg.h $(RLK_DIR)/wg_region.h \
+	$(RLK_DIR)/wg_drain.h $(RLK_DIR)/wg_hydro.h \
 	$(RLK_DIR)/wg_rivers.h $(RLK_DIR)/wg_relief.h \
 	$(RLK_DIR)/wg_poi.h $(RLK_DIR)/ca.h $(RLK_DIR)/bsp.h

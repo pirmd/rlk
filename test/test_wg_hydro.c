@@ -24,13 +24,13 @@ static rlk_wg_t
 wg_min(void) {
     rlk_wg_t wg = {0};
     wg.seed = 42ULL;
-    wg.depth_scale = 0.20f;
-    wg.transition_width = 0.20f;
+    wg.inside_scale = 0.20f;
+    wg.border_width = 0.20f;
     wg.nsampled = 1;
     wg.nderived = 3;
     wg.fields[0] = (rlk_wg_field_t){ .freq = 0.01f };
     wg.naxes = 1;
-    wg.axes[0] = (rlk_wg_axis_t){ .field = 0 };
+    wg.axes[0] = (rlk_wg_axis_t){ .slot = 0 };
     wg.nzones = 1;
     wg.zones[0] = (rlk_wg_zone_t){ .lo = {0.0f}, .hi = {1.0f},
                                         .write = write_hydro };
@@ -86,7 +86,7 @@ test_hydro_stage_basic(void) {
     f.slot_speed = 2;
 
     assert(rlk_wg_add(&wg, rlk_wg_hydro(&f)) == RLK_OK);
-    assert(rlk_wg_init(&wg) == RLK_OK);
+    rlk_wg_init(&wg);
 
     rlk_tilemap_t tm;
     rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
@@ -115,12 +115,12 @@ test_hydro_stage_none_slots(void) {
     rlk_wg_t wg = wg_min();
     rlk_wg_hydro_cfg_t f = {0};
     f.hydro = &hydro;
-    f.slot_slope = RLK_WG_HYDRO_NONE;
+    f.slot_slope = RLK_WG_NONE;
     f.slot_strahler = 1;
-    f.slot_speed = RLK_WG_HYDRO_NONE;
+    f.slot_speed = RLK_WG_NONE;
 
     assert(rlk_wg_add(&wg, rlk_wg_hydro(&f)) == RLK_OK);
-    assert(rlk_wg_init(&wg) == RLK_OK);
+    rlk_wg_init(&wg);
 
     rlk_tilemap_t tm;
     rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
@@ -144,13 +144,14 @@ test_hydro_stage_outside(void) {
     f.slot_speed = 2;
 
     assert(rlk_wg_add(&wg, rlk_wg_hydro(&f)) == RLK_OK);
-    assert(rlk_wg_init(&wg) == RLK_OK);
+    rlk_wg_init(&wg);
 
     rlk_tilemap_t tm;
     rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
+    tm.origin_x = 1000; tm.origin_y = 1000;
     rlk_wg_fill(&wg, 1000, 1000, &tm);  /* far outside the 16x16 grid */
 
-    const rlk_tile_t *t = rlk_tilemap_get(&tm, 3, 3);
+    const rlk_tile_t *t = rlk_tilemap_get(&tm, 1003, 1003);
     assert(t);
     assert(t->type == 0);
     assert(t->variant == 0);

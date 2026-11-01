@@ -2,31 +2,27 @@
 #define RLK_WG_HYDRO_H
 
 /*
- * Optional wg stage: reads a pre-built rlk_hydro_t into derived fields.
- *
- * Writes up to three derived fields per tile (nearest grid cell of the
- * tile position; 0 outside the grid):
- *   slot_slope    -> D8 downslope, elevation units per tile
- *   slot_strahler -> Strahler stream order (as a float, 1..)
- *   slot_speed    -> Manning speed estimate, relative units
- * A slot of RLK_WG_HYDRO_NONE disables that output.
- * The hydro must be built before rlk_wg_init() and must outlive the wg.
+ * Optional wg stage: reader for a pre-built rlk_hydro_t — projects the
+ * hydraulic per-cell data (slope, Strahler order, speed) into derived
+ * slots. The hydro must be built before rlk_wg_init() and must outlive
+ * the wg.
  */
 
 #include "wg.h"
 #include "hydro.h"
 
-#define RLK_WG_HYDRO_NONE 255  /* slot value: do not write this output */
-
-/* Hydro reader stage configuration. Const after construction. */
+/* Hydro reader stage configuration. No zero defaults; treat as const after
+   construction. */
 typedef struct {
     const rlk_hydro_t *hydro;  /* pre-built hydro; must outlive the wg */
-    uint8_t slot_slope;        /* derived field for slope, or NONE */
-    uint8_t slot_strahler;     /* derived field for Strahler order, or NONE */
-    uint8_t slot_speed;        /* derived field for speed, or NONE */
+    uint8_t slot_slope;        /* derived field for slope, or RLK_WG_NONE */
+    uint8_t slot_strahler;     /* derived field for Strahler order, or RLK_WG_NONE */
+    uint8_t slot_speed;        /* derived field for speed, or RLK_WG_NONE */
 } rlk_wg_hydro_cfg_t;
 
-/* Build a stage from a const config. The cfg must outlive the wg. */
-rlk_wg_stage_t rlk_wg_hydro(const rlk_wg_hydro_cfg_t *cfg);
+/* Build a stage that reads the pre-built hydro at each tile and writes the
+   configured derived slots (D8 slope, Strahler order, flow speed;
+   RLK_WG_NONE skips a slot). The cfg must outlive the wg. */
+rlk_wg_stage_t rlk_wg_hydro(rlk_wg_hydro_cfg_t *cfg);
 
 #endif /* RLK_WG_HYDRO_H */

@@ -24,27 +24,27 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
     wg->nstages = 0;
     wg->nsampled = F_NSAMPLED;
     wg->nderived = F_NDERIVED;
-    wg->fields[F_CONT]   = (rlk_wg_field_t){ .kind = RLK_WG_FBM,   .seed = 1, .octaves = 3, .freq = 0.012f, .gain = 0.5f };
-    wg->fields[F_HILLS]  = (rlk_wg_field_t){ .kind = RLK_WG_FBM,   .seed = 2, .octaves = 4, .freq = 0.050f, .gain = 0.5f };
-    wg->fields[F_RIDGE]  = (rlk_wg_field_t){ .kind = RLK_WG_RIDGE, .seed = 3, .octaves = 4, .freq = 0.030f, .gain = 0.5f };
-    wg->fields[F_WARP_X] = (rlk_wg_field_t){ .kind = RLK_WG_FBM,   .seed = 4, .octaves = 2, .freq = 0.025f, .gain = 0.5f };
-    wg->fields[F_WARP_Y] = (rlk_wg_field_t){ .kind = RLK_WG_FBM,   .seed = 5, .octaves = 2, .freq = 0.025f, .gain = 0.5f };
-    wg->fields[F_FJORD]  = (rlk_wg_field_t){ .kind = RLK_WG_FBM,   .seed = 6, .octaves = 2, .freq = 0.040f, .gain = 0.5f };
-    wg->fields[F_TEMP]   = (rlk_wg_field_t){ .kind = RLK_WG_FBM,   .seed = 7, .octaves = 4, .freq = 0.040f, .gain = 0.5f };
-    wg->fields[F_DETAIL] = (rlk_wg_field_t){ .kind = RLK_WG_FBM,   .seed = 8, .octaves = 2, .freq = 0.050f, .gain = 0.5f };
-    wg->fields[F_WIG_X]  = (rlk_wg_field_t){ .kind = RLK_WG_FBM,   .seed = 9, .octaves = 2, .freq = 0.100f, .gain = 0.5f };
-    wg->fields[F_WIG_Y]  = (rlk_wg_field_t){ .kind = RLK_WG_FBM,   .seed = 10, .octaves = 2, .freq = 0.120f, .gain = 0.5f };
-    wg->fields[F_CREEK]  = (rlk_wg_field_t){ .kind = RLK_WG_FBM,   .seed = 11, .octaves = 2, .freq = 0.025f, .gain = 0.5f };
-    wg->fields[F_HUM]    = (rlk_wg_field_t){ .kind = RLK_WG_FBM,   .seed = 12, .octaves = 4, .freq = 0.040f, .gain = 0.5f };
+    wg->fields[F_CONT]   = (rlk_wg_field_t){ .kind = RLK_WG_FBM,   .salt = 1, .octaves = 3, .freq = 0.012f, .gain = 0.5f };
+    wg->fields[F_HILLS]  = (rlk_wg_field_t){ .kind = RLK_WG_FBM,   .salt = 2, .octaves = 4, .freq = 0.050f, .gain = 0.5f };
+    wg->fields[F_RIDGE]  = (rlk_wg_field_t){ .kind = RLK_WG_RIDGE, .salt = 3, .octaves = 4, .freq = 0.030f, .gain = 0.5f };
+    wg->fields[F_WARP_X] = (rlk_wg_field_t){ .kind = RLK_WG_FBM,   .salt = 4, .octaves = 2, .freq = 0.025f, .gain = 0.5f };
+    wg->fields[F_WARP_Y] = (rlk_wg_field_t){ .kind = RLK_WG_FBM,   .salt = 5, .octaves = 2, .freq = 0.025f, .gain = 0.5f };
+    wg->fields[F_FJORD]  = (rlk_wg_field_t){ .kind = RLK_WG_FBM,   .salt = 6, .octaves = 2, .freq = 0.040f, .gain = 0.5f };
+    wg->fields[F_TEMP]   = (rlk_wg_field_t){ .kind = RLK_WG_FBM,   .salt = 7, .octaves = 4, .freq = 0.040f, .gain = 0.5f };
+    wg->fields[F_DETAIL] = (rlk_wg_field_t){ .kind = RLK_WG_FBM,   .salt = 8, .octaves = 2, .freq = 0.050f, .gain = 0.5f };
+    wg->fields[F_WIG_X]  = (rlk_wg_field_t){ .kind = RLK_WG_FBM,   .salt = 9, .octaves = 2, .freq = 0.100f, .gain = 0.5f };
+    wg->fields[F_WIG_Y]  = (rlk_wg_field_t){ .kind = RLK_WG_FBM,   .salt = 10, .octaves = 2, .freq = 0.120f, .gain = 0.5f };
+    wg->fields[F_CREEK]  = (rlk_wg_field_t){ .kind = RLK_WG_FBM,   .salt = 11, .octaves = 2, .freq = 0.025f, .gain = 0.5f };
+    wg->fields[F_HUM]    = (rlk_wg_field_t){ .kind = RLK_WG_FBM,   .salt = 12, .octaves = 4, .freq = 0.040f, .gain = 0.5f };
 
     /* --- Provinces (specialist review 2026-10-30, geographer P0): stock
-       Voronoi modulator biasing the sampled fields before relief/rivers.
+       Region stage biasing the sampled fields before relief/rivers.
        Type 0 is neutral; 1..4 are ARID/LUSH/COLD/ISLES.
        cell 64 tiles, blend 16 tiles: macro-zones a few cells wide. */
-    gen->prov_cfg = (rlk_wg_modulator_cfg_t){
+    gen->prov_cfg = (rlk_wg_region_cfg_t){
         .ntypes = 5,
-        .cell = 64.0f,
-        .blend = 16.0f,
+        .cell = 64,
+        .blend = 16,
         .salt = 0x9200ULL,
     };
     gen->prov_cfg.types[1].bias[F_HUM]  = -0.14f;  /* ARID: dry + hot   */
@@ -52,14 +52,14 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
     gen->prov_cfg.types[2].bias[F_HUM]  = +0.14f;  /* LUSH: wet         */
     gen->prov_cfg.types[3].bias[F_TEMP] = -0.16f;  /* COLD: cold        */
     gen->prov_cfg.types[4].bias[F_CONT] = -0.10f;  /* ISLES: more sea   */
-    gen->prov_mod = rlk_wg_modulator(&gen->prov_cfg);
+    gen->prov_mod = rlk_wg_region(&gen->prov_cfg);
 
     /* --- Coarse elevation grid: seed noise like wg, fill with relief terrain ---
        The drain grid must see the SAME terrain the relief stage displays,
        otherwise rivers follow a different landscape than what is shown. */
     for (int i = 0; i < F_NSAMPLED; i++) {
         uint64_t s = rlk_hash_sub(seed, 0xF1E1D000ULL + (uint64_t)i);
-        gen->relief_noise[i].seed = rlk_hash_sub(s, wg->fields[i].seed);
+        gen->relief_noise[i].seed = rlk_hash_sub(s, wg->fields[i].salt);
     }
     /* Light geology noise (demo-owned, not wg fields) */
     for (int i = 0; i < 3; i++)
@@ -125,21 +125,18 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
 
     /* --- wg stages: provinces + drain + hydro + rivers + strahler + relief + POI --- */
 
-    /* Stage 0: provinces (F_HUM offset decorrelation + Voronoi modulator).
-       Reads/writes all sampled fields (the modulator part). */
-    rlk_wg_add(wg, (rlk_wg_stage_t){ .fn = gen_province_stage, .data = gen,
-                                      .reads = { .sampled = RLK_WG_SLOTS_ALL },
-                                      .writes = { .sampled = RLK_WG_SLOTS_ALL } });
+    /* Stage 0: provinces (F_HUM offset decorrelation + region stage).
+       Reads/writes all sampled fields (the region part). */
+    rlk_wg_add(wg, (rlk_wg_stage_t){ .fn = gen_province_stage, .data = gen });
 
     /* Stage 1: wg_drain — inject lake depth + normalized log10(acc) */
     gen->drain_stage = (rlk_wg_drain_cfg_t){
         .drain = &gen->drain,
         .elev = &gen->elev_grid,
         .sea = SEA_LEVEL,
-        .slot_acc  = RLK_WG_DRAIN_NONE,   /* acc read straight from the drain grid */
-        .slot_dir  = RLK_WG_DRAIN_NONE,
+        .slot_acc  = RLK_WG_NONE,   /* acc read straight from the drain grid */
+        .slot_dir  = RLK_WG_NONE,
         .slot_lake = D_LAKE,
-        .slot_acc_log = D_ACC_LOG,        /* Hack's law input for wg_rivers (review 2026-10-30) */
         .acc_scale = 1.0f,
     };
     rlk_wg_add(wg, rlk_wg_drain(&gen->drain_stage));
@@ -156,7 +153,7 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
     /* Stage 3: wg_rivers — project drainage into per-tile river masks.
        Channel width follows the drain SDF (~log2(acc), capped at cellsize);
        mask fades 1 tile past the bank, widened by log(acc) (Hack, review
-       2026-10-30, via D_ACC_LOG); valley reach = 2 * cellsize.
+       2026-10-30, acc_log_gain); valley reach = 2 * cellsize.
        Meanders from F_WIG_X/Y, creeks from F_CREEK, lakes from the filtered grid. */
     gen->rivers_stage = (rlk_wg_rivers_cfg_t){
         .drain = &gen->drain,
@@ -169,7 +166,6 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
         .slot_mask = D_RIVER_MASK,
         .slot_carve = D_RIVER_CARVE,
         /* Hack's law (specialist review 2026-10-30): banks widen with log(acc) */
-        .acc_log_field = D_ACC_LOG,
         .acc_log_gain = 0.3f,
         .lake_depth = &gen->lake_grid,
         .lake_min_depth = LAKE_MIN_DEPTH,
@@ -183,9 +179,7 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
     rlk_wg_add(wg, rlk_wg_rivers(&gen->rivers_stage));
 
     /* Stage 4: Strahler width — narrow headwaters, wide big rivers */
-    rlk_wg_add(wg, (rlk_wg_stage_t){ .fn = gen_strahler_stage, .data = gen,
-                                      .reads = { .derived = RLK_WG_SLOT(D_RIVER_MASK) | RLK_WG_SLOT(D_STRAHLER) },
-                                      .writes = { .derived = RLK_WG_SLOT(D_RIVER_MASK) } });
+    rlk_wg_add(wg, (rlk_wg_stage_t){ .fn = gen_strahler_stage, .data = gen });
 
     /* Stage 5: wg_relief — standardised elevation (domain warp, fjords, lapse) */
     gen->relief_stage = (rlk_wg_relief_cfg_t){
@@ -196,9 +190,7 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
         .f_warp_y = F_WARP_Y,
         .f_fjord = F_FJORD,
         .f_temp = F_TEMP,
-        .f_river = RLK_WG_RELIEF_NONE,  /* rivers come from wg_rivers */
         .slot_elev = D_ELEV,
-        .slot_river = RLK_WG_RELIEF_NONE,
         .river_carve_field = D_RIVER_CARVE,  /* read carve from wg_rivers */
         .sea = SEA_LEVEL,
         .warp = 8.0f,
@@ -207,9 +199,6 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
         .mountain_hi = 0.80f,
         .mountain_amp = 0.45f,
         .lapse = 0.25f,
-        .river_width_tiles = 2.0f,
-        .river_carve = 0.03f,
-        .relief_span = 0.40f,
         .fjord_dir = { 0.8f, 0.6f },
         .fjord_stretch = 0.25f,
         .fjord_width = 0.12f,
@@ -226,14 +215,10 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
     rlk_wg_stage_t rain = gen->relief_mod;
     rain.fn = gen_relief_rain_stage;
     rain.data = gen;
-    rain.reads.sampled |= RLK_WG_SLOT(F_HUM);
-    rain.writes.sampled |= RLK_WG_SLOT(F_HUM);
     rlk_wg_add(wg, rain);
 
     /* Stage 6: geology — structural bias on the final elevation + lithology */
-    rlk_wg_add(wg, (rlk_wg_stage_t){ .fn = gen_geology_stage, .data = gen,
-                                      .reads = { .derived = RLK_WG_SLOT(D_ELEV) },
-                                      .writes = { .derived = RLK_WG_SLOT(D_ELEV) } });
+    rlk_wg_add(wg, (rlk_wg_stage_t){ .fn = gen_geology_stage, .data = gen });
 
     /* Stage 7: latitudinal thermal gradient — after relief (lapse write-back),
        before classify. The Köppen axis reads D_TEMP_LAT (review 2026-10-30). */
@@ -243,9 +228,7 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
         .temp_drop = 0.15f,
         .lat_half_span = (float)TM_H / 2.0f,
     };
-    rlk_wg_add(wg, (rlk_wg_stage_t){ .fn = gen_temp_lat_stage, .data = &gen->temp_lat_cfg,
-                                      .reads = { .sampled = RLK_WG_SLOT(F_TEMP) },
-                                      .writes = { .derived = RLK_WG_SLOT(D_TEMP_LAT) } });
+    rlk_wg_add(wg, (rlk_wg_stage_t){ .fn = gen_temp_lat_stage, .data = &gen->temp_lat_cfg });
 
     /* Stage 8-11: POI detectors */
     gen->pois = (rlk_poi_list_t){ gen->poi_buf, 0, 256 };
@@ -314,9 +297,7 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
     rlk_wg_add(wg, rlk_wg_poi(&gen->poi_tower_cfg));
 
     /* Stage 12: terrain-constrained POI kinds (zone/slope/river/geology) */
-    rlk_wg_add(wg, (rlk_wg_stage_t){ .fn = gen_poi_terrain_stage, .data = gen,
-                                      .reads = { .sampled = RLK_WG_SLOT(F_TEMP) | RLK_WG_SLOT(F_HUM),
-                                                 .derived = RLK_WG_SLOT(D_ELEV) | RLK_WG_SLOT(D_RIVER_MASK) | RLK_WG_SLOT(D_SLOPE) } });
+    rlk_wg_add(wg, (rlk_wg_stage_t){ .fn = gen_poi_terrain_stage, .data = gen });
 
     /* Axes: elevation (relief output), temperature, humidity.
        3-axis climate plane (elev x temp x hum): specialist review 2026-10-30,
@@ -324,42 +305,42 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
        F_TEMP_LAT (lapse-cooled + latitudinal gradient, stage 7), not raw
        F_TEMP, so the map edges are colder (review 2026-10-30). */
     wg->naxes = 3;
-    wg->axes[0] = (rlk_wg_axis_t){ .field = F_ELEV,     .jitter_field = F_DETAIL, .jitter_amp = 0.03f };
-    wg->axes[1] = (rlk_wg_axis_t){ .field = F_TEMP_LAT, .jitter_field = F_DETAIL, .jitter_amp = 0.03f };
-    wg->axes[2] = (rlk_wg_axis_t){ .field = F_HUM,      .jitter_field = F_DETAIL, .jitter_amp = 0.03f };
+    wg->axes[0] = (rlk_wg_axis_t){ .slot = F_ELEV,     .jitter_slot = F_DETAIL, .jitter_amp = 0.03f };
+    wg->axes[1] = (rlk_wg_axis_t){ .slot = F_TEMP_LAT, .jitter_slot = F_DETAIL, .jitter_amp = 0.03f };
+    wg->axes[2] = (rlk_wg_axis_t){ .slot = F_HUM,      .jitter_slot = F_DETAIL, .jitter_amp = 0.03f };
 
     /* Zones: elevation slices on axis 0; the lowland band splits into the 6
-       Köppen biomes on (temp, hum). Unbound axes use +/- RLK_WG_OPEN. */
+       Köppen biomes on (temp, hum). Unbound axes use +/- RLK_WG_AXIS_UNBOUNDED. */
     wg->nzones = Z_COUNT;
 
     /* Each zone writes through gen_capture_write, dispatched to the zone
        writer table (gen_write.c). */
     gen_setup_captures(gen);
 
-#define Z_OPEN_LO (-RLK_WG_OPEN)
-#define Z_OPEN_HI ( RLK_WG_OPEN)
-    wg->zones[Z_DEEP]     = (rlk_wg_zone_t){ .lo = {0.0f,        Z_OPEN_LO, Z_OPEN_LO}, .hi = {ELEV_DEEP,    Z_OPEN_HI, Z_OPEN_HI}, .write = gen_capture_write, .data = &gen->cap[Z_DEEP] };
-    wg->zones[Z_SHALLOW]  = (rlk_wg_zone_t){ .lo = {ELEV_DEEP,   Z_OPEN_LO, Z_OPEN_LO}, .hi = {ELEV_SHALLOW, Z_OPEN_HI, Z_OPEN_HI}, .write = gen_capture_write, .data = &gen->cap[Z_SHALLOW] };
-    wg->zones[Z_BEACH]    = (rlk_wg_zone_t){ .lo = {ELEV_SHALLOW, Z_OPEN_LO, Z_OPEN_LO}, .hi = {ELEV_BEACH,  Z_OPEN_HI, Z_OPEN_HI}, .write = gen_capture_write, .data = &gen->cap[Z_BEACH] };
+#define Z_UNBOUNDED_LO (-RLK_WG_AXIS_UNBOUNDED)
+#define Z_UNBOUNDED_HI ( RLK_WG_AXIS_UNBOUNDED)
+    wg->zones[Z_DEEP]     = (rlk_wg_zone_t){ .lo = {0.0f,        Z_UNBOUNDED_LO, Z_UNBOUNDED_LO}, .hi = {ELEV_DEEP,    Z_UNBOUNDED_HI, Z_UNBOUNDED_HI}, .write = gen_capture_write, .data = &gen->cap[Z_DEEP] };
+    wg->zones[Z_SHALLOW]  = (rlk_wg_zone_t){ .lo = {ELEV_DEEP,   Z_UNBOUNDED_LO, Z_UNBOUNDED_LO}, .hi = {ELEV_SHALLOW, Z_UNBOUNDED_HI, Z_UNBOUNDED_HI}, .write = gen_capture_write, .data = &gen->cap[Z_SHALLOW] };
+    wg->zones[Z_BEACH]    = (rlk_wg_zone_t){ .lo = {ELEV_SHALLOW, Z_UNBOUNDED_LO, Z_UNBOUNDED_LO}, .hi = {ELEV_BEACH,  Z_UNBOUNDED_HI, Z_UNBOUNDED_HI}, .write = gen_capture_write, .data = &gen->cap[Z_BEACH] };
     /* Lowland: 6 biomes on (temp, hum) */
-    wg->zones[Z_DESERT]   = (rlk_wg_zone_t){ .lo = {ELEV_BEACH,   TEMP_HOT,  0.0f},     .hi = {ELEV_LOWLAND, Z_OPEN_HI, HUM_DRY},   .write = gen_capture_write, .data = &gen->cap[Z_DESERT] };
-    wg->zones[Z_FOREST]   = (rlk_wg_zone_t){ .lo = {ELEV_BEACH,   TEMP_HOT,  HUM_DRY},  .hi = {ELEV_LOWLAND, Z_OPEN_HI, Z_OPEN_HI}, .write = gen_capture_write, .data = &gen->cap[Z_FOREST] };
+    wg->zones[Z_DESERT]   = (rlk_wg_zone_t){ .lo = {ELEV_BEACH,   TEMP_HOT,  0.0f},     .hi = {ELEV_LOWLAND, Z_UNBOUNDED_HI, HUM_DRY},   .write = gen_capture_write, .data = &gen->cap[Z_DESERT] };
+    wg->zones[Z_FOREST]   = (rlk_wg_zone_t){ .lo = {ELEV_BEACH,   TEMP_HOT,  HUM_DRY},  .hi = {ELEV_LOWLAND, Z_UNBOUNDED_HI, Z_UNBOUNDED_HI}, .write = gen_capture_write, .data = &gen->cap[Z_FOREST] };
     wg->zones[Z_STEPPE]   = (rlk_wg_zone_t){ .lo = {ELEV_BEACH,   TEMP_COLD, 0.0f},     .hi = {ELEV_LOWLAND, TEMP_HOT,  HUM_DRY},   .write = gen_capture_write, .data = &gen->cap[Z_STEPPE] };
-    wg->zones[Z_PLAINS]   = (rlk_wg_zone_t){ .lo = {ELEV_BEACH,   TEMP_COLD, HUM_DRY},  .hi = {ELEV_LOWLAND, TEMP_HOT,  Z_OPEN_HI}, .write = gen_capture_write, .data = &gen->cap[Z_PLAINS] };
-    wg->zones[Z_TUNDRA]   = (rlk_wg_zone_t){ .lo = {ELEV_BEACH,   Z_OPEN_LO, 0.0f},     .hi = {ELEV_LOWLAND, TEMP_COLD, HUM_DRY},   .write = gen_capture_write, .data = &gen->cap[Z_TUNDRA] };
-    wg->zones[Z_TAIGA]    = (rlk_wg_zone_t){ .lo = {ELEV_BEACH,   Z_OPEN_LO, HUM_DRY},  .hi = {ELEV_LOWLAND, TEMP_COLD, Z_OPEN_HI}, .write = gen_capture_write, .data = &gen->cap[Z_TAIGA] };
-    wg->zones[Z_MOUNTAIN] = (rlk_wg_zone_t){ .lo = {ELEV_LOWLAND, Z_OPEN_LO, Z_OPEN_LO}, .hi = {ELEV_MOUNTAIN, Z_OPEN_HI, Z_OPEN_HI}, .write = gen_capture_write, .data = &gen->cap[Z_MOUNTAIN] };
-    wg->zones[Z_SNOW]     = (rlk_wg_zone_t){ .lo = {ELEV_MOUNTAIN, Z_OPEN_LO, Z_OPEN_LO}, .hi = {1.0f,         Z_OPEN_HI, Z_OPEN_HI}, .write = gen_capture_write, .data = &gen->cap[Z_SNOW] };
-#undef Z_OPEN_LO
-#undef Z_OPEN_HI
+    wg->zones[Z_PLAINS]   = (rlk_wg_zone_t){ .lo = {ELEV_BEACH,   TEMP_COLD, HUM_DRY},  .hi = {ELEV_LOWLAND, TEMP_HOT,  Z_UNBOUNDED_HI}, .write = gen_capture_write, .data = &gen->cap[Z_PLAINS] };
+    wg->zones[Z_TUNDRA]   = (rlk_wg_zone_t){ .lo = {ELEV_BEACH,   Z_UNBOUNDED_LO, 0.0f},     .hi = {ELEV_LOWLAND, TEMP_COLD, HUM_DRY},   .write = gen_capture_write, .data = &gen->cap[Z_TUNDRA] };
+    wg->zones[Z_TAIGA]    = (rlk_wg_zone_t){ .lo = {ELEV_BEACH,   Z_UNBOUNDED_LO, HUM_DRY},  .hi = {ELEV_LOWLAND, TEMP_COLD, Z_UNBOUNDED_HI}, .write = gen_capture_write, .data = &gen->cap[Z_TAIGA] };
+    wg->zones[Z_MOUNTAIN] = (rlk_wg_zone_t){ .lo = {ELEV_LOWLAND, Z_UNBOUNDED_LO, Z_UNBOUNDED_LO}, .hi = {ELEV_MOUNTAIN, Z_UNBOUNDED_HI, Z_UNBOUNDED_HI}, .write = gen_capture_write, .data = &gen->cap[Z_MOUNTAIN] };
+    wg->zones[Z_SNOW]     = (rlk_wg_zone_t){ .lo = {ELEV_MOUNTAIN, Z_UNBOUNDED_LO, Z_UNBOUNDED_LO}, .hi = {1.0f,         Z_UNBOUNDED_HI, Z_UNBOUNDED_HI}, .write = gen_capture_write, .data = &gen->cap[Z_SNOW] };
+#undef Z_UNBOUNDED_LO
+#undef Z_UNBOUNDED_HI
 
-    wg->depth_scale = 0.15f;
-    wg->transition_width = 0.10f;
+    wg->inside_scale = 0.15f;
+    wg->border_width = 0.10f;
 
     /* Guard: a dropped stage (table full) must fail loudly, not silently
        skip the last detector. */
     assert(wg->nstages == 13);
-    assert(rlk_wg_init(wg) == RLK_OK);
+    rlk_wg_init(wg);
     rlk_wg_fill(wg, 0, 0, &gen->tm);
 
     /* Multi-tile content inside each POI bbox (first POI wins on overlap) */

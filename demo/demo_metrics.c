@@ -37,7 +37,7 @@ static const uint64_t SEEDS[] = { 42ULL, 7ULL, 1ULL, 1337ULL, 2026ULL };
 #define N_SEEDS ((int)(sizeof SEEDS / sizeof SEEDS[0]))
 
 /* Golden values captured 2026-10-30 (refactor/next), re-recorded after the
-   specialist-review changes of 2026-10-30 (Hack bank fade via D_ACC_LOG,
+   specialist-review changes of 2026-10-30 (Hack bank fade via acc_log_gain,
    latitudinal gradient D_TEMP_LAT on the Köppen axis). Re-record with
    `demo_metrics record` only on an intentional generation change. */
 static const golden_t GOLDEN[N_SEEDS] = {

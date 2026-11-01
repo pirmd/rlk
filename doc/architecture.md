@@ -24,8 +24,10 @@ one domain, several domains:
                        pre-built drain/hydro pointers (two-level generation).
              nav       path
              vision    fov
-             worldgen  pipeline: wg + stages (modulator, grid, drain, hydro,
-                       relief, rivers, poi)
+             worldgen  pipeline: wg + stages (region = macro-areas from Voronoi
+                       cells, drain/hydro = readers of pre-built grids,
+                       rivers = river mask + carve, relief = elevation,
+                       poi = detectors)
                        structure generators: ca, bsp (windowed, POI-driven)
  ---------------------------------------------------------------
  BASE        data      geom, grid, mask, poi, tilemap
@@ -39,7 +41,7 @@ Per-tile engine, pure in world coordinates `(wx, wy)`:
 ```
 (wx, wy) -> FIELDS -> STAGES -> CLASSIFY -> WRITE -> tile
   |           |          |          |          └ zone writer (ctx, data, &tile)
-  |           |          |          └ axes (<=3) -> zone boxes -> zone, zone2, depth, edge
+  |           |          |          └ axes (<=3) -> zone boxes -> zone, zone2, inside, border
   |           |          └ stages via rlk_wg_add, registration order
   |           └ derived slots written into ctx->field[]
   └ nsampled noise fields (FBM/RIDGE) sampled into ctx->field[]
@@ -50,23 +52,61 @@ centre (`(float)wx + 0.5f, (float)wy + 0.5f`), consistent with
 `rlk_grid_get` / `rlk_grid_center`. Stages that re-sample a field
 (`rlk_wg_sample_field`) follow the same convention.
 
-Each stage declares the slots it reads and writes (`rlk_wg_stage_t.reads` /
-`.writes`, bitmasks over the sampled fields and the derived slots).
-`rlk_wg_init()` validates the declarations in registration order and returns
-`RLK_E_INVALID` if a stage reads a derived slot that no earlier stage writes
-(or references a slot out of range; same check for the axes, against all
-stages). Stage order is therefore explicit and checked, not implicit.
+Stage order is the registration order and is a contract, not checked: a
+stage may only read derived slots written by stages registered before it,
+and an axis may only read slots written by some stage. Register consumers
+after their producers (e.g. wg_relief after wg_rivers for the carve slot).
 
-Drivers (sinks are pluggable; the tilemap is only one sink):
+Custom stages are user land and typically ~10 lines. Recipe: inject a
+pre-filled grid into a derived slot (scale/offset) — this is how an external
+raster enters the pipeline:
 
-- `rlk_wg_run(wg, ox, oy, w, h, sink, user)` evaluates the pipeline over the
-  world rect `(ox, oy, w, h)` and calls `sink(ctx, user)` per tile, row-major.
-- `rlk_wg_fill(wg, ox, oy, tm)` is the tilemap sink over `rlk_wg_run`;
-  chunked generation is just repeated calls with different origins.
-- To fill a grid with a sampled field (macro -> micro driver, e.g. the
-  elevation grid a drain runs on), sample `rlk_wg_sample_field` at each
-  cell centre (`rlk_grid_center`, so `cellsize > 1` samples at the true
-  cell centre) -- see demo/tilemap_gen.c.
+```c
+static void my_grid_stage(rlk_wg_ctx_t *ctx, const void *data) {
+    const struct { const rlk_grid_t *grid; uint8_t slot; float scale, offset; } *c = data;
+    ctx->field[ctx->wg->nsampled + c->slot] =
+        rlk_grid_get(c->grid, (float)ctx->wx + 0.5f, (float)ctx->wy + 0.5f) * c->scale + c->offset;
+}
+```
+
+Generation:
+
+- `rlk_wg_fill(wg, ox, oy, tm)` evaluates the pipeline over the tilemap's
+  world rect, row-major, and writes each tile (chunked generation is
+  repeated calls with the tilemap origin set per chunk).
+- To fill a grid with a sampled field (macro -> micro, e.g. the elevation
+  grid a drain runs on), sample `rlk_wg_sample_field` at each cell centre
+  (`rlk_grid_center`, so `cellsize > 1` samples at the true cell centre) --
+  see demo/tilemap_gen.c.
+
+### Composing stages (recipes)
+
+Stages are optional layers; compose only what you need. `wg_relief` alone
+already gives a relief to classify on — each extra stage refines it:
+
+- `wg_relief` only: standardised elevation from sampled fields (warp,
+  hills, mountains, fjords, lapse) into a derived slot. No macro build
+  needed.
+- + `wg_region` before it: macro-areas (Voronoi regions) biasing the sampled
+  fields, so biomes read as coherent provinces.
+- + `wg_drain` reader: exposes a pre-built `rlk_drain_t` (acc, dir, lake
+  depth) as derived slots. Needs the macro build `elev grid -> rlk_drain_build`.
+- + `wg_hydro` reader: exposes a pre-built `rlk_hydro_t` (slope, Strahler
+  order, speed). Needs `-> rlk_hydro_build` on top of the drain.
+- + `wg_rivers` after the drain reader, before `wg_relief`: river mask +
+  valley carve from the drain SDF; `wg_relief` then reads the carve slot
+  (`river_carve_field`, registration order matters).
+- + `wg_poi`: fills the POI list during the fill (work queue for the local
+  level, see below).
+
+Rules of thumb:
+
+- A reader stage (`wg_drain`, `wg_hydro`) is worth it when several
+  consumers (writers + stages) read its slots; with a single consumer,
+  that consumer reads the source POD directly (e.g. `wg_poi`'s `min_acc`
+  reads `drain->acc`, `wg_rivers` computes log10(acc) itself).
+- Macro builds (grid -> drain -> hydro) happen once, outside the wg
+  pipeline, on a coarse lattice; the pipeline stages just read them.
 
 ## Two-level generation
 

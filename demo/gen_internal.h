@@ -40,7 +40,7 @@
 /* Context for gen_relief_elev_fn: reads field configs from wg, mirrors the
    wg_relief stage. */
 typedef struct {
-    const tilemap_gen_t *gen;    /* for the province modulator stage */
+    const tilemap_gen_t *gen;    /* for the province region stage */
     const rlk_wg_t *wg;          /* field configs (freq, octaves, gain, kind) */
     const rlk_noise_t *noise;    /* relief_noise[F_NSAMPLED] */
     float warp;
