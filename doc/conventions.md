@@ -59,3 +59,7 @@
     source: parameters of `rlk_hash_sub` / `rlk_hash_at` / `rlk_wg_rand`,
     and cfg fields such as `rlk_wg_field_t.salt`,
     `rlk_wg_region_cfg_t.salt`, `rlk_wg_poi_cfg_t.salt`.
+11. Defaults: a zero config field resolves to the default documented on
+    the field itself (`0 -> X`), in place, by the module's `init`.
+    Fields where zero is a meaningful choice (e.g. `rlk_ca_t.connect`,
+    0 = off) are not resolved.

@@ -34,14 +34,13 @@ Headers:
     hash.h             # Deterministic 64-bit hashing
     fmath.h            # Math helpers (clamp, lerp, smoothstep, distances)
     noise.h            # Noise generation (value, perlin, fbm)
-    rng.h              # Deterministic PRNG (splitmix64)
 
   Base — data (POD, caller-owned):
     geom.h             # Rect (region) + lattice (grid geometry on world)
     grid.h             # Coarse float grid with bilinear sampling
     mask.h             # Uint8 mask (weight, density, visibility) + constructors
     poi.h              # Points of Interest (anchor, bbox, type, seed)
-    tilemap.h          # Tile grid + tile props + line drawing
+    tilemap.h          # Tile grid over a world rect + tile props + line drawing
 
   Domain terrain:
     slope.h            # Slope from an elevation grid (Horn 3x3)
@@ -56,8 +55,7 @@ Headers:
 
   Domain worldgen — pipeline (wg):
     wg.h            # Noise-field terrain generation engine
-    wg_modulator.h  # Voronoi modulation stage
-    wg_grid.h       # Grid sampling stage
+    wg_region.h     # Voronoi region (macro-area) stage
     wg_drain.h      # Drain reading stage
     wg_hydro.h      # Hydro reading stage
     wg_relief.h     # Standardised elevation stage

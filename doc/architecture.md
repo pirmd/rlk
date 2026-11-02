@@ -134,6 +134,15 @@ float    hydro_slope[GW*GH];   uint8_t hydro_strahler[GW*GH];
 float    hydro_speed[GW*GH];   uint16_t hydro_scratch[GW*GH];
 rlk_tile_t tiles[TM_W*TM_H];
 
+/* Custom stage: any fn(ctx, data). Here: derived slot 6 = 1 - field[0]
+   (a "dryness" field). Stages run in registration order and may read slots
+   written by earlier stages; `data` must outlive the wg. */
+static void
+my_dryness_stage(rlk_wg_ctx_t *ctx, const void *data) {
+    (void)data;
+    ctx->field[ctx->wg->nsampled + 6] = 1.0f - ctx->field[0];
+}
+
 rlk_wg_t wg = {0};
 wg.seed = 42;  wg.nsampled = 1;
 wg.fields[0] = (rlk_wg_field_t){ .kind = RLK_WG_FBM, .freq = 0.005f, .salt = 1 };
@@ -158,7 +167,8 @@ rlk_wg_add(&wg, rlk_wg_drain(&dcfg));
 rlk_wg_hydro_cfg_t hcfg = { .hydro = &hydro, .slot_slope = 3,
                             .slot_strahler = 4, .slot_speed = 5 };
 rlk_wg_add(&wg, rlk_wg_hydro(&hcfg));
-/* ... rlk_wg_rivers, rlk_wg_relief, custom stages ... */
+/* ... rlk_wg_rivers, rlk_wg_relief ... */
+rlk_wg_add(&wg, (rlk_wg_stage_t){ .fn = my_dryness_stage, .data = NULL });
 
 rlk_tilemap_t tm;
 rlk_tilemap_init(&tm, TM_W, TM_H, tiles, sizeof(tiles));
@@ -190,7 +200,6 @@ No allocation in the lib: every buffer is caller-owned POD passed by pointer
 (grid/mask/tilemap/POI buffers, scratch arrays). Functions either fill a
 caller buffer or write through a caller sink; the only runtime checks are
 system-allocation failures, programmer errors are `assert`s.
----
 
 ## User land: composition recipes
 
