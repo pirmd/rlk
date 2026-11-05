@@ -11,16 +11,18 @@
 static rlk_tile_t tilebuf[MAP * MAP];
 
 /* Raw output buffers filled by the zone writer (run-local tile index):
-   derived slot 0 = mask, slot 1 = carve. */
+   derived slot 0 = mask, slot 1 = carve, slot 2 = lake. */
 static float mask_out[MAP * MAP];
 static float carve_out[MAP * MAP];
+static float lake_out[MAP * MAP];
 
 typedef struct {
     float *mask;
     float *carve;
+    float *lake;
 } sink_t;
 
-static const sink_t sink = { mask_out, carve_out };
+static const sink_t sink = { mask_out, carve_out, lake_out };
 
 static void
 write_rivers(const rlk_wg_ctx_t *ctx, const void *data, rlk_tile_t *out) {
@@ -30,6 +32,7 @@ write_rivers(const rlk_wg_ctx_t *ctx, const void *data, rlk_tile_t *out) {
     const size_t k = (size_t)ctx->y * MAP + (size_t)ctx->x;
     if (s->mask) s->mask[k] = ctx->field[wg->nsampled + 0];
     if (s->carve) s->carve[k] = ctx->field[wg->nsampled + 1];
+    if (s->lake) s->lake[k] = ctx->field[wg->nsampled + 2];
 }
 
 /* Minimal wg: nsampled sampled fields, 1 full-coverage zone on field 0. */
@@ -100,6 +103,7 @@ cfg_min(void) {
     r.carve = 0.05f;
     r.slot_mask = 0;
     r.slot_carve = 1;
+    r.slot_lake = RLK_WG_NONE;
     return r;
 }
 
@@ -115,6 +119,8 @@ static float
 mask_at(int x, int y)  { return mask_out[(size_t)y * MAP + (size_t)x]; }
 static float
 carve_at(int x, int y) { return carve_out[(size_t)y * MAP + (size_t)x]; }
+static float
+lake_at(int x, int y)  { return lake_out[(size_t)y * MAP + (size_t)x]; }
 
 /* Expected mask/carve of the SDF projection at tile (x, y) (no meander). */
 static void
@@ -210,8 +216,8 @@ test_rivers_stage_all_underwater(void) {
         }
 }
 
-/* Meanders: the SDF is sampled at the displaced position (quantized to the
-   tile by floorf inside the SDF lookup). */
+/* Meanders: the SDF is sampled at the displaced position, continuously
+   (float variant), not quantized to whole tiles. */
 static void
 test_rivers_stage_meander(void) {
     drain_setup();
@@ -231,8 +237,7 @@ test_rivers_stage_meander(void) {
             const float vy = rlk_wg_sample_field(&wg, 2, wxf0, wyf0);
             const float wxf = wxf0 + (vx - 0.5f) * 2.0f * 3.0f;
             const float wyf = wyf0 + (vy - 0.5f) * 2.0f * 3.0f;
-            const float sdf = rlk_drain_flowline_sdf(&drain, (int)floorf(wxf), (int)floorf(wyf),
-                                                     r.acc_min);
+            const float sdf = rlk_drain_flowline_sdf_f(&drain, wxf, wyf, r.acc_min);
             float emask = 0.0f;
             if (sdf < RLK_DRAIN_FAR)
                 emask = rlk_clampf(1.0f - sdf / r.bank_fade, 0.0f, 1.0f);
@@ -280,8 +285,9 @@ test_rivers_stage_creeks(void) {
     assert(any_creek);
 }
 
-/* Lake overlay: mask = max(river mask, lake mask); with no rivers, the mask
-   is exactly the smoothed lake-depth threshold. */
+/* Lake overlay: written to slot_lake, kept OUT of the river mask; with no
+   rivers the mask is 0 everywhere and slot_lake is exactly the smoothed
+   lake-depth threshold. */
 static void
 test_rivers_stage_lake(void) {
     drain_setup();
@@ -297,6 +303,7 @@ test_rivers_stage_lake(void) {
     r.acc_min = 1000;  /* no drainage rivers */
     r.lake_depth = &lake;
     r.lake_min_depth = 0.5f;
+    r.slot_lake = 2;
     assert(rlk_wg_add(&wg, rlk_wg_rivers(&r)) == RLK_OK);
     run_fill(&wg);
 
@@ -304,14 +311,14 @@ test_rivers_stage_lake(void) {
     for (int y = 0; y < MAP; y++)
         for (int x = 0; x < MAP; x++) {
             const float depth = rlk_grid_get(&lake, (float)x + 0.5f, (float)y + 0.5f);
-            float emask = 0.0f;
+            float elake = 0.0f;
             if (depth >= 0.5f) {
                 const float lm = (depth - 0.5f * 0.5f) / (0.5f * 0.5f);
-                emask = rlk_clampf(lm, 0.0f, 1.0f);
+                elake = rlk_clampf(lm, 0.0f, 1.0f);
             }
-            emask = rlk_clampf(emask, 0.0f, 1.0f);
-            assert(mask_at(x, y) == emask);
-            if (emask > 0.0f) any_lake = 1;
+            assert(mask_at(x, y) == 0.0f);   /* pure river mask: no lake merge */
+            assert(lake_at(x, y) == elake);
+            if (elake > 0.0f) any_lake = 1;
         }
     assert(any_lake);
 }

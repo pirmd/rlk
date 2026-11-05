@@ -87,7 +87,10 @@ test_hydro_speed(void) {
     for (int i = 0; i < LW - 1; i++)
         assert(l_speed[i] > 0.0f);
     assert(l_speed[LW - 1] == 0.0f);
-    assert(l_speed[2] > l_speed[1] && l_speed[1] > l_speed[0]);
+    /* Width grows with acc but is capped at cellsize/2: strictly increasing
+       while under the cap, non-decreasing once saturated. */
+    assert(l_speed[1] > l_speed[0]);
+    assert(l_speed[2] >= l_speed[1]);
 }
 
 /* Speed with acc_min above headwater acc: width clamped low at 0.25, speed

@@ -26,6 +26,7 @@ typedef struct {
     /* --- Outputs: derived slots (absolute index = nsampled + slot) --- */
     uint8_t slot_mask;         /* derived field for the river mask in [0,1], or RLK_WG_NONE */
     uint8_t slot_carve;        /* derived field for the valley carve, or RLK_WG_NONE */
+    uint8_t slot_lake;         /* derived field for the lake overlay mask in [0,1] (kept out of slot_mask), or RLK_WG_NONE */
 
     /* --- Inputs: sampled fields (optional) --- */
     uint8_t f_wig_x;           /* sampled field for meander X displacement, or RLK_WG_NONE = no meanders */

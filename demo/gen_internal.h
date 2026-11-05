@@ -26,7 +26,7 @@
 #define TEMP_HOT  0.55f   /* above: hot band (desert/forest) */
 #define HUM_DRY   0.50f   /* below: dry half of the climate plane */
 
-#define LAKE_MIN_DEPTH 0.02f    /* min filled depth to be a lake tile */
+#define LAKE_MIN_DEPTH 0.05f    /* min filled depth to be a lake tile (higher = only deeper depressions become lakes) */
 #define RIVER_ACC_MIN  20u      /* drainage area (cells) at which a river starts */
 #define RAPID_SLOPE    0.02f    /* D8 slope above which a river tile shows rapids */
 

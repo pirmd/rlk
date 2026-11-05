@@ -11,8 +11,7 @@
 static void
 river_sdf(const rlk_wg_rivers_cfg_t *cfg, float wxf, float wyf,
           float bank_fade, float *mask, float *carve) {
-    const float sdf = rlk_drain_flowline_sdf(cfg->drain, (int)floorf(wxf), (int)floorf(wyf),
-                                             cfg->acc_min);
+    const float sdf = rlk_drain_flowline_sdf_f(cfg->drain, wxf, wyf, cfg->acc_min);
     if (sdf >= RLK_DRAIN_FAR)
         return;
     *mask = rlk_clampf(1.0f - sdf / bank_fade, 0.0f, 1.0f);
@@ -54,18 +53,17 @@ sea_clip(const rlk_wg_rivers_cfg_t *cfg, int wx, int wy, float *mask, float *car
 }
 
 /* Lake overlay at the tile centre (a lake is a property of the terrain, not
-   of the meander): smooth threshold at lake_min_depth, combined as max. */
-static void
-lake_add(const rlk_wg_rivers_cfg_t *cfg, int wx, int wy, float *mask) {
+   of the meander): smooth threshold at lake_min_depth. Written to slot_lake,
+   kept OUT of the river mask so the estuary widening only affects rivers. */
+static float
+lake_mask(const rlk_wg_rivers_cfg_t *cfg, int wx, int wy) {
     if (!cfg->lake_depth || cfg->lake_min_depth <= 0.0f)
-        return;
+        return 0.0f;
     const float depth = rlk_grid_get(cfg->lake_depth, (float)wx + 0.5f, (float)wy + 0.5f);
     if (depth < cfg->lake_min_depth)
-        return;
+        return 0.0f;
     const float lm = (depth - 0.5f * cfg->lake_min_depth) / (0.5f * cfg->lake_min_depth);
-    const float lc = rlk_clampf(lm, 0.0f, 1.0f);
-    if (lc > *mask)
-        *mask = lc;
+    return rlk_clampf(lm, 0.0f, 1.0f);
 }
 
 static void
@@ -78,6 +76,7 @@ rivers_stage(rlk_wg_ctx_t *ctx, const void *data) {
        a derived slot's absolute index is nsampled + slot. */
     assert(cfg->slot_mask == RLK_WG_NONE || wg->nsampled + (int)cfg->slot_mask < RLK_WG_MAX_FIELDS);
     assert(cfg->slot_carve == RLK_WG_NONE || wg->nsampled + (int)cfg->slot_carve < RLK_WG_MAX_FIELDS);
+    assert(cfg->slot_lake == RLK_WG_NONE || wg->nsampled + (int)cfg->slot_lake < RLK_WG_MAX_FIELDS);
 
     /* Sampled field indices must be in [0, nsampled) — checked here (the
        constructor does not know the wg). */
@@ -100,8 +99,8 @@ rivers_stage(rlk_wg_ctx_t *ctx, const void *data) {
         bank_fade *= 1.0f + cfg->acc_log_gain * acc_log;
     }
 
-    /* Tile centre in world coords, displaced by optional meanders (quantized
-       to whole tiles below: the SDF is tile-granular). */
+    /* Tile centre in world coords, displaced by optional meanders (sampled
+       continuously by the float SDF variant). */
     float wxf = (float)ctx->wx + 0.5f;
     float wyf = (float)ctx->wy + 0.5f;
     if (cfg->f_wig_x != RLK_WG_NONE && cfg->f_wig_y != RLK_WG_NONE) {
@@ -115,12 +114,14 @@ rivers_stage(rlk_wg_ctx_t *ctx, const void *data) {
     if (cfg->f_creek != RLK_WG_NONE)
         creek_add(wg, cfg, wxf, wyf, &mask, &carve);
     sea_clip(cfg, ctx->wx, ctx->wy, &mask, &carve);
-    lake_add(cfg, ctx->wx, ctx->wy, &mask);
+    const float lake = lake_mask(cfg, ctx->wx, ctx->wy);
 
     if (cfg->slot_mask != RLK_WG_NONE)
         ctx->field[wg->nsampled + cfg->slot_mask] = rlk_clampf(mask, 0.0f, 1.0f);
     if (cfg->slot_carve != RLK_WG_NONE)
         ctx->field[wg->nsampled + cfg->slot_carve] = carve;
+    if (cfg->slot_lake != RLK_WG_NONE)
+        ctx->field[wg->nsampled + cfg->slot_lake] = lake;
 }
 
 rlk_wg_stage_t

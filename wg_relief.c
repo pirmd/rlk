@@ -93,6 +93,11 @@ relief_stage(rlk_wg_ctx_t *ctx, const void *data) {
         const int carve_idx = wg->nsampled + cfg->river_carve_field;
         assert(carve_idx < RLK_WG_MAX_FIELDS);
         river_carve = ctx->field[carve_idx];
+        /* Taper the carve near the coast: a valley must reach the sea, not
+           dig below it (a sub-sea carve reads as a lake). */
+        const float room = elev - cfg->sea;
+        if (river_carve > room)
+            river_carve = room;
     }
 
     /* Fjord carve */

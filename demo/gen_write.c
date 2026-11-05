@@ -10,8 +10,9 @@
 
 #include "gen_internal.h"
 
-/* Widen the river mask near the coast: up to 2x at the shoreline
-   (specialist review 2026-10-30, hydrologist P1: estuary at river mouths).
+/* Widen the river mask near the coast: progressive fade, up to 1.5x at the
+   shoreline (specialist review 2026-10-30, hydrologist P1: estuary at river
+   mouths; 2026-11-05: progressive instead of a hard 2x to avoid blobs).
    Uses the final elevation to estimate distance from the sea.
    shore = 0 at waterline, 1 at ELEV_BEACH (landward edge of beach). */
 static inline float
@@ -20,8 +21,8 @@ estuary_mask(const rlk_wg_ctx_t *ctx, float mask) {
     float elev = ctx->field[F_ELEV];
     float shore = (elev - SEA_LEVEL) / (ELEV_BEACH - SEA_LEVEL);
     shore = shore < 0.0f ? 0.0f : (shore > 1.0f ? 1.0f : shore);
-    /* Widen: 1x inland, 2x at the shoreline */
-    return mask * (1.0f + (1.0f - shore));
+    /* Widen: 1x inland, 1.5x at the shoreline */
+    return mask * (1.0f + 0.5f * (1.0f - shore));
 }
 
 /* Capture writer: stores derived fields then dispatches to the real writer. */
@@ -156,10 +157,10 @@ write_land_water(const rlk_wg_ctx_t *ctx, rlk_tile_t *out) {
         out->flags = 0x02;
         return 1;
     }
-    /* Marsh: floodplain near the coast (review 2026-10-30, hydrologist P1:
-       wetland = river edge or valley at low elevation, not an arbitrary rule) */
-    float carve = ctx->field[F_RIVER_CARVE];
-    if ((mask > 0.0f || carve > 0.0f) && ctx->field[F_ELEV] < ELEV_BEACH + 0.08f) {
+    /* Marsh: floodplain next to the channel (review 2026-10-30, hydrologist
+       P1; 2026-11-05: mask > 0.2 instead of any carve>0, which covered the
+       whole 8-tile valley reach and made 9.6% of the map marsh) */
+    if (mask > 0.2f && ctx->field[F_ELEV] < ELEV_BEACH + 0.05f) {
         out->type = TILE_MARSH;
         out->variant = (uint8_t)(ctx->field[F_DETAIL] * 3.0f);
         out->flags = 0x02;

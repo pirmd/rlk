@@ -91,6 +91,11 @@ rlk_err_t rlk_drain_build(rlk_drain_t *d, const rlk_grid_t *elev,
    type: what a flowline means on the map is the caller's call. */
 float rlk_drain_flowline_sdf(const rlk_drain_t *d, int x, int y, uint32_t acc_min);
 
+/* Float variant: query at world position (px, py) in tile coords (the int
+   version queries the cell centre x+0.5, y+0.5). Lets callers displace the
+   query continuously (e.g. meanders) instead of quantized to whole tiles. */
+float rlk_drain_flowline_sdf_f(const rlk_drain_t *d, float px, float py, uint32_t acc_min);
+
 /* --- HELPERS (static inline) --------------------------------------------- */
 
 /* Quantize elevation to integer (1/256 steps, absolute). At most 65534:
@@ -112,12 +117,15 @@ rlk_drain_step(int d, int *dx, int *dy) {
 }
 
 /* Log-width law: channel width = 1 + log2(acc/acc_min) tiles, capped at
-   cellsize. Shared by rlk_drain_flowline_sdf and the hydro speed estimate. */
+   half a cell (a full-cell cap flattens all big rivers to exactly cellsize
+   tiles wide). Shared by rlk_drain_flowline_sdf and the hydro speed
+   estimate. */
 static inline float
 rlk_drain_channel_width(uint32_t acc, uint32_t acc_min, float cellsize) {
     assert(acc_min >= 1);
     float lw = 1.0f + log2f((float)acc / (float)acc_min);
-    return lw > cellsize ? cellsize : lw;
+    const float cap = 0.5f * cellsize;
+    return lw > cap ? cap : lw;
 }
 
 /* Downstream cell index of c, or -1 for an outlet. */

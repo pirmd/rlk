@@ -172,7 +172,8 @@ test_relief_stage_mountains(void) {
 }
 
 /* River carve: an earlier stage writes the carve slot; relief subtracts it
-   on land only (elev > sea before carving). */
+   on land only (elev > sea before carving), tapered near the coast so the
+   carved elevation never goes below sea level. */
 static void
 carve_stage(rlk_wg_ctx_t *ctx, const void *data) {
     (void)data;
@@ -191,7 +192,15 @@ test_relief_stage_river_carve(void) {
     for (int y = 0; y < MAP; y++)
         for (int x = 0; x < MAP; x++) {
             const float cont = cont_at(&wg, x, y);
-            const float expected = cont > 0.40f ? cont - 0.5f : cont;
+            float expected = cont;
+            if (cont > 0.40f) {
+                float carve = 0.5f;
+                const float room = cont - 0.40f;
+                if (carve > room)
+                    carve = room;
+                expected = cont - carve;
+                assert(expected >= 0.40f);  /* taper: never below sea */
+            }
             assert(elev_at(x, y) == expected);
         }
 }

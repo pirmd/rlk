@@ -228,8 +228,9 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
         .slot_carve = D_RIVER_CARVE,
         /* Hack's law (specialist review 2026-10-30): banks widen with log(acc) */
         .acc_log_gain = 0.3f,
-        .lake_depth = &gen->lake_grid,
-        .lake_min_depth = LAKE_MIN_DEPTH,
+        /* Lake tiles come from the F_LAKE slot (wg_drain stage): keep the
+           river mask pure so the estuary widening only affects rivers. */
+        .slot_lake = RLK_WG_NONE,
         .f_wig_x = F_WIG_X,
         .f_wig_y = F_WIG_Y,
         .wig_tiles = 3.0f,

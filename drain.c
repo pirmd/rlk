@@ -152,18 +152,15 @@ rlk_drain_build(rlk_drain_t *d, const rlk_grid_t *elev, float outlet_level,
 }
 
 float
-rlk_drain_flowline_sdf(const rlk_drain_t *d, int x, int y, uint32_t acc_min) {
+rlk_drain_flowline_sdf_f(const rlk_drain_t *d, float px, float py, uint32_t acc_min) {
     assert(d && d->filled && d->dir && d->acc);
     assert(acc_min >= 1);
     const int w = d->lattice.w, h = d->lattice.h;
     const float cell = (float)d->lattice.cellsize;
-    const int idx = rlk_lattice_index(&d->lattice, x, y);
+    const int idx = rlk_lattice_index(&d->lattice, (int)floorf(px), (int)floorf(py));
     if (idx < 0)
         return RLK_DRAIN_FAR;
     const int ci = idx % w, cj = idx / w;
-
-    const float px = (float)x + 0.5f;
-    const float py = (float)y + 0.5f;
 
     float best = RLK_DRAIN_FAR;
     for (int dj = -1; dj <= 1; dj++) {
@@ -207,4 +204,9 @@ rlk_drain_flowline_sdf(const rlk_drain_t *d, int x, int y, uint32_t acc_min) {
         }
     }
     return best;
+}
+
+float
+rlk_drain_flowline_sdf(const rlk_drain_t *d, int x, int y, uint32_t acc_min) {
+    return rlk_drain_flowline_sdf_f(d, (float)x + 0.5f, (float)y + 0.5f, acc_min);
 }

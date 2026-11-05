@@ -33,14 +33,14 @@ fixture_setup_slope(void) {
                              .dir = g_dir, .acc = g_acc, .order = g_order };
 }
 
-/* channel_width: log-width law, 1 + log2(acc/acc_min), capped at cellsize */
+/* channel_width: log-width law, 1 + log2(acc/acc_min), capped at cellsize/2 */
 
 static void
 test_rlk_drain_channel_width(void) {
     assert(fabsf(rlk_drain_channel_width(1, 1, 4.0f) - 1.0f) < 1e-6f);
     assert(fabsf(rlk_drain_channel_width(2, 2, 8.0f) - 1.0f) < 1e-6f);  /* acc == acc_min */
-    assert(fabsf(rlk_drain_channel_width(4, 1, 4.0f) - 3.0f) < 1e-6f);  /* 1 + log2(4) */
-    assert(fabsf(rlk_drain_channel_width(1024, 1, 4.0f) - 4.0f) < 1e-6f); /* capped at cellsize */
+    assert(fabsf(rlk_drain_channel_width(4, 1, 8.0f) - 3.0f) < 1e-6f);  /* 1 + log2(4), under the cap */
+    assert(fabsf(rlk_drain_channel_width(1024, 1, 4.0f) - 2.0f) < 1e-6f); /* capped at cellsize/2 */
 }
 
 /* quant (absolute: e * RLK_DRAIN_SCALE, clamped below the sentinel) */
@@ -240,7 +240,7 @@ test_rlk_drain_remove_pits(void) {
     assert(out[0] == rlk_drain_quant(1.0f));
 }
 
-/* flowline_sdf on the slope fixture (cellsize 1: half-width capped at 0.5) */
+/* flowline_sdf on the slope fixture (cellsize 1: width capped at cellsize/2) */
 
 static void
 test_rlk_drain_flowline_sdf(void) {
@@ -248,16 +248,16 @@ test_rlk_drain_flowline_sdf(void) {
     assert(rlk_drain_build(&g_drain, &g_elev, -1.0f, g_scratch) == RLK_OK);
 
     /* Every interior river cell: the tile centre lies on its own segment,
-       dist = 0, half-width = 0.5 (capped by cellsize 1) -> sdf = -0.5.
-       This also locks the width cap: cells with different acc give the
-       same sdf. */
+       dist = 0, width = 0.5 (capped at cellsize/2 = 0.5) -> half-width 0.25
+       -> sdf = -0.25. This also locks the width cap: cells with different
+       acc give the same sdf. */
     int rivers = 0;
     for (int j = 1; j < FH - 1; j++) {
         for (int i = 1; i < FW - 1; i++) {
             const size_t c = (size_t)j * (size_t)FW + (size_t)i;
             if (g_dir[c] == RLK_DRAIN_OUTLET) continue;
             rivers++;
-            assert(rlk_drain_flowline_sdf(&g_drain, i, j, 1) == -0.5f);
+            assert(rlk_drain_flowline_sdf(&g_drain, i, j, 1) == -0.25f);
         }
     }
     assert(rivers > 0);
@@ -270,6 +270,13 @@ test_rlk_drain_flowline_sdf(void) {
     assert(rlk_drain_flowline_sdf(&g_drain, 0, -1, 1) == RLK_DRAIN_FAR);
     assert(rlk_drain_flowline_sdf(&g_drain, FW, 0, 1) == RLK_DRAIN_FAR);
     assert(rlk_drain_flowline_sdf(&g_drain, 0, FH, 1) == RLK_DRAIN_FAR);
+
+    /* The int variant is the float variant at the cell centre. */
+    for (int j = 0; j < FH; j++)
+        for (int i = 0; i < FW; i++)
+            assert(rlk_drain_flowline_sdf(&g_drain, i, j, 1)
+                   == rlk_drain_flowline_sdf_f(&g_drain, (float)i + 0.5f,
+                                               (float)j + 0.5f, 1));
 
     /* Pure: same call, same result */
     assert(rlk_drain_flowline_sdf(&g_drain, 5, 5, 1)
