@@ -2,30 +2,32 @@
 
 #include <limits.h>
 
-#include "fmath.h"
-
 #define RLK_PATH_MAX_CELLS (1 << 20) /* window size limit (asserted): keeps path costs below the unreachable sentinel */
 
 /* Unreachable g-score sentinel. Real costs stay below it: a path visits
-   each cell at most once and a step costs at most (3*255+1)/2 = 383, so
-   g < 2^20 * 383 < INT_MAX/4. */
-#define PATH_INF (INT_MAX / 4)
+   each cell at most once and a step costs at most 3*255 = 765, so
+   g < 2^20 * 765 < INT_MAX/2. */
+#define PATH_INF (INT_MAX / 2)
 
 /* 4 cardinals (E, S, W, N) then 4 diagonals (SE, SW, NE, NW). */
 static const int8_t DX[8] = { 1, 0, -1, 0, 1, -1, 1, -1 };
 static const int8_t DY[8] = { 0, 1, 0, -1, 1, 1, -1, -1 };
 
-/* Enter cost of cell (i, j) in cell coordinates (caller: inside window). */
+/* Enter cost of cell (i, j) in cell coordinates (caller: inside window).
+   Callback values are clamped to 0..255 (0 = blocked). */
 static int
 cost_at(const rlk_path_cost_t *c, int i, int j) {
     if (c->table)
         return c->table[(size_t)j * (size_t)c->lattice.w + (size_t)i];
     int v = c->fn(c->ctx, c->lattice.origin_x + i, c->lattice.origin_y + j);
-    assert(v >= 0 && v <= 255);
+    if (v < 0)
+        return RLK_PATH_BLOCKED;
+    if (v > 255)
+        v = 255;
     return v;
 }
 
-/* --- Binary heap ordered by f = g + manhattan(cell, goal) ---------------- */
+/* --- Binary heap ordered by stored f = g + octile(cell, goal) ------------ */
 
 typedef struct {
     rlk_path_scratch_t *scr;
@@ -33,20 +35,30 @@ typedef struct {
     int gx, gy;
 } heap_t;
 
-/* Manhattan distance is admissible: every step costs at least 1. */
+/* Octile distance to the goal, scaled like the step costs (cardinal = 2,
+   diagonal = 3): h = 2*(dx+dy) - min(dx,dy). Admissible and consistent:
+   every step reduces h by at most its cost. */
 static int
-heap_f(const heap_t *hp, int cell) {
+heap_h(const heap_t *hp, int cell) {
     const rlk_lattice_t *l = hp->l;
-    int x = l->origin_x + cell % l->w;
-    int y = l->origin_y + cell / l->w;
-    return hp->scr->g[cell] + rlk_dist_manhattan(x, y, hp->gx, hp->gy);
+    int dx = l->origin_x + cell % l->w - hp->gx;
+    int dy = l->origin_y + cell / l->w - hp->gy;
+    if (dx < 0) dx = -dx;
+    if (dy < 0) dy = -dy;
+    return 2 * (dx + dy) - (dx < dy ? dx : dy);
 }
 
-/* Smaller f first; ties broken by smaller cell index (deterministic). */
+/* Smaller f first; ties: larger g (closer to the goal), then smaller cell
+   index (deterministic). */
 static int
 heap_less(const heap_t *hp, int a, int b) {
-    int fa = heap_f(hp, a), fb = heap_f(hp, b);
-    return fa < fb || (fa == fb && a < b);
+    const rlk_path_scratch_t *s = hp->scr;
+    int fa = s->f[a], fb = s->f[b];
+    if (fa != fb)
+        return fa < fb;
+    if (s->g[a] != s->g[b])
+        return s->g[a] > s->g[b];
+    return a < b;
 }
 
 static void
@@ -118,7 +130,7 @@ rlk_path_find(const rlk_path_cost_t *cost, rlk_path_scratch_t *scr,
     assert(cost->lattice.w > 0 && cost->lattice.h > 0);
     assert(cost->lattice.cellsize == 1);
     assert(cost->table || cost->fn);
-    assert(scr->g && scr->parent && scr->heap && scr->heap_pos && scr->closed);
+    assert(scr->g && scr->parent && scr->heap && scr->heap_pos && scr->f && scr->closed);
     assert(cap >= 1);
 
     const rlk_lattice_t *l = &cost->lattice;
@@ -142,6 +154,7 @@ rlk_path_find(const rlk_path_cost_t *cost, rlk_path_scratch_t *scr,
     heap_t hp = { .scr = scr, .l = l, .gx = gx, .gy = gy };
     int heap_n = 0;
     scr->g[si] = 0;
+    scr->f[si] = heap_h(&hp, si);
     heap_push(&hp, &heap_n, si);
 
     while (heap_n > 0) {
@@ -155,6 +168,9 @@ rlk_path_find(const rlk_path_cost_t *cost, rlk_path_scratch_t *scr,
             const int ni = ci + DX[d], nj = cj + DY[d];
             if (ni < 0 || nj < 0 || ni >= w || nj >= h)
                 continue;
+            const int nxt = nj * w + ni;
+            if (scr->closed[nxt])
+                continue;
             const int c = cost_at(cost, ni, nj);
             if (c == RLK_PATH_BLOCKED)
                 continue;
@@ -165,17 +181,15 @@ rlk_path_find(const rlk_path_cost_t *cost, rlk_path_scratch_t *scr,
                     continue;
                 if (cost_at(cost, ci, cj + DY[d]) == RLK_PATH_BLOCKED)
                     continue;
-                step = (3 * c + 1) / 2;  /* ceil(3/2 * c) */
+                step = 3 * c;
             } else {
-                step = c;
+                step = 2 * c;
             }
-            const int nxt = nj * w + ni;
-            if (scr->closed[nxt])
-                continue;
             const int ng = scr->g[cur] + step;
             if (ng < scr->g[nxt]) {
                 scr->g[nxt] = ng;
                 scr->parent[nxt] = cur;
+                scr->f[nxt] = ng + heap_h(&hp, nxt);
                 if (scr->heap_pos[nxt] >= 0)
                     heap_sift_up(&hp, scr->heap_pos[nxt]);
                 else

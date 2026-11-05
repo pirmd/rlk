@@ -4,15 +4,19 @@
 /*
  * A* pathfinding with integer costs on a tile-aligned window
  * (rlk_lattice_t with cellsize == 1). 8-connected: a cardinal step costs
- * the target cell's enter cost, a diagonal step costs ceil(3/2 * cost)
- * and is only allowed when both adjacent cardinal cells are enterable
- * (no corner cutting). Deterministic: ties are broken by cell index,
- * never by memory addresses. Zero-allocation: the caller provides the
- * scratch buffers.
+ * 2 * enter cost, a diagonal step costs 3 * enter cost (exact 1.5 ratio,
+ * no rounding) and is only allowed when both adjacent cardinal cells are
+ * enterable (no corner cutting). The heuristic is the octile distance
+ * scaled the same way, so it is admissible and consistent. Deterministic:
+ * heap ties are broken by larger g, then by cell index, never by memory
+ * addresses. Zero-allocation: the caller provides the scratch buffers.
  *
- *   int g[W*H], parent[W*H], heap[W*H], heap_pos[W*H];
+ * rlk_path_find resets the whole window (O(w*h)) on every call: pass
+ * small windows around the entity, not whole maps.
+ *
+ *   int g[W*H], parent[W*H], heap[W*H], heap_pos[W*H], f[W*H];
  *   uint8_t closed[W*H];
- *   rlk_path_scratch_t scr = { g, parent, heap, heap_pos, closed };
+ *   rlk_path_scratch_t scr = { g, parent, heap, heap_pos, f, closed };
  *   int path[2 * W*H];   (x0,y0, x1,y1, ...) in world tile coords
  *   int n;
  *   rlk_err_t e = rlk_path_find(&cost, &scr, sx, sy, gx, gy, path, W*H, &n);
@@ -27,7 +31,8 @@
 #define RLK_PATH_BLOCKED   0        /* enter cost: the cell cannot be entered */
 
 /* Cost source: a per-cell table OR a callback, exactly one must be set.
-   Costs are 0..255: RLK_PATH_BLOCKED (0) = blocked, 1..255 = enter cost. */
+   Costs are 0..255: RLK_PATH_BLOCKED (0) = blocked, 1..255 = enter cost.
+   Callback values outside 0..255 are clamped into it. */
 typedef struct {
     rlk_lattice_t lattice;              /* window; cellsize must be 1 */
     const uint8_t *table;               /* enter cost per cell, row-major, or NULL */
@@ -35,12 +40,13 @@ typedef struct {
     void *ctx;                          /* callback context */
 } rlk_path_cost_t;
 
-/* Scratch buffers, caller-owned: four int arrays + one byte array, w*h each. */
+/* Scratch buffers, caller-owned: five int arrays + one byte array, w*h each. */
 typedef struct {
     int *g;          /* cost from the start cell */
     int *parent;     /* predecessor cell index, -1 = none */
     int *heap;       /* binary heap of cell indices (open list) */
     int *heap_pos;   /* heap position per cell, -1 = not in the heap */
+    int *f;          /* f = g + octile distance to the goal (heap ordering) */
     uint8_t *closed; /* settled flag per cell */
 } rlk_path_scratch_t;
 

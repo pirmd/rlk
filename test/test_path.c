@@ -12,7 +12,7 @@
 #define PH 8
 
 static uint8_t g_table[PW * PH];
-static int g_g[PW * PH], g_parent[PW * PH], g_heap[PW * PH], g_heap_pos[PW * PH];
+static int g_g[PW * PH], g_parent[PW * PH], g_heap[PW * PH], g_heap_pos[PW * PH], g_f[PW * PH];
 static uint8_t g_closed[PW * PH];
 static rlk_path_scratch_t g_scr;
 static rlk_path_cost_t g_cost;
@@ -26,7 +26,7 @@ fixture(void) {
     };
     g_scr = (rlk_path_scratch_t){
         .g = g_g, .parent = g_parent, .heap = g_heap,
-        .heap_pos = g_heap_pos, .closed = g_closed,
+        .heap_pos = g_heap_pos, .f = g_f, .closed = g_closed,
     };
     memset(g_table, 1, sizeof(g_table));  /* every cell costs 1 */
 }
@@ -36,7 +36,7 @@ find(int sx, int sy, int gx, int gy, int *out, int cap, int *out_len) {
     return rlk_path_find(&g_cost, &g_scr, sx, sy, gx, gy, out, cap, out_len);
 }
 
-/* Open field: the diagonal is shortest (7 diagonal steps, cost 7*2 = 14). */
+/* Open field: the diagonal is shortest (7 diagonal steps, cost 7*3 = 21). */
 
 static void
 test_diagonal_straight(void) {
@@ -50,10 +50,10 @@ test_diagonal_straight(void) {
         assert(g_path[2 * k] - g_path[2 * (k - 1)] == 1);
         assert(g_path[2 * k + 1] - g_path[2 * (k - 1) + 1] == 1);
     }
-    assert(g_scr.g[7 * PW + 7] == 14);
+    assert(g_scr.g[7 * PW + 7] == 21);
 }
 
-/* Open field: cardinal step costs the target cell's enter cost. */
+/* Open field: a cardinal step costs 2 * the target cell's enter cost. */
 
 static void
 test_cardinal_straight(void) {
@@ -61,7 +61,7 @@ test_cardinal_straight(void) {
     int n = 0;
     assert(find(0, 0, 7, 0, g_path, PW * PH, &n) == RLK_OK);
     assert(n == 8);
-    assert(g_scr.g[7] == 7);
+    assert(g_scr.g[7] == 14);
 }
 
 /* Wall column x=3 for y < 7 (gap at y=7): the path detours, never crosses. */
@@ -101,7 +101,8 @@ test_unreachable(void) {
 }
 
 /* Weighted field: row 0 costs 10, the rest costs 1. The cheapest path
-   leaves row 0 (1 + 7 + 10 = 18) instead of crossing it (7*10 = 70). */
+   leaves row 0 via the (0,0)->(1,1) diagonal (3 + 6*2 + 2*10 = 35)
+   instead of crossing row 0 (7*2*10 = 140). */
 
 static void
 test_weighted_detour(void) {
@@ -110,7 +111,7 @@ test_weighted_detour(void) {
         g_table[x] = 10;  /* row y=0 */
     int n = 0;
     assert(find(0, 0, 7, 0, g_path, PW * PH, &n) == RLK_OK);
-    assert(g_scr.g[7] == 18);
+    assert(g_scr.g[7] == 35);
     assert(n > 8);
     for (int k = 1; k < n - 1; k++)
         assert(g_path[2 * k + 1] != 0);  /* no intermediate point on row 0 */
@@ -146,8 +147,8 @@ ref_dijkstra(const uint8_t *t, int si, int gi) {
             if (dx[d] != 0 && dy[d] != 0) {
                 if (t[cj * OW + ci + dx[d]] == RLK_PATH_BLOCKED) continue;
                 if (t[(cj + dy[d]) * OW + ci] == RLK_PATH_BLOCKED) continue;
-                step = (3 * c + 1) / 2;
-            } else step = c;
+                step = 3 * c;
+            } else step = 2 * c;
             int nxt = nj * OW + ni;
             if (dist[best] + step < dist[nxt]) dist[nxt] = dist[best] + step;
         }
@@ -171,9 +172,9 @@ test_optimal_vs_dijkstra(void) {
         rlk_lattice_t lat = { .w = OW, .h = OH, .cellsize = 1,
                               .origin_x = 0, .origin_y = 0 };
         rlk_path_cost_t cost = { .lattice = lat, .table = tab };
-        int gg[OW * OH], pp[OW * OH], hh[OW * OH], hp[OW * OH];
+        int gg[OW * OH], pp[OW * OH], hh[OW * OH], hp[OW * OH], ff[OW * OH];
         uint8_t cl[OW * OH];
-        rlk_path_scratch_t scr = { gg, pp, hh, hp, cl };
+        rlk_path_scratch_t scr = { gg, pp, hh, hp, ff, cl };
         int path[2 * OW * OH];
         int n = 0;
         rlk_err_t e = rlk_path_find(&cost, &scr, sx, sy, gx, gy, path,
@@ -198,9 +199,9 @@ test_optimal_vs_dijkstra(void) {
                     /* no corner cutting */
                     assert(tab[path[2 * (k - 1) + 1] * OW + x] != RLK_PATH_BLOCKED);
                     assert(tab[y * OW + path[2 * (k - 1)]] != RLK_PATH_BLOCKED);
-                    sum += (3 * c + 1) / 2;
+                    sum += 3 * c;
                 } else {
-                    sum += c;
+                    sum += 2 * c;
                 }
             }
             assert(sum == gg[gi]);  /* rendered path cost == g[goal] */
@@ -277,7 +278,7 @@ test_corner_cutting(void) {
     g_table[0 * PW + 1] = RLK_PATH_BLOCKED;  /* (1,0) */
     assert(find(0, 0, 1, 1, g_path, PW * PH, &n) == RLK_OK);
     assert(n == 3);  /* (0,0) -> (0,1) -> (1,1) */
-    assert(g_scr.g[1 * PW + 1] == 2);
+    assert(g_scr.g[1 * PW + 1] == 4);
 }
 
 /* Callback cost source: same result as the table; world coords, negative
@@ -302,7 +303,34 @@ test_callback(void) {
     assert(n == 8);
     assert(g_path[0] == -4 && g_path[1] == -4);
     assert(g_path[2 * (n - 1)] == 3 && g_path[2 * (n - 1) + 1] == 3);
-    assert(g_scr.g[7 * PW + 7] == 14);  /* world (3,3) = cell (7,7) */
+    assert(g_scr.g[7 * PW + 7] == 21);  /* world (3,3) = cell (7,7) */
+}
+
+/* Callback values outside 0..255 are clamped: negative = blocked,
+   above 255 = 255. */
+
+static int
+cost_fn_clamp(void *ctx, int x, int y) {
+    (void)ctx;
+    if (x == 1 && y == 0)
+        return -5;    /* clamped to RLK_PATH_BLOCKED */
+    if (x == 0 && y == 1)
+        return 1000;  /* clamped to 255 */
+    return 1;
+}
+
+static void
+test_callback_clamp(void) {
+    fixture();
+    g_cost.table = NULL;
+    g_cost.fn = cost_fn_clamp;
+    g_cost.ctx = NULL;
+    int n = 0;
+    /* (1,0) blocked -> no diagonal; path goes (0,0)->(0,1)->(1,1),
+       cost 2*255 + 2*1 = 512. */
+    assert(find(0, 0, 1, 1, g_path, PW * PH, &n) == RLK_OK);
+    assert(n == 3);
+    assert(g_scr.g[1 * PW + 1] == 2 * 255 + 2);
 }
 
 /* path_draw: paints the path tiles on a tilemap. */
@@ -360,6 +388,7 @@ main(void) {
     test_corner_cutting();
     test_optimal_vs_dijkstra();
     test_callback();
+    test_callback_clamp();
     test_path_draw();
     test_example_rlk_path_find();
     return 0;
