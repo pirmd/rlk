@@ -57,16 +57,19 @@ static const uint64_t SEEDS[] = { 42ULL, 7ULL, 1ULL, 1337ULL, 2026ULL };
    2026-11-05 to add the spatial-diversity probes (edge_frac, n_patches,
    pair_entropy, moran_elev), re-recorded again 2026-11-05 after clamping
    gen_relief_elev_fn to [0, RLK_DRAIN_SCALE) (drain contract; only seeds
-   with peak elevation in (1-1/256, 1) drifted). Re-record with
+   with peak elevation in (1-1/256, 1) drifted), and again 2026-11-05 after the
+   hydrology pass (coastal carve taper, pure river mask + slot_lake, channel
+   width cap cellsize/2, continuous float-SDF meanders, lake threshold 0.05,
+   marsh restricted to the channel vicinity). Re-record with
    `test_tilemap_gen record` only on an intentional change of the
    generation or stats output. */
 static const golden_t GOLDEN[N_SEEDS] = {
     /* entropy    water     river    land     edge     pairH    moran    lzss     comps largest patch sink poi */
-    { 3.122547f, 0.259521f, 0.045085f, 0.654541f, 0.294103f, 4.557413f, 0.978291f, 0.342082f, 40, 4978, 1241, 50, 22 },  /* seed 42 */
-    { 2.596394f, 0.398438f, 0.015706f, 0.549967f, 0.236695f, 3.763479f, 0.948108f, 0.290283f, 54, 6198, 852, 25, 19 },  /* seed 7 */
-    { 3.044841f, 0.271484f, 0.018880f, 0.681315f, 0.278047f, 4.401509f, 0.969586f, 0.340088f, 46, 8194, 1138, 41, 27 },  /* seed 1 */
-    { 3.293186f, 0.113851f, 0.087728f, 0.644857f, 0.241253f, 4.602536f, 0.986688f, 0.315715f, 65, 4402, 891, 32, 24 },  /* seed 1337 */
-    { 3.191216f, 0.158691f, 0.067790f, 0.637614f, 0.297183f, 4.664951f, 0.977110f, 0.344432f, 54, 6228, 1231, 52, 30 },  /* seed 2026 */
+    { 3.015760f, 0.245768f, 0.037760f, 0.674561f, 0.310241f, 4.484357f, 0.978272f, 0.350576f, 39, 5127, 1407, 50, 22 },  /* seed 42 */
+    { 2.519897f, 0.391276f, 0.012939f, 0.558838f, 0.241705f, 3.687113f, 0.948161f, 0.286641f, 52, 6288, 917, 25, 19 },  /* seed 7 */
+    { 2.858118f, 0.249105f, 0.013265f, 0.708740f, 0.278704f, 4.168202f, 0.969678f, 0.329590f, 46, 8551, 1160, 41, 27 },  /* seed 1 */
+    { 3.141278f, 0.091471f, 0.066081f, 0.686605f, 0.237927f, 4.411116f, 0.986673f, 0.306549f, 48, 4772, 935, 35, 24 },  /* seed 1337 */
+    { 3.065853f, 0.130452f, 0.049398f, 0.684326f, 0.299893f, 4.511510f, 0.976908f, 0.338806f, 44, 6714, 1261, 54, 30 },  /* seed 2026 */
 };
 
 #define ENT_TOL   1e-3f
