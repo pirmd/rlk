@@ -4,11 +4,11 @@
 
 #include "fmath.h"
 
-#define RLK_PATH_MAX_CELLS (1 << 20) /* window size limit (scratch is ~17 B/cell) */
+#define RLK_PATH_MAX_CELLS (1 << 20) /* window size limit (asserted): keeps path costs below the unreachable sentinel */
 
 /* Unreachable g-score sentinel. Real costs stay below it: a path visits
    each cell at most once and a step costs at most (3*255+1)/2 = 383, so
-   g < RLK_PATH_MAX_CELLS * 383 < INT_MAX/4. */
+   g < 2^20 * 383 < INT_MAX/4. */
 #define PATH_INF (INT_MAX / 4)
 
 /* 4 cardinals (E, S, W, N) then 4 diagonals (SE, SW, NE, NW). */
@@ -31,11 +31,11 @@ typedef struct {
     rlk_path_scratch_t *scr;
     const rlk_lattice_t *l;
     int gx, gy;
-} path_heap_t;
+} heap_t;
 
 /* Manhattan distance is admissible: every step costs at least 1. */
 static int
-path_f(const path_heap_t *hp, int cell) {
+heap_f(const heap_t *hp, int cell) {
     const rlk_lattice_t *l = hp->l;
     int x = l->origin_x + cell % l->w;
     int y = l->origin_y + cell / l->w;
@@ -44,13 +44,13 @@ path_f(const path_heap_t *hp, int cell) {
 
 /* Smaller f first; ties broken by smaller cell index (deterministic). */
 static int
-path_less(const path_heap_t *hp, int a, int b) {
-    int fa = path_f(hp, a), fb = path_f(hp, b);
+heap_less(const heap_t *hp, int a, int b) {
+    int fa = heap_f(hp, a), fb = heap_f(hp, b);
     return fa < fb || (fa == fb && a < b);
 }
 
 static void
-path_swap(path_heap_t *hp, int a, int b) {
+heap_swap(heap_t *hp, int a, int b) {
     rlk_path_scratch_t *s = hp->scr;
     int t = s->heap[a];
     s->heap[a] = s->heap[b];
@@ -60,42 +60,42 @@ path_swap(path_heap_t *hp, int a, int b) {
 }
 
 static void
-path_sift_up(path_heap_t *hp, int k) {
+heap_sift_up(heap_t *hp, int k) {
     while (k > 0) {
         int p = (k - 1) / 2;
-        if (!path_less(hp, hp->scr->heap[k], hp->scr->heap[p]))
+        if (!heap_less(hp, hp->scr->heap[k], hp->scr->heap[p]))
             break;
-        path_swap(hp, k, p);
+        heap_swap(hp, k, p);
         k = p;
     }
 }
 
 static void
-path_sift_down(path_heap_t *hp, int k, int n) {
+heap_sift_down(heap_t *hp, int k, int n) {
     for (;;) {
         int left = 2 * k + 1, right = left + 1, best = k;
-        if (left < n && path_less(hp, hp->scr->heap[left], hp->scr->heap[best]))
+        if (left < n && heap_less(hp, hp->scr->heap[left], hp->scr->heap[best]))
             best = left;
-        if (right < n && path_less(hp, hp->scr->heap[right], hp->scr->heap[best]))
+        if (right < n && heap_less(hp, hp->scr->heap[right], hp->scr->heap[best]))
             best = right;
         if (best == k)
             break;
-        path_swap(hp, k, best);
+        heap_swap(hp, k, best);
         k = best;
     }
 }
 
 static void
-path_push(path_heap_t *hp, int *n, int cell) {
+heap_push(heap_t *hp, int *n, int cell) {
     rlk_path_scratch_t *s = hp->scr;
     s->heap[*n] = cell;
     s->heap_pos[cell] = *n;
     (*n)++;
-    path_sift_up(hp, *n - 1);
+    heap_sift_up(hp, *n - 1);
 }
 
 static int
-path_pop(path_heap_t *hp, int *n) {
+heap_pop(heap_t *hp, int *n) {
     rlk_path_scratch_t *s = hp->scr;
     int top = s->heap[0];
     s->heap_pos[top] = -1;
@@ -103,7 +103,7 @@ path_pop(path_heap_t *hp, int *n) {
     if (*n > 0) {
         s->heap[0] = s->heap[*n];
         s->heap_pos[s->heap[0]] = 0;
-        path_sift_down(hp, 0, *n);
+        heap_sift_down(hp, 0, *n);
     }
     return top;
 }
@@ -124,12 +124,11 @@ rlk_path_find(const rlk_path_cost_t *cost, rlk_path_scratch_t *scr,
     const rlk_lattice_t *l = &cost->lattice;
     const int w = l->w, h = l->h;
     const size_t ncells = (size_t)w * (size_t)h;
+    assert(ncells <= (size_t)RLK_PATH_MAX_CELLS);
 
     const int si = rlk_lattice_index(l, sx, sy);
     const int gi = rlk_lattice_index(l, gx, gy);
     if (si < 0 || gi < 0)
-        return RLK_E_INVALID;
-    if (ncells > (size_t)RLK_PATH_MAX_CELLS)
         return RLK_E_INVALID;
 
     /* Reset scratch. */
@@ -140,13 +139,13 @@ rlk_path_find(const rlk_path_cost_t *cost, rlk_path_scratch_t *scr,
         scr->closed[k] = 0;
     }
 
-    path_heap_t hp = { .scr = scr, .l = l, .gx = gx, .gy = gy };
+    heap_t hp = { .scr = scr, .l = l, .gx = gx, .gy = gy };
     int heap_n = 0;
     scr->g[si] = 0;
-    path_push(&hp, &heap_n, si);
+    heap_push(&hp, &heap_n, si);
 
     while (heap_n > 0) {
-        const int cur = path_pop(&hp, &heap_n);
+        const int cur = heap_pop(&hp, &heap_n);
         scr->closed[cur] = 1;
         if (cur == gi)
             break;  /* goal settled: g[gi] is optimal */
@@ -178,9 +177,9 @@ rlk_path_find(const rlk_path_cost_t *cost, rlk_path_scratch_t *scr,
                 scr->g[nxt] = ng;
                 scr->parent[nxt] = cur;
                 if (scr->heap_pos[nxt] >= 0)
-                    path_sift_up(&hp, scr->heap_pos[nxt]);
+                    heap_sift_up(&hp, scr->heap_pos[nxt]);
                 else
-                    path_push(&hp, &heap_n, nxt);
+                    heap_push(&hp, &heap_n, nxt);
             }
         }
     }

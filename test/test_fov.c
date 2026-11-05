@@ -40,7 +40,7 @@ count_visible(void) {
 static void
 test_open_field(void) {
     fixture();
-    rlk_fov_compute(&g_win, g_opaque, 8, 8, 100, g_visible);
+    rlk_fov_compute(g_visible, &g_win, g_opaque, 8, 8, 100);
     assert(count_visible() == FW * FH);
 }
 
@@ -49,7 +49,7 @@ test_open_field(void) {
 static void
 test_radius_1(void) {
     fixture();
-    rlk_fov_compute(&g_win, g_opaque, 4, 4, 1, g_visible);
+    rlk_fov_compute(g_visible, &g_win, g_opaque, 4, 4, 1);
     assert(count_visible() == 5);
     assert(vis(4, 4) && vis(5, 4) && vis(3, 4) && vis(4, 5) && vis(4, 3));
     assert(!vis(5, 5));  /* diagonal at distance sqrt(2) > 1 */
@@ -60,7 +60,7 @@ test_radius_1(void) {
 static void
 test_radius_2(void) {
     fixture();
-    rlk_fov_compute(&g_win, g_opaque, 8, 8, 2, g_visible);
+    rlk_fov_compute(g_visible, &g_win, g_opaque, 8, 8, 2);
     assert(count_visible() == 13);
     assert(!vis(10, 9));  /* dx=2, dy=1: 5 > 4 */
     assert(vis(10, 8));   /* dx=2, dy=0 */
@@ -74,7 +74,7 @@ test_wall_shadow(void) {
     fixture();
     for (int y = 0; y < FH; y++)
         g_opaque[(size_t)y * FW + 10] = 1;  /* column x=10 */
-    rlk_fov_compute(&g_win, g_opaque, 5, 5, 100, g_visible);
+    rlk_fov_compute(g_visible, &g_win, g_opaque, 5, 5, 100);
     assert(vis(10, 5));    /* the wall itself is seen */
     assert(vis(10, 0));
     assert(!vis(11, 5));   /* behind the wall */
@@ -88,7 +88,7 @@ test_wall_shadow(void) {
 static void
 test_opaque_null(void) {
     fixture();
-    rlk_fov_compute(&g_win, NULL, 8, 8, 100, g_visible);
+    rlk_fov_compute(g_visible, &g_win, NULL, 8, 8, 100);
     assert(count_visible() == FW * FH);
 }
 
@@ -99,7 +99,7 @@ test_clears_visible(void) {
     fixture();
     for (int y = 0; y < FH; y++)
         g_opaque[(size_t)y * FW + 10] = 1;
-    rlk_fov_compute(&g_win, g_opaque, 5, 5, 100, g_visible);
+    rlk_fov_compute(g_visible, &g_win, g_opaque, 5, 5, 100);
     assert(!vis(12, 5));
     for (int k = 0; k < FW * FH; k++)
         assert(g_visible[k] == 0 || g_visible[k] == 1);  /* no 0xAA left */
@@ -114,9 +114,9 @@ test_determinism(void) {
     g_opaque[9 * FW + 3] = 1;
     g_opaque[2 * FW + 12] = 1;
     uint8_t copy[FW * FH];
-    rlk_fov_compute(&g_win, g_opaque, 8, 8, 6, g_visible);
+    rlk_fov_compute(g_visible, &g_win, g_opaque, 8, 8, 6);
     memcpy(copy, g_visible, sizeof(copy));
-    rlk_fov_compute(&g_win, g_opaque, 8, 8, 6, g_visible);
+    rlk_fov_compute(g_visible, &g_win, g_opaque, 8, 8, 6);
     assert(memcmp(copy, g_visible, sizeof(copy)) == 0);
 }
 
@@ -127,8 +127,45 @@ test_negative_origin(void) {
     fixture();
     g_win.origin_x = -8;
     g_win.origin_y = -8;
-    rlk_fov_compute(&g_win, g_opaque, -4, -4, 100, g_visible);
+    rlk_fov_compute(g_visible, &g_win, g_opaque, -4, -4, 100);
     assert(count_visible() == FW * FH);
+}
+
+/* radius <= 0 means no distance limit: the whole open window is visible. */
+
+static void
+test_no_radius_limit(void) {
+    fixture();
+    rlk_fov_compute(g_visible, &g_win, g_opaque, 8, 8, 0);
+    assert(count_visible() == FW * FH);
+    rlk_fov_compute(g_visible, &g_win, g_opaque, 8, 8, -3);
+    assert(count_visible() == FW * FH);
+}
+
+/* Origin in a window corner: only the quarter disc inside the window. */
+
+static void
+test_origin_corner(void) {
+    fixture();
+    rlk_fov_compute(g_visible, &g_win, g_opaque, 0, 0, 3);
+    assert(vis(0, 0));
+    assert(vis(3, 0) && vis(0, 3) && vis(2, 2));   /* dist^2 = 9, 9, 8 <= 9 */
+    assert(!vis(3, 1) && !vis(4, 0) && !vis(15, 15)); /* dist^2 = 10, 16, 450 */
+}
+
+/* Banner example of fov.h: caller-provided opaque/visible buffers, one call. */
+
+static void
+test_example_rlk_fov_compute(void) {
+    rlk_lattice_t win = { .w = FW, .h = FH, .cellsize = 1,
+                          .origin_x = 0, .origin_y = 0 };
+    uint8_t opaque[FW * FH] = { 0 };
+    uint8_t visible[FW * FH];
+    int ox = 8, oy = 8, radius = 100;
+    rlk_fov_compute(visible, &win, opaque, ox, oy, radius);
+    assert(visible[(size_t)oy * FW + (size_t)ox] == 1);
+    for (int k = 0; k < FW * FH; k++)
+        assert(visible[k] == 1);
 }
 
 /* Main */
@@ -143,5 +180,8 @@ main(void) {
     test_clears_visible();
     test_determinism();
     test_negative_origin();
+    test_no_radius_limit();
+    test_origin_corner();
+    test_example_rlk_fov_compute();
     return 0;
 }

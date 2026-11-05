@@ -18,8 +18,6 @@
  *   rlk_err_t e = rlk_path_find(&cost, &scr, sx, sy, gx, gy, path, W*H, &n);
  */
 
-#include <assert.h>
-#include <stddef.h>
 #include <stdint.h>
 
 #include "err.h"
@@ -50,8 +48,8 @@ typedef struct {
    On RLK_OK, out holds *out_len points as (x0,y0, x1,y1, ...) pairs in world
    tile coordinates, start first, goal last (*out_len >= 1).
    RLK_E_NOTFOUND if the goal is unreachable or blocked.
-   RLK_E_INVALID if a coordinate is outside the window, the window exceeds
-   the built-in limit (1<<20 cells), no cost source is set, or cap < *out_len. */
+   RLK_E_INVALID if a coordinate is outside the window or cap < *out_len.
+   Asserted: exactly one cost source set, window of at most 1<<20 cells. */
 rlk_err_t rlk_path_find(const rlk_path_cost_t *cost, rlk_path_scratch_t *scr,
                         int sx, int sy, int gx, int gy,
                         int *out, int cap, int *out_len);

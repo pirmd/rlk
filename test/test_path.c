@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "hash.h"
 #include "path.h"
 #include "tilemap.h"
 
@@ -115,6 +116,101 @@ test_weighted_detour(void) {
         assert(g_path[2 * k + 1] != 0);  /* no intermediate point on row 0 */
 }
 
+/* Property: on random weighted grids, rlk_path_find returns a valid path
+   whose cost equals a reference Dijkstra with the same movement rules. */
+
+#define OW 16
+#define OH 16
+
+static int
+ref_dijkstra(const uint8_t *t, int si, int gi) {
+    static const int dx[8] = { 1, 0, -1, 0, 1, -1, 1, -1 };
+    static const int dy[8] = { 0, 1, 0, -1, 1, 1, -1, -1 };
+    int dist[OW * OH];
+    uint8_t done[OW * OH];
+    for (int k = 0; k < OW * OH; k++) { dist[k] = 1 << 28; done[k] = 0; }
+    dist[si] = 0;
+    for (;;) {
+        int best = -1, bd = 1 << 28;
+        for (int k = 0; k < OW * OH; k++)
+            if (!done[k] && dist[k] < bd) { bd = dist[k]; best = k; }
+        if (best < 0) break;
+        done[best] = 1;
+        int ci = best % OW, cj = best / OW;
+        for (int d = 0; d < 8; d++) {
+            int ni = ci + dx[d], nj = cj + dy[d];
+            if (ni < 0 || nj < 0 || ni >= OW || nj >= OH) continue;
+            int c = t[nj * OW + ni];
+            if (c == RLK_PATH_BLOCKED) continue;
+            int step;
+            if (dx[d] != 0 && dy[d] != 0) {
+                if (t[cj * OW + ci + dx[d]] == RLK_PATH_BLOCKED) continue;
+                if (t[(cj + dy[d]) * OW + ci] == RLK_PATH_BLOCKED) continue;
+                step = (3 * c + 1) / 2;
+            } else step = c;
+            int nxt = nj * OW + ni;
+            if (dist[best] + step < dist[nxt]) dist[nxt] = dist[best] + step;
+        }
+    }
+    return dist[gi];
+}
+
+static void
+test_optimal_vs_dijkstra(void) {
+    for (int t = 0; t < 40; t++) {
+        uint8_t tab[OW * OH];
+        for (int k = 0; k < OW * OH; k++) {
+            uint64_t h = rlk_hash_at((uint64_t)t + 1, k, 0, 0xBEEFULL);
+            tab[k] = (uint8_t)((h % 100) < 15 ? RLK_PATH_BLOCKED
+                                              : 1 + (h >> 8) % 20);
+        }
+        uint64_t h0 = rlk_hash_at((uint64_t)t + 1, 0, 1, 0xBEEFULL);
+        int sx = (int)((h0 >> 16) % OW), sy = (int)((h0 >> 32) % OH);
+        int gx = (int)((h0 >> 48) % OW), gy = (int)(h0 % OH);
+
+        rlk_lattice_t lat = { .w = OW, .h = OH, .cellsize = 1,
+                              .origin_x = 0, .origin_y = 0 };
+        rlk_path_cost_t cost = { .lattice = lat, .table = tab };
+        int gg[OW * OH], pp[OW * OH], hh[OW * OH], hp[OW * OH];
+        uint8_t cl[OW * OH];
+        rlk_path_scratch_t scr = { gg, pp, hh, hp, cl };
+        int path[2 * OW * OH];
+        int n = 0;
+        rlk_err_t e = rlk_path_find(&cost, &scr, sx, sy, gx, gy, path,
+                                    OW * OH, &n);
+        int si = sy * OW + sx, gi = gy * OW + gx;
+        int ref = ref_dijkstra(tab, si, gi);
+        if (e == RLK_OK) {
+            assert(ref < (1 << 28));
+            assert(gg[gi] == ref);  /* optimal cost */
+            assert(n >= 1 && path[0] == sx && path[1] == sy);
+            assert(path[2 * (n - 1)] == gx && path[2 * (n - 1) + 1] == gy);
+            int sum = 0;
+            for (int k = 0; k < n; k++) {
+                int x = path[2 * k], y = path[2 * k + 1];
+                if (k == 0) continue;
+                assert(tab[y * OW + x] != RLK_PATH_BLOCKED);
+                int dx = x - path[2 * (k - 1)], dy = y - path[2 * (k - 1) + 1];
+                assert(dx >= -1 && dx <= 1 && dy >= -1 && dy <= 1);
+                assert(dx != 0 || dy != 0);
+                int c = tab[y * OW + x];
+                if (dx != 0 && dy != 0) {
+                    /* no corner cutting */
+                    assert(tab[path[2 * (k - 1) + 1] * OW + x] != RLK_PATH_BLOCKED);
+                    assert(tab[y * OW + path[2 * (k - 1)]] != RLK_PATH_BLOCKED);
+                    sum += (3 * c + 1) / 2;
+                } else {
+                    sum += c;
+                }
+            }
+            assert(sum == gg[gi]);  /* rendered path cost == g[goal] */
+        } else {
+            assert(e == RLK_E_NOTFOUND);
+            assert(ref >= (1 << 28));
+        }
+    }
+}
+
 /* Coordinates outside the window -> RLK_E_INVALID. */
 
 static void
@@ -133,6 +229,9 @@ test_cap_too_small(void) {
     fixture();
     int n = 0;
     assert(find(0, 0, 7, 7, g_path, 2, &n) == RLK_E_INVALID);
+    /* Boundary: cap == path length is accepted. */
+    assert(find(0, 0, 7, 7, g_path, 8, &n) == RLK_OK);
+    assert(n == 8);
 }
 
 /* start == goal: a single-point path. */
@@ -219,6 +318,29 @@ test_path_draw(void) {
     for (int x = 0; x <= 2; x++)
         assert(tiles[x].type == 7);       /* row y=0 painted */
     assert(tiles[PW].type == 0);          /* row y=1 untouched */
+
+    /* Width 3 brush: 3x3 block around each path tile. */
+    memset(tiles, 0, sizeof(tiles));
+    rlk_path_draw(&tm, path, 3, 3, (rlk_tile_t){ .type = 9 });
+    assert(tiles[3].type == 9);           /* (3,0): brush edge */
+    assert(tiles[PW + 3].type == 9);      /* (3,1): brush row below */
+    assert(tiles[4].type == 0);           /* (4,0): outside brush */
+    assert(tiles[2 * PW].type == 0);      /* (0,2): outside brush */
+}
+
+/* The usage example from the path.h banner: declare the scratch buffers,
+   then find. */
+
+static void
+test_example_rlk_path_find(void) {
+    fixture();
+    int n = 0;
+    rlk_err_t e = rlk_path_find(&g_cost, &g_scr, 0, 0, 7, 7,
+                                g_path, PW * PH, &n);
+    assert(e == RLK_OK);
+    assert(n == 8);
+    assert(g_path[0] == 0 && g_path[1] == 0);
+    assert(g_path[2 * (n - 1)] == 7 && g_path[2 * (n - 1) + 1] == 7);
 }
 
 /* Main */
@@ -236,7 +358,9 @@ main(void) {
     test_start_equals_goal();
     test_determinism();
     test_corner_cutting();
+    test_optimal_vs_dijkstra();
     test_callback();
     test_path_draw();
+    test_example_rlk_path_find();
     return 0;
 }

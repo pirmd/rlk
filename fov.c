@@ -40,7 +40,7 @@ mark(fov_ctx_t *c, int x, int y) {
         c->visible[(size_t)idx] = 1;
 }
 
-/* Recursive shadowcasting over one octant (Bjorn Bergstrom's algorithm). */
+/* One octant of the recursive shadowcasting scan. */
 static void
 cast(fov_ctx_t *c, int row, float start, float end, const int *m) {
     if (start < end)
@@ -80,14 +80,14 @@ cast(fov_ctx_t *c, int row, float start, float end, const int *m) {
 }
 
 void
-rlk_fov_compute(const rlk_lattice_t *win, const uint8_t *opaque,
-                int ox, int oy, int radius, uint8_t *visible) {
+rlk_fov_compute(uint8_t *visible, const rlk_lattice_t *win,
+                const uint8_t *opaque, int ox, int oy, int radius) {
     assert(win && visible);
     assert(win->w > 0 && win->h > 0 && win->cellsize == 1);
     assert(rlk_lattice_index(win, ox, oy) >= 0);
 
-    const size_t n = (size_t)win->w * (size_t)win->h;
-    memset(visible, 0, n);
+    const size_t ncells = (size_t)win->w * (size_t)win->h;
+    memset(visible, 0, ncells);
 
     fov_ctx_t c;
     c.win = win;
