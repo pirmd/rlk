@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <limits.h>
 #include <string.h>
 #include "bsp.h"
 #include "hash.h"
@@ -8,12 +9,12 @@
 #define FIXTURE_GRID_SIZE (FIXTURE_MAP_W * FIXTURE_MAP_H)
 
 /* Local writer (the lib provides no ready-made writer): wall/floor by biome. */
-typedef struct { uint8_t wall_type, floor_type; } test_wf_t;
+typedef struct { uint8_t wall_type, floor_type; } wf_t;
 
 static void
-test_write_wallfloor(uint64_t seed, const void *data, int x, int y,
+write_wallfloor(uint64_t seed, const void *data, int x, int y,
                      rlk_tile_t *out) {
-    const test_wf_t *wf = (const test_wf_t *)data;
+    const wf_t *wf = (const wf_t *)data;
     out->type = (out->biome == 0) ? wf->wall_type : wf->floor_type;
     out->variant = (uint8_t)(rlk_hash_normf(rlk_hash_at(seed, x, y, 0xCAFEULL)) * 255.0f);
 }
@@ -21,7 +22,7 @@ test_write_wallfloor(uint64_t seed, const void *data, int x, int y,
 static uint8_t g_grid[FIXTURE_GRID_SIZE];
 static rlk_bsp_node_t g_nodes[RLK_BSP_MAX_NODES];
 static rlk_bsp_t g_bsp;
-static const test_wf_t g_wf = { .wall_type = 1, .floor_type = 0 };
+static const wf_t g_wf = { .wall_type = 1, .floor_type = 0 };
 
 static rlk_lattice_t g_win;
 static uint8_t g_tile_buf[FIXTURE_MAP_W * FIXTURE_MAP_H * sizeof(rlk_tile_t)];
@@ -31,7 +32,7 @@ static void
 fixture_setup(void) {
     g_bsp = (rlk_bsp_t){
         .seed = 42,
-        .write = test_write_wallfloor,
+        .write = write_wallfloor,
         .write_data = &g_wf,
         .grid = g_grid,
         .nodes = g_nodes,
@@ -44,9 +45,9 @@ fixture_setup(void) {
                      g_tile_buf, sizeof(g_tile_buf));
 }
 
-static rlk_err_t
+static void
 do_fill(void) {
-    return rlk_bsp_fill(&g_bsp, &g_win, &g_tilemap, NULL, NULL, NULL);
+    rlk_bsp_fill(&g_bsp, &g_win, &g_tilemap, NULL, NULL, NULL);
 }
 
 /* --- INIT (config only) -------------------------------------------------- */
@@ -58,7 +59,7 @@ test_init_valid(void) {
     assert(g_bsp.grid == g_grid);
     assert(g_bsp.nodes == g_nodes);
     assert(g_bsp.seed == 42);
-    assert(g_bsp.write == test_write_wallfloor);
+    assert(g_bsp.write == write_wallfloor);
     assert(g_bsp.write_data == &g_wf);
     /* Defaults resolved from zero. */
     assert(g_bsp.min_room_size == 5);
@@ -73,10 +74,10 @@ test_init_default(void) {
     uint8_t grid[16 * 16];
     rlk_bsp_node_t nodes[RLK_BSP_MAX_NODES];
 
-    static const test_wf_t wf = { .wall_type = 1, .floor_type = 0 };
+    static const wf_t wf = { .wall_type = 1, .floor_type = 0 };
     bsp = (rlk_bsp_t){
         .seed = 123,
-        .write = test_write_wallfloor,
+        .write = write_wallfloor,
         .write_data = &wf,
         .grid = grid,
         .nodes = nodes,
@@ -96,7 +97,7 @@ static void
 test_fill_basic(void) {
     fixture_setup();
 
-    assert(do_fill() == RLK_OK);
+    do_fill();
 
     int has_wall = 0, has_floor = 0;
     for (int y = 0; y < g_tilemap.h; y++) {
@@ -116,7 +117,7 @@ static void
 test_fill_grid(void) {
     fixture_setup();
 
-    assert(do_fill() == RLK_OK);
+    do_fill();
 
     int floor_count = 0;
     int wall_count = 0;
@@ -126,28 +127,15 @@ test_fill_grid(void) {
     }
     assert(floor_count > 0);
     assert(wall_count > 0);
-    assert(g_bsp.width == FIXTURE_MAP_W);
-    assert(g_bsp.height == FIXTURE_MAP_H);
-}
-
-static void
-test_fill_rooms_created(void) {
-    fixture_setup();
-
-    assert(do_fill() == RLK_OK);
-
-    assert(g_bsp.room_count > 0);
-    assert(g_bsp.node_count > 0);
-    assert(g_bsp.node_count <= RLK_BSP_MAX_NODES);
-    /* Each leaf is a room; internal nodes = leaves - 1 (binary tree). */
-    assert(g_bsp.room_count >= 1);
+    assert(g_bsp.win_w == FIXTURE_MAP_W);
+    assert(g_bsp.win_h == FIXTURE_MAP_H);
 }
 
 static void
 test_fill_connected(void) {
     fixture_setup();
 
-    assert(do_fill() == RLK_OK);
+    do_fill();
 
     /* BSP guarantees connectivity: all floor cells should be reachable.
        We verify by flood-fill from the first floor cell. */
@@ -205,25 +193,25 @@ test_fill_deterministic(void) {
     rlk_bsp_node_t nodes1[RLK_BSP_MAX_NODES];
     rlk_bsp_t bsp1 = {
         .seed = 42,
-        .write = test_write_wallfloor,
+        .write = write_wallfloor,
         .write_data = &g_wf,
         .grid = grid1,
         .nodes = nodes1,
     };
     rlk_bsp_init(&bsp1);
-    assert(rlk_bsp_fill(&bsp1, &g_win, &g_tilemap, NULL, NULL, NULL) == RLK_OK);
+    rlk_bsp_fill(&bsp1, &g_win, &g_tilemap, NULL, NULL, NULL);
 
     uint8_t grid2[FIXTURE_GRID_SIZE];
     rlk_bsp_node_t nodes2[RLK_BSP_MAX_NODES];
     rlk_bsp_t bsp2 = {
         .seed = 42,
-        .write = test_write_wallfloor,
+        .write = write_wallfloor,
         .write_data = &g_wf,
         .grid = grid2,
         .nodes = nodes2,
     };
     rlk_bsp_init(&bsp2);
-    assert(rlk_bsp_fill(&bsp2, &g_win, &g_tilemap, NULL, NULL, NULL) == RLK_OK);
+    rlk_bsp_fill(&bsp2, &g_win, &g_tilemap, NULL, NULL, NULL);
 
     for (size_t i = 0; i < FIXTURE_GRID_SIZE; i++) {
         assert(grid1[i] == grid2[i]);
@@ -236,12 +224,12 @@ static void
 test_fill_consistency(void) {
     fixture_setup();
 
-    assert(do_fill() == RLK_OK);
+    do_fill();
 
-    for (int y = 0; y < g_bsp.height; y++) {
-        for (int x = 0; x < g_bsp.width; x++) {
+    for (int y = 0; y < g_bsp.win_h; y++) {
+        for (int x = 0; x < g_bsp.win_w; x++) {
             rlk_tile_t *tile = rlk_tilemap_get(&g_tilemap, x, y);
-            uint8_t cell = g_bsp.grid[(size_t)y * (size_t)g_bsp.width + (size_t)x];
+            uint8_t cell = g_bsp.grid[(size_t)y * (size_t)g_bsp.win_w + (size_t)x];
             uint8_t expected_type = (cell == 1) ? 0 : 1;
             assert(tile->type == expected_type);
         }
@@ -261,7 +249,7 @@ test_fill_window_origin(void) {
                           .origin_x = 5, .origin_y = 5 };
     rlk_bsp_t bsp = {
         .seed = 42,
-        .write = test_write_wallfloor,
+        .write = write_wallfloor,
         .write_data = &g_wf,
         .grid = grid,
         .nodes = nodes,
@@ -273,7 +261,7 @@ test_fill_window_origin(void) {
         for (int x = 0; x < g_tilemap.w; x++)
             rlk_tilemap_get(&g_tilemap, x, y)->type = 99;
 
-    assert(rlk_bsp_fill(&bsp, &win, &g_tilemap, NULL, NULL, NULL) == RLK_OK);
+    rlk_bsp_fill(&bsp, &win, &g_tilemap, NULL, NULL, NULL);
 
     /* Outside the window: untouched. */
     assert(rlk_tilemap_get(&g_tilemap, 0, 0)->type == 99);
@@ -295,17 +283,6 @@ test_fill_window_origin(void) {
     assert(has_floor == 1);
 }
 
-/* tm smaller than the window -> RLK_E_INVALID. */
-
-static void
-test_fill_tm_too_small(void) {
-    fixture_setup();
-    uint8_t tile_buf[16 * 16 * sizeof(rlk_tile_t)];
-    rlk_tilemap_t tm;
-    rlk_tilemap_init(&tm, 16, 16, tile_buf, sizeof(tile_buf));
-    assert(rlk_bsp_fill(&g_bsp, &g_win, &tm, NULL, NULL, NULL) == RLK_E_INVALID);
-}
-
 /* Mask weight 0: cells are not written (existing content preserved). */
 
 static void
@@ -322,7 +299,7 @@ test_fill_mask(void) {
         for (int x = 0; x < g_tilemap.w; x++)
             rlk_tilemap_get(&g_tilemap, x, y)->type = 99;
 
-    assert(rlk_bsp_fill(&g_bsp, &g_win, &g_tilemap, &mask, NULL, NULL) == RLK_OK);
+    rlk_bsp_fill(&g_bsp, &g_win, &g_tilemap, &mask, NULL, NULL);
 
     for (int y = 0; y < g_tilemap.h; y++) {
         for (int x = 0; x < g_tilemap.w; x++) {
@@ -349,7 +326,7 @@ test_fill_poi_reserved(void) {
         for (int x = 0; x < g_tilemap.w; x++)
             rlk_tilemap_get(&g_tilemap, x, y)->type = 99;
 
-    assert(rlk_bsp_fill(&g_bsp, &g_win, &g_tilemap, NULL, &pois, NULL) == RLK_OK);
+    rlk_bsp_fill(&g_bsp, &g_win, &g_tilemap, NULL, &pois, NULL);
 
     assert(rlk_tilemap_get(&g_tilemap, 20, 20)->type == 99);  /* inside bbox */
     assert(rlk_tilemap_get(&g_tilemap, 31, 31)->type == 99);  /* inside bbox */
@@ -368,7 +345,7 @@ static void
 test_fill_spawn(void) {
     fixture_setup();
     rlk_poi_t spawn = { .type = 7 };
-    assert(rlk_bsp_fill(&g_bsp, &g_win, &g_tilemap, NULL, NULL, &spawn) == RLK_OK);
+    rlk_bsp_fill(&g_bsp, &g_win, &g_tilemap, NULL, NULL, &spawn);
     assert(spawn.type == 7);  /* caller's type preserved */
     assert(spawn.bbox.w >= g_bsp.min_room_size);
     assert(spawn.bbox.h >= g_bsp.min_room_size);
@@ -378,7 +355,7 @@ test_fill_spawn(void) {
 
     /* Deterministic: same spawn on a second fill. */
     rlk_poi_t spawn2 = { .type = 7 };
-    assert(rlk_bsp_fill(&g_bsp, &g_win, &g_tilemap, NULL, NULL, &spawn2) == RLK_OK);
+    rlk_bsp_fill(&g_bsp, &g_win, &g_tilemap, NULL, NULL, &spawn2);
     assert(spawn2.x == spawn.x && spawn2.y == spawn.y);
     assert(spawn2.bbox.x == spawn.bbox.x && spawn2.bbox.y == spawn.bbox.y);
     assert(spawn2.bbox.w == spawn.bbox.w && spawn2.bbox.h == spawn.bbox.h);
@@ -392,7 +369,7 @@ test_fill_cellsize(void) {
     rlk_lattice_t win = { .w = 32, .h = 32, .cellsize = 2,
                           .origin_x = 0, .origin_y = 0 };
     rlk_poi_t spawn = { .type = 3 };
-    assert(rlk_bsp_fill(&g_bsp, &win, &g_tilemap, NULL, NULL, &spawn) == RLK_OK);
+    rlk_bsp_fill(&g_bsp, &win, &g_tilemap, NULL, NULL, &spawn);
 
     for (int y = 0; y < 32; y++) {
         for (int x = 0; x < 32; x++) {
@@ -412,14 +389,14 @@ static void
 test_fill_idempotent(void) {
     fixture_setup();
 
-    assert(do_fill() == RLK_OK);
+    do_fill();
     uint8_t first[FIXTURE_MAP_W * FIXTURE_MAP_H];
     for (int y = 0; y < g_tilemap.h; y++)
         for (int x = 0; x < g_tilemap.w; x++)
             first[(size_t)y * (size_t)g_tilemap.w + (size_t)x] =
                 rlk_tilemap_get(&g_tilemap, x, y)->type;
 
-    assert(do_fill() == RLK_OK);
+    do_fill();
     for (int y = 0; y < g_tilemap.h; y++)
         for (int x = 0; x < g_tilemap.w; x++)
             assert(rlk_tilemap_get(&g_tilemap, x, y)->type ==
@@ -438,14 +415,14 @@ test_fill_small_map(void) {
         .seed = 123,
         .min_room_size = 3,
         .max_depth = 3,
-        .write = test_write_wallfloor,
+        .write = write_wallfloor,
         .write_data = &g_wf,
         .grid = grid,
         .nodes = nodes,
     };
     rlk_bsp_init(&bsp);
     rlk_tilemap_init(&tm, 16, 16, tile_buf, sizeof(tile_buf));
-    assert(rlk_bsp_fill(&bsp, &win, &tm, NULL, NULL, NULL) == RLK_OK);
+    rlk_bsp_fill(&bsp, &win, &tm, NULL, NULL, NULL);
 
     assert(bsp.room_count >= 1);
     assert(bsp.node_count >= 1);
@@ -457,14 +434,14 @@ test_fill_large_rooms(void) {
     g_bsp.min_room_size = 10;
     g_bsp.max_depth = 3;
 
-    assert(do_fill() == RLK_OK);
+    do_fill();
 
     assert(g_bsp.room_count >= 1);
 
     /* All rooms should respect min_room_size. */
     for (int i = 0; i < g_bsp.node_count; i++) {
         rlk_bsp_node_t *n = &g_bsp.nodes[i];
-        if (n->split == 0) {  /* leaf */
+        if (n->split == RLK_BSP_LEAF) {
             assert(n->rw >= g_bsp.min_room_size);
             assert(n->rh >= g_bsp.min_room_size);
         }
@@ -477,75 +454,57 @@ test_fill_deep_tree(void) {
     g_bsp.min_room_size = 3;
     g_bsp.max_depth = 8;
 
-    assert(do_fill() == RLK_OK);
+    do_fill();
 
     assert(g_bsp.room_count > 1);
     assert(g_bsp.node_count <= RLK_BSP_MAX_NODES);
 }
 
 static void
-test_fill_split_bias_vertical(void) {
+test_fill_split_bias_h(void) {
     fixture_setup();
-    g_bsp.split_bias = 1.0f;  /* prefer horizontal split (along Y) */
+    g_bsp.split_bias = 1.0f;  /* always split along Y */
     g_bsp.min_room_size = 3;
     g_bsp.max_depth = 4;
 
-    assert(do_fill() == RLK_OK);
+    do_fill();
 
-    /* With bias 1.0 on a square map, horizontal splits should appear. */
-    int n_h = 0;
+    /* Horizontal splits dominate: a vertical split is only allowed on
+       nodes too short to split horizontally. */
+    int n_h = 0, n_v = 0;
     for (int i = 0; i < g_bsp.node_count; i++) {
-        rlk_bsp_node_t *n = &g_bsp.nodes[i];
-        if (n->split == 1) n_h++;
-    }
-    assert(n_h > 0);
-}
-
-static void
-test_fill_split_bias_horizontal(void) {
-    fixture_setup();
-    g_bsp.split_bias = 0.0f;  /* prefer vertical split (along X) */
-    g_bsp.min_room_size = 3;
-    g_bsp.max_depth = 4;
-
-    assert(do_fill() == RLK_OK);
-
-    /* With bias 0.0 on a square map, vertical splits should appear. */
-    int n_v = 0;
-    for (int i = 0; i < g_bsp.node_count; i++) {
-        rlk_bsp_node_t *n = &g_bsp.nodes[i];
-        if (n->split == 2) n_v++;
-    }
-    assert(n_v > 0);
-}
-
-/* --- RAND ----------------------------------------------------------------- */
-
-static void
-test_rand_in_range(void) {
-    fixture_setup();
-    for (int y = 0; y < 16; y++) {
-        for (int x = 0; x < 16; x++) {
-            float r = rlk_bsp_rand(&g_bsp, x, y, 0);
-            assert(r >= 0.0f && r < 1.0f);
+        const rlk_bsp_node_t *n = &g_bsp.nodes[i];
+        if (n->split == RLK_BSP_SPLIT_H) n_h++;
+        else if (n->split == RLK_BSP_SPLIT_V) {
+            n_v++;
+            assert(n->h < 2 * g_bsp.min_room_size);
         }
     }
+    assert(n_h > 0);
+    assert(n_v < n_h);
 }
 
 static void
-test_rand_deterministic(void) {
+test_fill_split_bias_v(void) {
     fixture_setup();
-    float r1 = rlk_bsp_rand(&g_bsp, 5, 7, 42);
-    float r2 = rlk_bsp_rand(&g_bsp, 5, 7, 42);
-    assert(r1 == r2);
-}
+    g_bsp.split_bias = 0.0f;  /* always split along X */
+    g_bsp.min_room_size = 3;
+    g_bsp.max_depth = 4;
 
-static void
-test_rand_salt_varies(void) {
-    fixture_setup();
-    float r1 = rlk_bsp_rand(&g_bsp, 5, 7, 0);
-    float r2 = rlk_bsp_rand(&g_bsp, 5, 7, 1);
-    assert(r1 != r2);
+    do_fill();
+
+    /* Vertical splits dominate: a horizontal split is only allowed on
+       nodes too narrow to split vertically. */
+    int n_h = 0, n_v = 0;
+    for (int i = 0; i < g_bsp.node_count; i++) {
+        const rlk_bsp_node_t *n = &g_bsp.nodes[i];
+        if (n->split == RLK_BSP_SPLIT_H) {
+            n_h++;
+            assert(n->w < 2 * g_bsp.min_room_size);
+        } else if (n->split == RLK_BSP_SPLIT_V) n_v++;
+    }
+    assert(n_v > 0);
+    assert(n_h < n_v);
 }
 
 /* --- WRITER CALLBACK ------------------------------------------------------ */
@@ -555,7 +514,7 @@ static int g_writer_has_wall;
 static int g_writer_has_floor;
 
 static void
-test_writer_cb(uint64_t seed, const void *data, int x, int y,
+writer_cb(uint64_t seed, const void *data, int x, int y,
                rlk_tile_t *out) {
     (void)seed; (void)data; (void)x; (void)y;
     g_writer_calls++;
@@ -571,12 +530,12 @@ test_writer_cb(uint64_t seed, const void *data, int x, int y,
 static void
 test_fill_writer_callback(void) {
     fixture_setup();
-    g_bsp.write = test_writer_cb;
+    g_bsp.write = writer_cb;
     g_writer_calls = 0;
     g_writer_has_wall = 0;
     g_writer_has_floor = 0;
 
-    assert(do_fill() == RLK_OK);
+    do_fill();
 
     assert(g_writer_calls == FIXTURE_MAP_W * FIXTURE_MAP_H);
     assert(g_writer_has_wall == 1);
@@ -595,21 +554,21 @@ test_fill_writer_callback(void) {
 }
 
 static void
-test_writer_cb_data(uint64_t seed, const void *data, int x, int y,
+writer_cb_data(uint64_t seed, const void *data, int x, int y,
                     rlk_tile_t *out) {
     (void)seed; (void)x; (void)y;
-    const test_wf_t *d = (const test_wf_t *)data;
+    const wf_t *d = (const wf_t *)data;
     out->type = (out->biome == 0) ? d->wall_type : d->floor_type;
 }
 
 static void
 test_fill_writer_with_data(void) {
     fixture_setup();
-    static const test_wf_t wd = { .wall_type = 7, .floor_type = 3 };
-    g_bsp.write = test_writer_cb_data;
+    static const wf_t wd = { .wall_type = 7, .floor_type = 3 };
+    g_bsp.write = writer_cb_data;
     g_bsp.write_data = &wd;
 
-    assert(do_fill() == RLK_OK);
+    do_fill();
 
     int has_7 = 0, has_3 = 0;
     for (int y = 0; y < g_tilemap.h; y++) {
@@ -623,49 +582,58 @@ test_fill_writer_with_data(void) {
     assert(has_3 == 1);
 }
 
-/* --- BIOME / VARIANT ------------------------------------------------------ */
+/* The writer receives the world position of each cell's top-left tile. */
+static int g_wx_min, g_wx_max, g_wy_min, g_wy_max;
 
 static void
-test_fill_default_biome_variant(void) {
+writer_coords(uint64_t seed, const void *data, int x, int y,
+              rlk_tile_t *out) {
+    (void)seed; (void)data;
+    if (x < g_wx_min) g_wx_min = x;
+    if (x > g_wx_max) g_wx_max = x;
+    if (y < g_wy_min) g_wy_min = y;
+    if (y > g_wy_max) g_wy_max = y;
+    out->type = 1;
+}
+
+static void
+test_fill_writer_coords(void) {
     fixture_setup();
 
-    assert(do_fill() == RLK_OK);
+    /* 27x27 window at world origin (5,5) over the 64x64 tilemap. */
+    static uint8_t grid[27 * 27];
+    static rlk_bsp_node_t nodes[RLK_BSP_MAX_NODES];
+    rlk_lattice_t win = { .w = 27, .h = 27, .cellsize = 1,
+                          .origin_x = 5, .origin_y = 5 };
+    rlk_bsp_t bsp = {
+        .seed = 42,
+        .write = writer_coords,
+        .write_data = NULL,
+        .grid = grid,
+        .nodes = nodes,
+    };
+    rlk_bsp_init(&bsp);
+    g_wx_min = INT_MAX; g_wx_max = -1;
+    g_wy_min = INT_MAX; g_wy_max = -1;
 
-    int has_biome_zero = 0, has_biome_one = 0;
-    for (int y = 0; y < g_tilemap.h; y++) {
-        for (int x = 0; x < g_tilemap.w; x++) {
-            rlk_tile_t *tile = rlk_tilemap_get(&g_tilemap, x, y);
-            if (tile->biome == 0) has_biome_zero = 1;
-            else if (tile->biome == 1) has_biome_one = 1;
-        }
-    }
-    assert(has_biome_zero == 1);
-    assert(has_biome_one == 1);
+    rlk_bsp_fill(&bsp, &win, &g_tilemap, NULL, NULL, NULL);
 
-    /* At least some tiles should have non-zero variant. */
-    int has_variant = 0;
-    for (int y = 0; y < g_tilemap.h; y++) {
-        for (int x = 0; x < g_tilemap.w; x++) {
-            if (rlk_tilemap_get(&g_tilemap, x, y)->variant != 0) {
-                has_variant = 1;
-                break;
-            }
-        }
-        if (has_variant) break;
-    }
-    assert(has_variant == 1);
+    assert(g_wx_min == 5 && g_wx_max == 5 + 27 - 1);
+    assert(g_wy_min == 5 && g_wy_max == 5 + 27 - 1);
 }
+
+/* --- BIOME ---------------------------------------------------------------- */
 
 static void
 test_fill_biome_matches_grid(void) {
     fixture_setup();
 
-    assert(do_fill() == RLK_OK);
+    do_fill();
 
-    for (int y = 0; y < g_bsp.height; y++) {
-        for (int x = 0; x < g_bsp.width; x++) {
+    for (int y = 0; y < g_bsp.win_h; y++) {
+        for (int x = 0; x < g_bsp.win_w; x++) {
             rlk_tile_t *tile = rlk_tilemap_get(&g_tilemap, x, y);
-            uint8_t cell = g_bsp.grid[(size_t)y * (size_t)g_bsp.width + (size_t)x];
+            uint8_t cell = g_bsp.grid[(size_t)y * (size_t)g_bsp.win_w + (size_t)x];
             assert(tile->biome == cell);
         }
     }
@@ -681,21 +649,21 @@ test_fill_different_seeds(void) {
     rlk_bsp_node_t nodes1[RLK_BSP_MAX_NODES];
     rlk_bsp_t bsp1 = {
         .seed = 1,
-        .write = test_write_wallfloor, .write_data = &g_wf,
+        .write = write_wallfloor, .write_data = &g_wf,
         .grid = grid1, .nodes = nodes1,
     };
     rlk_bsp_init(&bsp1);
-    assert(rlk_bsp_fill(&bsp1, &g_win, &g_tilemap, NULL, NULL, NULL) == RLK_OK);
+    rlk_bsp_fill(&bsp1, &g_win, &g_tilemap, NULL, NULL, NULL);
 
     uint8_t grid2[FIXTURE_GRID_SIZE];
     rlk_bsp_node_t nodes2[RLK_BSP_MAX_NODES];
     rlk_bsp_t bsp2 = {
         .seed = 2,
-        .write = test_write_wallfloor, .write_data = &g_wf,
+        .write = write_wallfloor, .write_data = &g_wf,
         .grid = grid2, .nodes = nodes2,
     };
     rlk_bsp_init(&bsp2);
-    assert(rlk_bsp_fill(&bsp2, &g_win, &g_tilemap, NULL, NULL, NULL) == RLK_OK);
+    rlk_bsp_fill(&bsp2, &g_win, &g_tilemap, NULL, NULL, NULL);
 
     /* Different seeds should produce different grids (very likely). */
     int diff = 0;
@@ -711,12 +679,10 @@ main(void) {
     test_init_default();
     test_fill_basic();
     test_fill_grid();
-    test_fill_rooms_created();
     test_fill_connected();
     test_fill_deterministic();
     test_fill_consistency();
     test_fill_window_origin();
-    test_fill_tm_too_small();
     test_fill_mask();
     test_fill_poi_reserved();
     test_fill_spawn();
@@ -725,14 +691,11 @@ main(void) {
     test_fill_small_map();
     test_fill_large_rooms();
     test_fill_deep_tree();
-    test_fill_split_bias_vertical();
-    test_fill_split_bias_horizontal();
-    test_rand_in_range();
-    test_rand_deterministic();
-    test_rand_salt_varies();
+    test_fill_split_bias_h();
+    test_fill_split_bias_v();
     test_fill_writer_callback();
     test_fill_writer_with_data();
-    test_fill_default_biome_variant();
+    test_fill_writer_coords();
     test_fill_biome_matches_grid();
     test_fill_different_seeds();
 

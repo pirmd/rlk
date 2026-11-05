@@ -7,22 +7,21 @@
 /* Internal cell states for the CA grid buffer (grid[] holds 0 or 1). */
 enum { CA_WALL, CA_FLOOR };
 
+/* Moore neighborhood (8-connected), excluding the cell itself. */
+static const int NB8[8][2] = {
+    {-1,-1}, {0,-1}, {1,-1}, {-1,0}, {1,0}, {-1,1}, {0,1}, {1,1}
+};
+
+/* Forward neighbor offsets covering every 8-connected pair exactly once:
+   right, down, down-right, down-left. */
+static const int FWD4[4][2] = { {1,0}, {0,1}, {1,1}, {-1,1} };
+
 static inline size_t
 ca_idx(int x, int y, int w) {
     return (size_t)y * (size_t)w + (size_t)x;
 }
 
 /* --- SETUP --------------------------------------------------------------- */
-
-/* Safety checks only: prevent crashes (buffer overflow, NULL deref).
-   Logic errors (fill_prob range, birth/survive ranges) are the user's
-   responsibility. */
-static void
-assert_ca(const rlk_ca_t *ca) {
-    assert(ca);
-    assert(ca->grid && ca->region_ids);
-    assert(ca->write);
-}
 
 void
 rlk_ca_init(rlk_ca_t *ca) {
@@ -42,8 +41,16 @@ rlk_ca_init(rlk_ca_t *ca) {
         ca->survive_high = 8;
     }
 
-    /* Safety checks. */
-    assert_ca(ca);
+    /* Safety checks (programmer errors): NULL buffers/callback, and config
+       ranges after default resolution. */
+    assert(ca->grid && ca->region_ids);
+    assert(ca->write);
+    assert(ca->fill_prob >= 0.0f && ca->fill_prob <= 1.0f);
+    assert(ca->iterations > 0);
+    assert(0 <= ca->birth_low && ca->birth_low <= ca->birth_high
+           && ca->birth_high <= 8);
+    assert(0 <= ca->survive_low && ca->survive_low <= ca->survive_high
+           && ca->survive_high <= 8);
 }
 
 /* --- CA CORE ------------------------------------------------------------- */
@@ -52,16 +59,12 @@ static int
 count_neighbors(const rlk_ca_t *ca, int x, int y) {
     assert(ca);
     int count = 0;
-    for (int dy = -1; dy <= 1; dy++) {
-        for (int dx = -1; dx <= 1; dx++) {
-            if (dx == 0 && dy == 0) continue;
-            int nx = x + dx;
-            int ny = y + dy;
-            if (nx >= 0 && nx < ca->width && ny >= 0 && ny < ca->height) {
-                if (ca->grid[ca_idx(nx, ny, ca->width)] == CA_FLOOR) {
-                    count++;
-                }
-            }
+    for (int k = 0; k < 8; k++) {
+        int nx = x + NB8[k][0];
+        int ny = y + NB8[k][1];
+        if (nx >= 0 && nx < ca->win_w && ny >= 0 && ny < ca->win_h) {
+            if (ca->grid[ca_idx(nx, ny, ca->win_w)] == CA_FLOOR)
+                count++;
         }
     }
     return count;
@@ -72,16 +75,14 @@ seed_grid(rlk_ca_t *ca) {
     assert(ca);
     assert(ca->grid);
 
-    for (int y = 0; y < ca->height; y++) {
-        for (int x = 0; x < ca->width; x++) {
-            uint64_t h = rlk_hash_sub(rlk_hash_combine2(ca->seed, x, y), 0xCA001ULL);
-            float r = (float)(h >> 40) * (1.0f / 16777216.0f);
-            ca->grid[ca_idx(x, y, ca->width)] =
+    for (int y = 0; y < ca->win_h; y++) {
+        for (int x = 0; x < ca->win_w; x++) {
+            float r = rlk_hash_normf(rlk_hash_at(ca->seed, x, y, 0xCA001ULL));
+            ca->grid[ca_idx(x, y, ca->win_w)] =
                 (r < ca->fill_prob) ? CA_FLOOR : CA_WALL;
         }
     }
 
-    ca->cur_iter = 0;
     ca->region_count = 0;
 }
 
@@ -91,8 +92,8 @@ step(rlk_ca_t *ca) {
     assert(ca->grid);
     assert(ca->region_ids);
 
-    int width = ca->width;
-    int height = ca->height;
+    int width = ca->win_w;
+    int height = ca->win_h;
     int birth_low = ca->birth_low;
     int birth_high = ca->birth_high;
     int survive_low = ca->survive_low;
@@ -105,23 +106,11 @@ step(rlk_ca_t *ca) {
         for (int x = 0; x < width; x++) {
             uint8_t current = ca->grid[ca_idx(x, y, width)];
             int neighbors = count_neighbors(ca, x, y);
-            uint8_t next;
+            const int lo = (current == CA_FLOOR) ? survive_low : birth_low;
+            const int hi = (current == CA_FLOOR) ? survive_high : birth_high;
 
-            if (current == CA_FLOOR) {
-                if (neighbors >= survive_low && neighbors <= survive_high) {
-                    next = CA_FLOOR;
-                } else {
-                    next = CA_WALL;
-                }
-            } else {
-                if (neighbors >= birth_low && neighbors <= birth_high) {
-                    next = CA_FLOOR;
-                } else {
-                    next = CA_WALL;
-                }
-            }
-
-            scratch[ca_idx(x, y, width)] = next;
+            scratch[ca_idx(x, y, width)] =
+                (neighbors >= lo && neighbors <= hi) ? CA_FLOOR : CA_WALL;
         }
     }
 
@@ -131,11 +120,9 @@ step(rlk_ca_t *ca) {
             ca->grid[idx] = scratch[idx];
         }
     }
-
-    ca->cur_iter++;
 }
 
-/* --- UNION-FIND (for find_regions) --------------------------------------- */
+/* --- REGION LABELLING (union-find) --------------------------------------- */
 
 static int
 uf_find(int *parent, int x) {
@@ -156,16 +143,14 @@ uf_union(int *parent, int a, int b) {
     }
 }
 
-/* --- REGION LABELLING ---------------------------------------------------- */
-
 static int
 find_regions(rlk_ca_t *ca) {
     assert(ca);
     assert(ca->grid);
     assert(ca->region_ids);
 
-    int width = ca->width;
-    int height = ca->height;
+    int width = ca->win_w;
+    int height = ca->win_h;
     size_t grid_size = (size_t)width * (size_t)height;
 
     /* Phase 1: init parent[i] = i for floor, -1 for wall. */
@@ -173,32 +158,21 @@ find_regions(rlk_ca_t *ca) {
         ca->region_ids[i] = (ca->grid[i] == CA_FLOOR) ? (int)i : -1;
     }
 
-    /* Phase 2: union neighboring floor cells (8-connectivity).
-       Forward neighbors cover all pairs: right, down, down-right, down-left. */
+    /* Phase 2: union neighboring floor cells (8-connectivity); the forward
+       offsets cover every pair exactly once. */
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
             size_t idx = ca_idx(x, y, width);
             if (ca->grid[idx] != CA_FLOOR) continue;
 
-            if (x + 1 < width) {
-                size_t ridx = idx + 1;
-                if (ca->grid[ridx] == CA_FLOOR)
-                    uf_union(ca->region_ids, (int)idx, (int)ridx);
-            }
-            if (y + 1 < height) {
-                size_t bidx = idx + (size_t)width;
-                if (ca->grid[bidx] == CA_FLOOR)
-                    uf_union(ca->region_ids, (int)idx, (int)bidx);
-            }
-            if (x + 1 < width && y + 1 < height) {
-                size_t dridx = idx + (size_t)width + 1;
-                if (ca->grid[dridx] == CA_FLOOR)
-                    uf_union(ca->region_ids, (int)idx, (int)dridx);
-            }
-            if (x > 0 && y + 1 < height) {
-                size_t dlidx = idx + (size_t)width - 1;
-                if (ca->grid[dlidx] == CA_FLOOR)
-                    uf_union(ca->region_ids, (int)idx, (int)dlidx);
+            for (int k = 0; k < 4; k++) {
+                int nx = x + FWD4[k][0];
+                int ny = y + FWD4[k][1];
+                if (nx < 0 || nx >= width || ny < 0 || ny >= height)
+                    continue;
+                size_t nidx = ca_idx(nx, ny, width);
+                if (ca->grid[nidx] == CA_FLOOR)
+                    uf_union(ca->region_ids, (int)idx, (int)nidx);
             }
         }
     }
@@ -244,8 +218,8 @@ find_region_center(const rlk_ca_t *ca, int region_id, int *center_x, int *center
     assert(ca->region_ids);
     assert(region_id >= 1 && region_id <= ca->region_count);
 
-    int width = ca->width;
-    int height = ca->height;
+    int width = ca->win_w;
+    int height = ca->win_h;
     int sum_x = 0, sum_y = 0, count = 0;
 
     for (int y = 0; y < height; y++) {
@@ -268,8 +242,8 @@ find_region_center(const rlk_ca_t *ca, int region_id, int *center_x, int *center
     }
 }
 
-/* Carve corridors to connect all floor regions. Assumes find_regions() was
-   called: ca->region_ids and ca->region_count must be valid. */
+/* Carve corridors to connect all floor regions. Assumes the region labelling
+   pass ran: ca->region_ids and ca->region_count must be valid. */
 static void
 connect_regions(rlk_ca_t *ca) {
     assert(ca);
@@ -280,8 +254,8 @@ connect_regions(rlk_ca_t *ca) {
         return;
     }
 
-    int width = ca->width;
-    int height = ca->height;
+    int width = ca->win_w;
+    int height = ca->win_h;
 
     for (int i = 2; i <= region_count; i++) {
         /* Compute center of region i */
@@ -301,53 +275,44 @@ connect_regions(rlk_ca_t *ca) {
             }
         }
 
-        /* Find closest pair of cells between region i and nearest_j */
-        int best_x1 = -1, best_y1 = -1, best_x2 = -1, best_y2 = -1;
-        int best_dist = INT_MAX;
+        /* Find the closest pair of cells between region i and nearest_j */
+        int x0 = -1, y0 = -1, x1 = -1, y1 = -1;
+        int min_dist = INT_MAX;
 
-        for (int y1 = 0; y1 < height; y1++) {
-            for (int x1 = 0; x1 < width; x1++) {
-                size_t idx1 = ca_idx(x1, y1, width);
-                if (ca->region_ids[idx1] != i) continue;
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                size_t idx = ca_idx(x, y, width);
+                if (ca->region_ids[idx] != i) continue;
 
                 for (int y2 = 0; y2 < height; y2++) {
                     for (int x2 = 0; x2 < width; x2++) {
                         size_t idx2 = ca_idx(x2, y2, width);
                         if (ca->region_ids[idx2] != nearest_j) continue;
 
-                        int dist = rlk_dist_manhattan(x1, y1, x2, y2);
-                        if (dist < best_dist) {
-                            best_dist = dist;
-                            best_x1 = x1;
-                            best_y1 = y1;
-                            best_x2 = x2;
-                            best_y2 = y2;
+                        int dist = rlk_dist_manhattan(x, y, x2, y2);
+                        if (dist < min_dist) {
+                            min_dist = dist;
+                            x0 = x; y0 = y;
+                            x1 = x2; y1 = y2;
                         }
                     }
                 }
             }
         }
 
-        if (best_x1 != -1 && best_x2 != -1) {
-            int x = best_x1;
-            int y = best_y1;
-            int dx = (best_x2 > best_x1) ? 1 : ((best_x2 < best_x1) ? -1 : 0);
-            int dy = (best_y2 > best_y1) ? 1 : ((best_y2 < best_y1) ? -1 : 0);
+        if (x0 != -1) {
+            int x = x0, y = y0;
+            const int dx = (x1 > x0) ? 1 : ((x1 < x0) ? -1 : 0);
+            const int dy = (y1 > y0) ? 1 : ((y1 < y0) ? -1 : 0);
 
-            while (x != best_x2 || y != best_y2) {
-                if (x != best_x2) {
-                    if (dx > 0) x++;
-                    else if (dx < 0) x--;
-                }
-                if (y != best_y2) {
-                    if (dy > 0) y++;
-                    else if (dy < 0) y--;
-                }
+            while (x != x1 || y != y1) {
+                if (x != x1) x += dx;
+                if (y != y1) y += dy;
 
                 ca->grid[ca_idx(x, y, width)] = CA_FLOOR;
             }
 
-            ca->grid[ca_idx(best_x2, best_y2, width)] = CA_FLOOR;
+            ca->grid[ca_idx(x1, y1, width)] = CA_FLOOR;
         }
     }
 }
@@ -358,7 +323,7 @@ connect_regions(rlk_ca_t *ca) {
 static void
 largest_region(const rlk_ca_t *ca, int *out_rid,
                int *min_x, int *min_y, int *max_x, int *max_y) {
-    const int w = ca->width, h = ca->height;
+    const int w = ca->win_w, h = ca->win_h;
     int best = 1, best_count = -1;
     int bx0 = 0, by0 = 0, bx1 = -1, by1 = -1;
     /* No allocation: one scan per region (region_count is small). */
@@ -366,7 +331,7 @@ largest_region(const rlk_ca_t *ca, int *out_rid,
         int count = 0, x0 = w, y0 = h, x1 = -1, y1 = -1;
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
-                if (ca->region_ids[(size_t)y * (size_t)w + (size_t)x] == rid) {
+                if (ca->region_ids[ca_idx(x, y, w)] == rid) {
                     count++;
                     if (x < x0) x0 = x;
                     if (x > x1) x1 = x;
@@ -387,7 +352,7 @@ largest_region(const rlk_ca_t *ca, int *out_rid,
 
 /* --- PUBLIC API ---------------------------------------------------------- */
 
-rlk_err_t
+void
 rlk_ca_fill(rlk_ca_t *ca, const rlk_lattice_t *win, rlk_tilemap_t *tm,
             const rlk_mask_t *mask, const rlk_poi_list_t *poi,
             rlk_poi_t *spawn) {
@@ -400,15 +365,13 @@ rlk_ca_fill(rlk_ca_t *ca, const rlk_lattice_t *win, rlk_tilemap_t *tm,
     const rlk_lattice_t *l = win;
     const int w = l->w, h = l->h, cs = l->cellsize;
 
-    /* The tilemap must fully cover the window. */
-    if ((int64_t)l->origin_x < tm->origin_x ||
-        (int64_t)l->origin_y < tm->origin_y ||
-        (int64_t)l->origin_x + (int64_t)w * cs > (int64_t)tm->origin_x + tm->w ||
-        (int64_t)l->origin_y + (int64_t)h * cs > (int64_t)tm->origin_y + tm->h)
-        return RLK_E_INVALID;
+    /* The tilemap must fully cover the window: caller contract. Each tile
+       write is bounds-safe, but a partial window would silently truncate
+       the fill, so check it once here. */
+    assert(rlk_tilemap_contains_lattice(tm, l));
 
-    ca->width = w;
-    ca->height = h;
+    ca->win_w = w;
+    ca->win_h = h;
 
     /* Generate: seed, iterate, find regions, connect (optional), re-label. */
     seed_grid(ca);
@@ -420,6 +383,8 @@ rlk_ca_fill(rlk_ca_t *ca, const rlk_lattice_t *win, rlk_tilemap_t *tm,
         connect_regions(ca);
         find_regions(ca);  /* re-label: corridors carved by connect are now floor */
     }
+    /* The region id is preset into tile.biome (uint8_t). */
+    assert(ca->region_count <= 255);
 
     /* Render: writer per cell, stamped over the cell's cs x cs tile block.
        Mask weight 0 and reserved POI bboxes are not written. */
@@ -454,7 +419,7 @@ rlk_ca_fill(rlk_ca_t *ca, const rlk_lattice_t *win, rlk_tilemap_t *tm,
         int best_d = INT_MAX, ax = ccx, ay = ccy;
         for (int y = y0; y <= y1; y++) {
             for (int x = x0; x <= x1; x++) {
-                if (ca->region_ids[(size_t)y * (size_t)w + (size_t)x] != rid)
+                if (ca->region_ids[ca_idx(x, y, w)] != rid)
                     continue;
                 int d = (x - ccx) * (x - ccx) + (y - ccy) * (y - ccy);
                 if (d < best_d) {
@@ -472,5 +437,4 @@ rlk_ca_fill(rlk_ca_t *ca, const rlk_lattice_t *win, rlk_tilemap_t *tm,
         };
         spawn->seed = rlk_poi_seed(ca->seed, spawn->x, spawn->y, 0, 0x5EEDULL);
     }
-    return RLK_OK;
 }

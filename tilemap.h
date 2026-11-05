@@ -79,6 +79,21 @@ rlk_tilemap_lattice(const rlk_tilemap_t *tm) {
     return l;
 }
 
+/* 1 if the tilemap fully covers the lattice window `win` (world rect of
+   win->w x win->h cells of win->cellsize tiles), else 0.
+   int64 math avoids overflow on origin + w*cellsize. */
+static inline int
+rlk_tilemap_contains_lattice(const rlk_tilemap_t *tm,
+                             const rlk_lattice_t *win) {
+    assert(tm && win);
+    return (int64_t)win->origin_x >= tm->origin_x &&
+           (int64_t)win->origin_y >= tm->origin_y &&
+           (int64_t)win->origin_x + (int64_t)win->w * win->cellsize <=
+               (int64_t)tm->origin_x + tm->w &&
+           (int64_t)win->origin_y + (int64_t)win->h * win->cellsize <=
+               (int64_t)tm->origin_y + tm->h;
+}
+
 /* Trace a segment from (x0,y0) to (x1,y1), square brush of `width` tiles
    centred on the line (width >= 1). Clipped to the tilemap. Deterministic. */
 static inline void

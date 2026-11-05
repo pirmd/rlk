@@ -5,10 +5,15 @@
 #include "fmath.h"
 #include "noise.h"
 
+/* Domain salts of the stage: decorrelate the region seed stream and the
+   cell-type stream from the raw hashes (see conventions.md, "salt"). */
+#define REGION_SEED_SALT 0x9E0F5C3D11ULL
+#define CELL_TYPE_SALT 3
+
 /* Region type of a Voronoi cell: decorrelated hash of the cell id, in [0, ntypes). */
 static uint8_t
 cell_type(uint64_t cell_id, int ntypes) {
-    return (uint8_t)((rlk_hash_sub(cell_id, 3) >> 33) % (uint64_t)ntypes);
+    return (uint8_t)((rlk_hash_sub(cell_id, CELL_TYPE_SALT) >> 33) % (uint64_t)ntypes);
 }
 
 static void
@@ -20,7 +25,7 @@ region_stage(rlk_wg_ctx_t *ctx, const void *data) {
     const float cell_size = (float)cfg->cell;
     const float blend = (float)cfg->blend;
     const float wxf = (float)ctx->wx + 0.5f, wyf = (float)ctx->wy + 0.5f;
-    const uint64_t seed = rlk_hash_sub(rlk_hash_sub(wg->seed, 0x9E0F5C3D11ULL), cfg->salt);
+    const uint64_t seed = rlk_hash_sub(rlk_hash_sub(wg->seed, REGION_SEED_SALT), cfg->salt);
 
     /* Voronoi partition at the tile centre. */
     rlk_noise_t noise = { .seed = seed };

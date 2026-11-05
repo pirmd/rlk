@@ -24,21 +24,10 @@
 #include "pxl.h"
 #include "source.h"
 #include "rlk.h"
+#include "tilemap_gen.h"   /* demo_write_wallfloor: ready-made ca/bsp writer */
 
 #define DUN_W 80
 #define DUN_H 40
-
-/* Local ready-made writer for ca/bsp (the lib provides none): wall/floor
-   by biome (0 = wall, > 0 = floor), deterministic variant from (seed, x, y). */
-typedef struct { uint8_t wall_type, floor_type; } dun_wallfloor_t;
-
-static inline void
-dun_write_wallfloor(uint64_t seed, const void *data, int x, int y,
-                    rlk_tile_t *out) {
-    const dun_wallfloor_t *wf = (const dun_wallfloor_t *)data;
-    out->type = (out->biome == 0) ? wf->wall_type : wf->floor_type;
-    out->variant = (uint8_t)(rlk_hash_normf(rlk_hash_at(seed, x, y, 0xCAFEULL)) * 255.0f);
-}
 
 /* Tile types */
 enum {
@@ -92,23 +81,22 @@ src_dungeon_build(src_dungeon_t *d) {
     rlk_lattice_t win = { .w = DUN_W, .h = DUN_H, .cellsize = 1,
                           .origin_x = 0, .origin_y = 0 };
 
-    rlk_err_t err;
     if (d->kind == DUN_SRC_BSP) {
-        static const dun_wallfloor_t wf = { .wall_type = DUN_WALL, .floor_type = DUN_FLOOR };
+        static const demo_wallfloor_t wf = { .wall_type = DUN_WALL, .floor_type = DUN_FLOOR };
         rlk_bsp_t bsp = {
             .seed = d->seed,
             .min_room_size = 5,
             .max_depth = 6,
-            .write = dun_write_wallfloor,
+            .write = demo_write_wallfloor,
             .write_data = &wf,
             .grid = d->grid,
             .nodes = d->nodes,
         };
         rlk_bsp_init(&bsp);
-        err = rlk_bsp_fill(&bsp, &win, &d->tm, NULL, NULL, &d->spawn);
+        rlk_bsp_fill(&bsp, &win, &d->tm, NULL, NULL, &d->spawn);
         d->region_count = bsp.room_count;
     } else {
-        static const dun_wallfloor_t wf = { .wall_type = DUN_WALL, .floor_type = DUN_FLOOR };
+        static const demo_wallfloor_t wf = { .wall_type = DUN_WALL, .floor_type = DUN_FLOOR };
         rlk_ca_t ca = {
             .seed = d->seed,
             .fill_prob = 0.47f,
@@ -116,17 +104,15 @@ src_dungeon_build(src_dungeon_t *d) {
             .survive_low = 4, .survive_high = 8,
             .iterations = 5,
             .connect = 1,
-            .write = dun_write_wallfloor,
+            .write = demo_write_wallfloor,
             .write_data = &wf,
             .grid = d->grid,
             .region_ids = d->regions,
         };
         rlk_ca_init(&ca);
-        err = rlk_ca_fill(&ca, &win, &d->tm, NULL, NULL, &d->spawn);
+        rlk_ca_fill(&ca, &win, &d->tm, NULL, NULL, &d->spawn);
         d->region_count = ca.region_count;
     }
-    if (err != RLK_OK)
-        fprintf(stderr, "src_dungeon: fill failed: %s\n", rlk_err_to_string(err));
 }
 
 static inline void

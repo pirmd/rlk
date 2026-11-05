@@ -6,25 +6,12 @@
 /* Internal cell states for the BSP grid buffer. */
 enum { BSP_WALL = 0, BSP_FLOOR = 1 };
 
-/* Split directions. */
-enum { BSP_LEAF = 0, BSP_SPLIT_H = 1, BSP_SPLIT_V = 2 };
-
 static inline size_t
 bsp_idx(int x, int y, int w) {
     return (size_t)y * (size_t)w + (size_t)x;
 }
 
 /* --- SETUP --------------------------------------------------------------- */
-
-/* Safety checks only: prevent crashes (buffer overflow, NULL deref).
-   Logic errors (min_room_size, max_depth ranges) are the user's
-   responsibility. */
-static void
-assert_bsp(const rlk_bsp_t *bsp) {
-    assert(bsp);
-    assert(bsp->grid && bsp->nodes);
-    assert(bsp->write);
-}
 
 void
 rlk_bsp_init(rlk_bsp_t *bsp) {
@@ -40,23 +27,26 @@ rlk_bsp_init(rlk_bsp_t *bsp) {
     if (bsp->room_margin == 0)
         bsp->room_margin = 1;
 
-    /* Safety checks. */
-    assert_bsp(bsp);
+    /* Safety checks (programmer errors): NULL buffers/callback, and config
+       ranges after default resolution. */
+    assert(bsp->grid && bsp->nodes);
+    assert(bsp->write);
+    assert(bsp->min_room_size >= 1);
+    assert(bsp->max_depth >= 1);
+    assert(bsp->split_bias >= 0.0f && bsp->split_bias <= 1.0f);
+    assert(bsp->room_margin >= 0);
 }
 
 /* --- RANDOM -------------------------------------------------------------- */
 
-/* Deterministic float in [0,1) from seed + node index + salt. */
+/* Deterministic float in [0,1) from seed + node index + depth + salt. */
 static float
 bsp_rand(const rlk_bsp_t *bsp, int node_idx, int depth, uint64_t salt) {
     assert(bsp);
-    uint64_t h = rlk_hash_sub(
-        rlk_hash_combine2(rlk_hash_combine2(bsp->seed, node_idx, depth), 0, 0),
-        salt);
-    return (float)(h >> 40) * (1.0f / 16777216.0f);
+    return rlk_hash_normf(rlk_hash_at(bsp->seed, node_idx, depth, salt));
 }
 
-/* Deterministic int in [lo, hi] from seed + node index + salt. */
+/* Deterministic int in [lo, hi] from seed + node index + depth + salt. */
 static int
 bsp_rand_int(const rlk_bsp_t *bsp, int node_idx, int depth,
              uint64_t salt, int lo, int hi) {
@@ -74,8 +64,8 @@ carve_rect(rlk_bsp_t *bsp, int x, int y, int w, int h) {
         for (int dx = 0; dx < w; dx++) {
             int cx = x + dx;
             int cy = y + dy;
-            if (cx >= 0 && cx < bsp->width && cy >= 0 && cy < bsp->height)
-                bsp->grid[bsp_idx(cx, cy, bsp->width)] = BSP_FLOOR;
+            if (cx >= 0 && cx < bsp->win_w && cy >= 0 && cy < bsp->win_h)
+                bsp->grid[bsp_idx(cx, cy, bsp->win_w)] = BSP_FLOOR;
         }
     }
 }
@@ -85,8 +75,8 @@ carve_h(rlk_bsp_t *bsp, int x1, int x2, int y) {
     assert(bsp);
     if (x1 > x2) { int t = x1; x1 = x2; x2 = t; }
     for (int x = x1; x <= x2; x++) {
-        if (x >= 0 && x < bsp->width && y >= 0 && y < bsp->height)
-            bsp->grid[bsp_idx(x, y, bsp->width)] = BSP_FLOOR;
+        if (x >= 0 && x < bsp->win_w && y >= 0 && y < bsp->win_h)
+            bsp->grid[bsp_idx(x, y, bsp->win_w)] = BSP_FLOOR;
     }
 }
 
@@ -95,15 +85,15 @@ carve_v(rlk_bsp_t *bsp, int x, int y1, int y2) {
     assert(bsp);
     if (y1 > y2) { int t = y1; y1 = y2; y2 = t; }
     for (int y = y1; y <= y2; y++) {
-        if (x >= 0 && x < bsp->width && y >= 0 && y < bsp->height)
-            bsp->grid[bsp_idx(x, y, bsp->width)] = BSP_FLOOR;
+        if (x >= 0 && x < bsp->win_w && y >= 0 && y < bsp->win_h)
+            bsp->grid[bsp_idx(x, y, bsp->win_w)] = BSP_FLOOR;
     }
 }
 
 /* --- BSP TREE ------------------------------------------------------------ */
 
-/* Recursively split a node. Returns the node index. */
-static int
+/* Recursively split a node. */
+static void
 split_recursive(rlk_bsp_t *bsp, int node_idx, int depth) {
     assert(bsp);
     assert(node_idx >= 0 && node_idx < RLK_BSP_MAX_NODES);
@@ -118,11 +108,14 @@ split_recursive(rlk_bsp_t *bsp, int node_idx, int depth) {
     int can_split_v = (w >= 2 * min_sz);
 
     if (depth >= bsp->max_depth || (!can_split_h && !can_split_v)) {
-        node->split = BSP_LEAF;
+        node->split = RLK_BSP_LEAF;
         node->left = -1;
         node->right = -1;
-        return node_idx;
+        return;
     }
+
+    /* Both branches below allocate two child nodes. */
+    assert(bsp->node_count + 2 <= RLK_BSP_MAX_NODES);
 
     /* Choose split direction. */
     int do_horizontal;
@@ -133,57 +126,36 @@ split_recursive(rlk_bsp_t *bsp, int node_idx, int depth) {
         do_horizontal = (r < bsp->split_bias);
     }
 
+    /* Split position and the two child rectangles. */
+    int max_split = (do_horizontal ? h : w) - min_sz;
+    int pos = bsp_rand_int(bsp, node_idx, depth, 0x5012ULL, min_sz, max_split);
+    rlk_bsp_node_t child[2];
     if (do_horizontal) {
         /* Split along Y: top and bottom children. */
-        node->split = BSP_SPLIT_H;
-        int min_split = min_sz;
-        int max_split = h - min_sz;
-        int pos = bsp_rand_int(bsp, node_idx, depth, 0x5012ULL, min_split, max_split);
-        node->split_pos = pos;
-
-        int left_idx = bsp->node_count++;
-        int right_idx = bsp->node_count++;
-        node->left = left_idx;
-        node->right = right_idx;
-
-        bsp->nodes[left_idx] = (rlk_bsp_node_t){
-            .x = node->x, .y = node->y,
-            .w = node->w, .h = pos,
-        };
-        bsp->nodes[right_idx] = (rlk_bsp_node_t){
-            .x = node->x, .y = node->y + pos,
-            .w = node->w, .h = node->h - pos,
-        };
-
-        split_recursive(bsp, left_idx, depth + 1);
-        split_recursive(bsp, right_idx, depth + 1);
+        node->split = RLK_BSP_SPLIT_H;
+        child[0] = (rlk_bsp_node_t){ .x = node->x, .y = node->y,
+                                     .w = node->w, .h = pos };
+        child[1] = (rlk_bsp_node_t){ .x = node->x, .y = node->y + pos,
+                                     .w = node->w, .h = node->h - pos };
     } else {
         /* Split along X: left and right children. */
-        node->split = BSP_SPLIT_V;
-        int min_split = min_sz;
-        int max_split = w - min_sz;
-        int pos = bsp_rand_int(bsp, node_idx, depth, 0x5012ULL, min_split, max_split);
-        node->split_pos = pos;
-
-        int left_idx = bsp->node_count++;
-        int right_idx = bsp->node_count++;
-        node->left = left_idx;
-        node->right = right_idx;
-
-        bsp->nodes[left_idx] = (rlk_bsp_node_t){
-            .x = node->x, .y = node->y,
-            .w = pos, .h = node->h,
-        };
-        bsp->nodes[right_idx] = (rlk_bsp_node_t){
-            .x = node->x + pos, .y = node->y,
-            .w = node->w - pos, .h = node->h,
-        };
-
-        split_recursive(bsp, left_idx, depth + 1);
-        split_recursive(bsp, right_idx, depth + 1);
+        node->split = RLK_BSP_SPLIT_V;
+        child[0] = (rlk_bsp_node_t){ .x = node->x, .y = node->y,
+                                     .w = pos, .h = node->h };
+        child[1] = (rlk_bsp_node_t){ .x = node->x + pos, .y = node->y,
+                                     .w = node->w - pos, .h = node->h };
     }
+    node->split_pos = pos;
 
-    return node_idx;
+    int left_idx = bsp->node_count++;
+    int right_idx = bsp->node_count++;
+    node->left = left_idx;
+    node->right = right_idx;
+    bsp->nodes[left_idx] = child[0];
+    bsp->nodes[right_idx] = child[1];
+
+    split_recursive(bsp, left_idx, depth + 1);
+    split_recursive(bsp, right_idx, depth + 1);
 }
 
 /* Create a room inside a leaf node, with random inset. */
@@ -191,7 +163,7 @@ static void
 make_room(rlk_bsp_t *bsp, int node_idx) {
     assert(bsp);
     rlk_bsp_node_t *node = &bsp->nodes[node_idx];
-    assert(node->split == BSP_LEAF);
+    assert(node->split == RLK_BSP_LEAF);
 
     int margin = bsp->room_margin;
     int max_inset = margin + 2;
@@ -261,7 +233,7 @@ static int
 first_leaf_idx(const rlk_bsp_t *bsp, int node_idx) {
     assert(bsp);
     const rlk_bsp_node_t *node = &bsp->nodes[node_idx];
-    if (node->split == BSP_LEAF) return node_idx;
+    if (node->split == RLK_BSP_LEAF) return node_idx;
     return first_leaf_idx(bsp, node->left);
 }
 
@@ -271,7 +243,7 @@ build_dungeon(rlk_bsp_t *bsp, int node_idx) {
     assert(bsp);
     rlk_bsp_node_t *node = &bsp->nodes[node_idx];
 
-    if (node->split == BSP_LEAF) {
+    if (node->split == RLK_BSP_LEAF) {
         make_room(bsp, node_idx);
         carve_room(bsp, node_idx);
         return;
@@ -285,11 +257,9 @@ build_dungeon(rlk_bsp_t *bsp, int node_idx) {
                   first_leaf_idx(bsp, node->right));
 }
 
-/* --- RENDER HELPERS ------------------------------------------------------ */
-
 /* --- PUBLIC API ---------------------------------------------------------- */
 
-rlk_err_t
+void
 rlk_bsp_fill(rlk_bsp_t *bsp, const rlk_lattice_t *win, rlk_tilemap_t *tm,
              const rlk_mask_t *mask, const rlk_poi_list_t *poi,
              rlk_poi_t *spawn) {
@@ -302,15 +272,13 @@ rlk_bsp_fill(rlk_bsp_t *bsp, const rlk_lattice_t *win, rlk_tilemap_t *tm,
     const rlk_lattice_t *l = win;
     const int w = l->w, h = l->h, cs = l->cellsize;
 
-    /* The tilemap must fully cover the window. */
-    if ((int64_t)l->origin_x < tm->origin_x ||
-        (int64_t)l->origin_y < tm->origin_y ||
-        (int64_t)l->origin_x + (int64_t)w * cs > (int64_t)tm->origin_x + tm->w ||
-        (int64_t)l->origin_y + (int64_t)h * cs > (int64_t)tm->origin_y + tm->h)
-        return RLK_E_INVALID;
+    /* The tilemap must fully cover the window: caller contract. Each tile
+       write is bounds-safe, but a partial window would silently truncate
+       the fill, so check it once here. */
+    assert(rlk_tilemap_contains_lattice(tm, l));
 
-    bsp->width = w;
-    bsp->height = h;
+    bsp->win_w = w;
+    bsp->win_h = h;
 
     /* Clear grid to walls. */
     memset(bsp->grid, BSP_WALL, (size_t)w * (size_t)h);
@@ -356,7 +324,7 @@ rlk_bsp_fill(rlk_bsp_t *bsp, const rlk_lattice_t *win, rlk_tilemap_t *tm,
         int best = -1, best_area = -1;
         for (int i = 0; i < bsp->node_count; i++) {
             const rlk_bsp_node_t *n = &bsp->nodes[i];
-            if (n->split != BSP_LEAF)
+            if (n->split != RLK_BSP_LEAF)
                 continue;
             int area = n->rw * n->rh;
             if (area > best_area) {
@@ -366,8 +334,8 @@ rlk_bsp_fill(rlk_bsp_t *bsp, const rlk_lattice_t *win, rlk_tilemap_t *tm,
         }
         if (best >= 0) {
             const rlk_bsp_node_t *n = &bsp->nodes[best];
-            spawn->x = l->origin_x + (n->rx + n->rw / 2) * cs;
-            spawn->y = l->origin_y + (n->ry + n->rh / 2) * cs;
+            spawn->x = l->origin_x + (n->rx + n->rw / 2) * cs + cs / 2;
+            spawn->y = l->origin_y + (n->ry + n->rh / 2) * cs + cs / 2;
             spawn->bbox = (rlk_rect_t){
                 .x = l->origin_x + n->rx * cs, .y = l->origin_y + n->ry * cs,
                 .w = n->rw * cs, .h = n->rh * cs,
@@ -375,5 +343,4 @@ rlk_bsp_fill(rlk_bsp_t *bsp, const rlk_lattice_t *win, rlk_tilemap_t *tm,
             spawn->seed = rlk_poi_seed(bsp->seed, spawn->x, spawn->y, 0, 0x5EEDULL);
         }
     }
-    return RLK_OK;
 }

@@ -48,6 +48,41 @@ test_rlk_tilemap_lattice(void) {
 	assert(l.origin_x == 10 && l.origin_y == -5);
 }
 
+/* rlk_tilemap_contains_lattice tests ------------------------------------------ */
+
+static void
+test_rlk_tilemap_contains_lattice(void) {
+	rlk_tile_t buf[8 * 8];
+	rlk_tilemap_t tm;
+	rlk_tilemap_init(&tm, 8, 8, buf, sizeof(buf));
+	tm.origin_x = 5;
+	tm.origin_y = 5;   /* covers world [5,13) x [5,13) */
+
+	/* Exact cover, cellsize 1. */
+	rlk_lattice_t win = { .w = 8, .h = 8, .cellsize = 1,
+	                      .origin_x = 5, .origin_y = 5 };
+	assert(rlk_tilemap_contains_lattice(&tm, &win) == 1);
+
+	/* Sub-window with cellsize 2: world rect [6,12) x [7,13). */
+	win = (rlk_lattice_t){ .w = 3, .h = 3, .cellsize = 2,
+	                       .origin_x = 6, .origin_y = 7 };
+	assert(rlk_tilemap_contains_lattice(&tm, &win) == 1);
+
+	/* One cell too wide: [6,14) exceeds 13. */
+	win.w = 4;
+	assert(rlk_tilemap_contains_lattice(&tm, &win) == 0);
+
+	/* Window origin left of the tilemap origin. */
+	win = (rlk_lattice_t){ .w = 8, .h = 8, .cellsize = 1,
+	                       .origin_x = 4, .origin_y = 5 };
+	assert(rlk_tilemap_contains_lattice(&tm, &win) == 0);
+
+	/* Window extends past the right edge. */
+	win = (rlk_lattice_t){ .w = 9, .h = 8, .cellsize = 1,
+	                       .origin_x = 5, .origin_y = 5 };
+	assert(rlk_tilemap_contains_lattice(&tm, &win) == 0);
+}
+
 /* rlk_tilemap_get tests ------------------------------------------------------- */
 
 static void
@@ -184,6 +219,7 @@ int
 main(void) {
 	test_rlk_tilemap_init_valid();
 	test_rlk_tilemap_lattice();
+	test_rlk_tilemap_contains_lattice();
 
 	/* rlk_tilemap_get tests (includes const assignment test) */
 	test_rlk_tilemap_get_valid();

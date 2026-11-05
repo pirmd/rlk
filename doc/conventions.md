@@ -7,6 +7,10 @@
    `rlk_wg_fill`) and its stages/bridges (`wg_relief`, `wg_drain`,
    ...). A module usable without its domain gets a generic name
    (`ca`, `bsp`, `path`, `hydro` -- not `wg_hydro`: it is terrain).
+   Structs are anonymous typedefs (`typedef struct { ... } rlk_x_t;`).
+   A named tag (`struct rlk_x_s` + forward declaration) is used only
+   when a type must be referenced before its full definition (e.g.
+   `rlk_wg_ctx_t` in the `rlk_wg_stage_t` callback, wg.h); nowhere else.
 2. Verbs (one meaning each):
    - `init`: prepares a struct; `build`: computes derived data;
    - `find`: a search that can fail; `compute`: computes a result into
@@ -52,6 +56,6 @@
     generator, a structure, a POI: `rlk_wg_t.seed`, `rlk_noise_t.seed`,
     `rlk_poi_t.seed`). `salt` is a decorrelating value mixed into an
     existing seed to distinguish several uses or instances of the same
-    source: parameters of `rlk_hash_sub` / `rlk_hash_at` / `rlk_wg_rand`
-    / `rlk_ca_rand`, and cfg fields such as `rlk_wg_field_t.salt`,
+    source: parameters of `rlk_hash_sub` / `rlk_hash_at` / `rlk_wg_rand`,
+    and cfg fields such as `rlk_wg_field_t.salt`,
     `rlk_wg_region_cfg_t.salt`, `rlk_wg_poi_cfg_t.salt`.

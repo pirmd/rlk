@@ -339,7 +339,6 @@ main(int argc, char **argv) {
             .level = p->level,
         };
 
-        rlk_err_t err;
         if (p->type == POI_CAVE) {
             rlk_ca_t ca = {
                 .seed = p->seed,
@@ -352,8 +351,8 @@ main(int argc, char **argv) {
                 .region_ids = ca_regions,
             };
             rlk_ca_init(&ca);
-            err = rlk_ca_fill(&ca, &win, &gen.tm, NULL, &done, &spawn);
-            if (err == RLK_OK) n_caves++;
+            rlk_ca_fill(&ca, &win, &gen.tm, NULL, &done, &spawn);
+            n_caves++;
         } else {
             rlk_bsp_t bsp = {
                 .seed = p->seed,
@@ -363,16 +362,11 @@ main(int argc, char **argv) {
                 .nodes = bsp_nodes,
             };
             rlk_bsp_init(&bsp);
-            err = rlk_bsp_fill(&bsp, &win, &gen.tm, NULL, &done, &spawn);
-            if (err == RLK_OK) n_dungeons++;
+            rlk_bsp_fill(&bsp, &win, &gen.tm, NULL, &done, &spawn);
+            n_dungeons++;
         }
-        if (err != RLK_OK) {
-            fprintf(stderr, "fill POI %d (type %u): %s\n",
-                    i, p->type, rlk_err_to_string(err));
-            n_skipped++;
-        } else if (rlk_poi_push(&gen.pois, &spawn) != RLK_OK) {
+        if (rlk_poi_push(&gen.pois, &spawn) != RLK_OK)
             n_skipped++;   /* queue full: entrance marker dropped */
-        }
         rlk_poi_push(&done, p);
     }
 
