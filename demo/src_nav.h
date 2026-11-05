@@ -120,6 +120,7 @@ typedef struct {
     int p_parent[NAV_W * NAV_H];
     int p_heap[NAV_W * NAV_H];
     int p_heap_pos[NAV_W * NAV_H];
+    int p_f[NAV_W * NAV_H];
     uint8_t p_closed[NAV_W * NAV_H];
     int path[2 * NAV_W * NAV_H];
     int path_n;
@@ -175,7 +176,7 @@ src_nav_build(src_nav_t *n) {
     rlk_mask_from_tilemap(&n->mask, &n->tm, &N_PROPS, N_F_WALKABLE, NULL);
 
     /* Pathfinding setup: scratch + cost callback over the tilemap lattice. */
-    n->scr = (rlk_path_scratch_t){ n->p_g, n->p_parent, n->p_heap, n->p_heap_pos, n->p_closed };
+    n->scr = (rlk_path_scratch_t){ n->p_g, n->p_parent, n->p_heap, n->p_heap_pos, n->p_f, n->p_closed };
     n->nav.walk = &n->mask;
     n->nav.ents = n->ents;
     n->nav.nents = 0;
@@ -302,13 +303,15 @@ static inline void
 src_nav_map_info(char *buf, size_t cap, const void *data) {
     const src_nav_t *n = (const src_nav_t *)data;
     snprintf(buf, cap,
-        "     MAP\n\n"
+        "MAP\n\n"
         "Size   : %d x %d\n"
         "Player : (%d,%d)\n"
         "Target : (%d,%d)\n"
         "Door   : (%d,%d) open\n"
         "Path   : %d steps\n"
-        "Ents   : %d (R: replay)",
+        "Ents   : %d\n\n"
+        "Tab/Sh+Tab: mode\n"
+        "1-2: overlays  R: replay",
         NAV_W, NAV_H,
         NAV_PLAYER_X, NAV_PLAYER_Y,
         NAV_TARGET_X, NAV_TARGET_Y,
@@ -326,7 +329,7 @@ src_nav_tile_info(char *buf, size_t cap, const void *data, int wx, int wy) {
     for (int i = 0; i < n->nents; i++)
         if (n->ents[i].x == wx && n->ents[i].y == wy) ent = i;
     snprintf(buf, cap,
-        "     TILE\n\n"
+        "TILE\n\n"
         "Position: (%d,%d)\n"
         "Type    : %s (%d)\n"
         "Walkable: %s\n"

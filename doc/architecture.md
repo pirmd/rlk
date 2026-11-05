@@ -246,4 +246,8 @@ opaque to rlk. Extension points, by data density:
 Demos (examples, not part of the lib): `demo_viewer.c` (PXL terrain viewer
 over the `tilemap_gen` package: `tilemap_gen.c` + `gen_stages/gen_write/
 gen_post/gen_stats.c`), `demo_world.c` (full world: overworld + POI
-structures + roads, ASCII views of the generation stages via argv).
+structures + roads, ASCII map, terminal), `test_tilemap_gen.c` (golden map
+stats per seed, non-regression; `report` mode = multi-seed metric table, see
+doc/metrics.md), `demo_dump.c` (raster export .asc/.pgm for
+external tools). Stage/field probes are viewed in `demo_viewer` (PXL modes
+and overlays) or exported by `demo_dump`.

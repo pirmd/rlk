@@ -5,8 +5,11 @@ Minimal C99 library for 2D grid-based games and roguelikes.
 
 Build:
   make                  # Build librlk.a
-  make lint             # Static analysis (-Werror)
-  make test             # Run unit tests
+  make lint             # Static analysis (-Werror): lib + test/ + demo/
+  make test             # Unit tests only (lib, test/)
+  make demo             # Compile+link all demos (incl. PXL viewer)
+  make check            # All validation: unit tests + demo-side tests (demo/test_*.c,
+                        # e.g. test_tilemap_gen golden non-regression), headless
   make clean            # Remove build artifacts
 
 Note: the Makefiles use BSD make. On Linux, use `bmake` or `pmake`
@@ -25,6 +28,8 @@ Documentation:
   doc/architecture.md   # Zones (base / domains / user land), memory model,
                         # determinism contract, recipes
   doc/conventions.md    # Naming rules
+  doc/metrics.md        # Map quality metrics: what each probe measures, golden
+                        # policy, multi-seed report (demo/test_tilemap_gen)
 
 Headers:
   rlk.h                # Umbrella header (includes all of the below)
@@ -69,6 +74,8 @@ Headers:
 Demos:
   demo/demo_viewer.c         # Generic PXL viewer: demo_viewer [world|ca|bsp|nav] [seed]
   demo/demo_world.c          # World composition: tilemap_gen + POI loop (ca/bsp) + roads (terminal)
+  demo/test_tilemap_gen.c        # Demo-side test: golden map stats per seed (run by `make check`, not a demo_)
+  demo/demo_dump.c           # Raster export (.asc/.pgm) for external validation (terminal)
   demo/tilemap_gen.h/c       # Reusable fantasy map generator (noise + drain + wg + POI)
   demo/widget.h              # UI elements (text, button, menu, legend; header-only)
   demo/viewer.h              # View bricks (camera, minimap, input snapshot; header-only)

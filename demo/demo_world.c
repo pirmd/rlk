@@ -11,15 +11,17 @@
  *      tree (Prim over squared distances), outposts link to the nearest site:
  *      walkability mask + slope-weighted cost table + rlk_path_find/draw
  *
- * Terminal-only: no PXL dependency. Prints an ASCII map plus map stats;
- * argv selects the view: demo_world [seed] [map|elev|rel|flow|lake|river].
+ * Terminal-only: no PXL dependency. Prints map stats and the ASCII map.
+ * Stage/field probes live in demo_viewer (PXL modes/overlays) and
+ * demo_dump (raster export).
+ *
+ *   demo_world [seed]
  */
 
 #include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 #include "rlk.h"
 #include "tilemap_gen.h"
@@ -148,80 +150,22 @@ poi_window(const rlk_poi_t *p, rlk_rect_t map, rlk_lattice_t *out) {
 
 /* --- DISPLAY ------------------------------------------------------------- */
 
-/* ASCII ramp for float fields, 10 levels. */
-static const char RAMP[] = " .:-=+*#%@";
-
-static char
-ramp_char(float v) {
-    int i = (int)(v * 10.0f);
-    if (i < 0) i = 0;
-    if (i > 9) i = 9;
-    return RAMP[i];
-}
-
-/* Display modes: map (tiles+POI) or a generation stage / field probe. */
-enum {
-    M_MAP = 0,
-    M_ELEV,    /* coarse elevation grid */
-    M_REL,     /* final per-tile elevation (wg_relief) */
-    M_FLOW,    /* drain flow accumulation */
-    M_LAKE,    /* lake depth */
-    M_RIVER,   /* river mask */
-    M_COUNT
-};
-
+/* Render the tilemap and POI anchors as ASCII. */
 static void
-display(const tilemap_gen_t *gen, int mode) {
+display(const tilemap_gen_t *gen) {
     static char scr[TM_W * TM_H];
     const rlk_tilemap_t *tm = &gen->tm;
     for (int y = 0; y < tm->h; y++) {
         for (int x = 0; x < tm->w; x++) {
-            size_t idx = (size_t)y * (size_t)tm->w + (size_t)x;
-            char c = ' ';
-            switch (mode) {
-            case M_ELEV:
-                c = ramp_char(rlk_grid_get(&gen->elev_grid, (float)x + 0.5f, (float)y + 0.5f));
-                break;
-            case M_REL:
-                c = ramp_char(gen->final_elev[idx]);
-                break;
-            case M_FLOW: {
-                int ci = 0, cj = 0;
-                uint32_t acc = 0;
-                if (rlk_grid_cell_of(&gen->elev_grid, x, y, &ci, &cj))
-                    acc = gen->drain.acc[(size_t)cj * (size_t)gen->drain.lattice.w + (size_t)ci];
-                c = ramp_char((float)acc / ((float)acc + 200.0f));
-                break;
-            }
-            case M_LAKE: {
-                int ci = 0, cj = 0;
-                float lk = 0.0f;
-                if (rlk_grid_cell_of(&gen->elev_grid, x, y, &ci, &cj))
-                    lk = gen->lake_buf[(size_t)cj * (size_t)GRID_W + (size_t)ci];
-                c = ramp_char(lk / 0.10f);
-                break;
-            }
-            case M_RIVER:
-                c = gen->river_mask_buf[idx] > 0.5f ? '#'
-                    : (gen->river_carve_buf[idx] > 0.0f ? '.' : ' ');
-                break;
-            case M_MAP:
-            default: {
-                const rlk_tile_t *t = rlk_tilemap_get(tm, x, y);
-                int ti = (t->type < TILE_DEMO_COUNT) ? t->type : TILE_VOID;
-                c = TILE_CHARS[ti];
-                break;
-            }
-            }
-            scr[idx] = c;
+            const rlk_tile_t *t = rlk_tilemap_get(tm, x, y);
+            int ti = (t->type < TILE_DEMO_COUNT) ? t->type : TILE_VOID;
+            scr[(size_t)y * (size_t)tm->w + (size_t)x] = TILE_CHARS[ti];
         }
     }
-    if (mode == M_MAP) {
-        for (int i = 0; i < gen->pois.n; i++) {
-            const rlk_poi_t *p = &gen->pois.pois[i];
-            if (p->x >= 0 && p->x < tm->w && p->y >= 0 && p->y < tm->h)
-                scr[(size_t)p->y * (size_t)tm->w + (size_t)p->x] = poi_char(p);
-        }
+    for (int i = 0; i < gen->pois.n; i++) {
+        const rlk_poi_t *p = &gen->pois.pois[i];
+        if (p->x >= 0 && p->x < tm->w && p->y >= 0 && p->y < tm->h)
+            scr[(size_t)p->y * (size_t)tm->w + (size_t)p->x] = poi_char(p);
     }
     for (int y = 0; y < tm->h; y++) {
         fwrite(&scr[(size_t)y * (size_t)tm->w], 1, (size_t)tm->w, stdout);
@@ -236,22 +180,63 @@ poi_d2(const rlk_poi_t *pa, const rlk_poi_t *pb) {
     return dx * dx + dy * dy;
 }
 
-/* Draw one road between two POI anchors over the cost table.
-   Returns the path length, or -1 if no path was found. */
+/* Snap (x,y) to the nearest walkable tile: Chebyshev rings scanned in a
+   fixed order, so the result is deterministic. Returns 1 if found.
+   POI anchors often sit on a non-walkable tile (HOUSE, site interior);
+   starting the path from the nearest walkable tile fixes the "Not found"
+   routes (bug noted 2026-10-30). */
 static int
-road_draw(const rlk_path_cost_t *cost, rlk_path_scratch_t *scr,
+snap_walkable(const rlk_mask_t *walk, int x, int y, int *out_x, int *out_y) {
+    if (rlk_mask_allows(walk, x, y)) {
+        *out_x = x;
+        *out_y = y;
+        return 1;
+    }
+    for (int r = 1; r < TM_W + TM_H; r++) {
+        for (int dy = -r; dy <= r; dy++) {
+            for (int dx = -r; dx <= r; dx++) {
+                if (dx != -r && dx != r && dy != -r && dy != r)
+                    continue;   /* ring cells only */
+                int nx = x + dx, ny = y + dy;
+                if (nx < 0 || nx >= TM_W || ny < 0 || ny >= TM_H)
+                    continue;
+                if (rlk_mask_allows(walk, nx, ny)) {
+                    *out_x = nx;
+                    *out_y = ny;
+                    return 1;
+                }
+            }
+        }
+    }
+    return 0;
+}
+
+/* Draw one road between two POI anchors over the cost table, snapping each
+   anchor to the nearest walkable tile first. Returns the path length, or
+   -1 if no path was found. */
+static int
+road_draw(const rlk_path_cost_t *cost, const rlk_mask_t *walk,
+          rlk_path_scratch_t *scr,
           rlk_tilemap_t *tm, int *path_buf, int cap,
           const rlk_poi_t *pa, const rlk_poi_t *pb) {
+    int ax, ay, bx, by;
+    if (!snap_walkable(walk, pa->x, pa->y, &ax, &ay) ||
+        !snap_walkable(walk, pb->x, pb->y, &bx, &by)) {
+        printf("Road (%d,%d) -> (%d,%d): no walkable tile near an anchor\n",
+               pa->x, pa->y, pb->x, pb->y);
+        return -1;
+    }
     int n = 0;
-    rlk_err_t err = rlk_path_find(cost, scr, pa->x, pa->y, pb->x, pb->y,
+    rlk_err_t err = rlk_path_find(cost, scr, ax, ay, bx, by,
                                   path_buf, cap, &n);
     if (err != RLK_OK) {
         printf("Road (%d,%d) -> (%d,%d): %s\n",
-               pa->x, pa->y, pb->x, pb->y, rlk_err_to_string(err));
+               ax, ay, bx, by, rlk_err_to_string(err));
         return -1;
     }
     rlk_path_draw(tm, path_buf, n, 1, (rlk_tile_t){ .type = TILE_ROAD });
-    printf("Road (%d,%d) -> (%d,%d): %d steps\n", pa->x, pa->y, pb->x, pb->y, n);
+    printf("Road (%d,%d) -> (%d,%d): %d steps%s\n", ax, ay, bx, by, n,
+           (ax != pa->x || ay != pa->y || bx != pb->x || by != pb->y) ? " (snapped)" : "");
     return n;
 }
 
@@ -259,19 +244,12 @@ road_draw(const rlk_path_cost_t *cost, rlk_path_scratch_t *scr,
 
 int
 main(int argc, char **argv) {
-    /* usage: demo_world [seed] [map|elev|rel|flow|lake|river] */
-    uint64_t seed = (argc > 1) ? strtoull(argv[1], NULL, 0) : SEED;
-    const char *mode_arg = (argc > 2) ? argv[2] : "map";
-    int mode = M_MAP;
-    if (!strcmp(mode_arg, "elev"))  mode = M_ELEV;
-    else if (!strcmp(mode_arg, "rel"))   mode = M_REL;
-    else if (!strcmp(mode_arg, "flow"))  mode = M_FLOW;
-    else if (!strcmp(mode_arg, "lake"))  mode = M_LAKE;
-    else if (!strcmp(mode_arg, "river")) mode = M_RIVER;
-    else if (strcmp(mode_arg, "map")) {
-        fprintf(stderr, "usage: %s [seed] [map|elev|rel|flow|lake|river]\n", argv[0]);
+    /* usage: demo_world [seed] */
+    if (argc > 2) {
+        fprintf(stderr, "usage: %s [seed]\n", argv[0]);
         return 2;
     }
+    uint64_t seed = (argc > 1) ? strtoull(argv[1], NULL, 0) : SEED;
 
     /* Static buffers: no allocation. */
     static tilemap_gen_t gen;
@@ -287,6 +265,7 @@ main(int argc, char **argv) {
     static int p_parent[TM_W * TM_H];
     static int p_heap[TM_W * TM_H];
     static int p_heap_pos[TM_W * TM_H];
+    static int p_f[TM_W * TM_H];
     static uint8_t p_closed[TM_W * TM_H];
     static int path_buf[2 * TM_W * TM_H];
     static int sites[256];
@@ -391,7 +370,7 @@ main(int argc, char **argv) {
         }
     }
     rlk_path_cost_t cost = { .lattice = tl, .table = cost_buf };
-    rlk_path_scratch_t scr = { p_g, p_parent, p_heap, p_heap_pos, p_closed };
+    rlk_path_scratch_t scr = { p_g, p_parent, p_heap, p_heap_pos, p_f, p_closed };
 
     int nsites = 0;
     for (int i = 0; i < gen.pois.n; i++) {
@@ -427,7 +406,7 @@ main(int argc, char **argv) {
             tree_in[best] = 1;
             const rlk_poi_t *pa = &gen.pois.pois[sites[tree_from[best]]];
             const rlk_poi_t *pb = &gen.pois.pois[sites[best]];
-            int n = road_draw(&cost, &scr, &gen.tm, path_buf, TM_W * TM_H, pa, pb);
+            int n = road_draw(&cost, &walkable, &scr, &gen.tm, path_buf, TM_W * TM_H, pa, pb);
             if (n > 0) { n_routes++; total_len += n; }
             for (int b = 0; b < nsites; b++) {
                 if (tree_in[b]) continue;
@@ -457,7 +436,7 @@ main(int argc, char **argv) {
             if (d2 < best_d2) { best_d2 = d2; best = b; }
         }
         const rlk_poi_t *pb = &gen.pois.pois[sites[best]];
-        int n = road_draw(&cost, &scr, &gen.tm, path_buf, TM_W * TM_H, p, pb);
+        int n = road_draw(&cost, &walkable, &scr, &gen.tm, path_buf, TM_W * TM_H, p, pb);
         if (n > 0) { n_routes++; total_len += n; }
     }
 
@@ -484,17 +463,12 @@ main(int argc, char **argv) {
         for (int x = 0; x < TM_W; x++)
             if (rlk_tilemap_get(&gen.tm, x, y)->type == TILE_SINKHOLE)
                 n_sink++;
-    printf("Karst sinkholes: %d\n", n_sink);
+    printf("Sinkholes: %d\n", n_sink);
     printf("Roads: %d routes, %d tiles total\n\n", n_routes, total_len);
 
-    printf("\n--- view: %s ---\n", mode_arg);
-    display(&gen, mode);
+    display(&gen);
 
-    if (mode != M_MAP) {
-        printf("\nLegend (map mode for tiles):\n");
-    } else {
-        printf("\nLegend:\n");
-    }
+    printf("\nLegend:\n");
     printf("  ~ water  r river  l lake  ^ rock  : sand  * snow  %% marsh\n");
     printf("  . grass  , floor  T tree  P pine  = road  H house  o plaza  w dock  O sinkhole\n");
     printf("  # cave wall  c cave floor  D dungeon wall  d dungeon floor\n");

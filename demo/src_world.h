@@ -376,7 +376,7 @@ src_world_draw_details(pxl_canvas_t *cnv, const src_world_t *w, const src_view_t
                 break;
             }
             case TILE_SINKHOLE: {
-                /* doline: dark rim, black pit */
+                /* sinkhole: dark rim, black pit */
                 pxl_canvas_set_color(cnv, 0xFF3E2723U);
                 pxl_fill_rect(cnv, px + 1, py + 1, t - 2, t - 2);
                 pxl_canvas_set_color(cnv, 0xFF000000U);
@@ -425,11 +425,14 @@ static inline void
 src_world_map_info(char *buf, size_t cap, const void *data) {
     const src_world_t *w = (const src_world_t *)data;
     snprintf(buf, cap,
-        "     MAP\n\n"
+        "MAP\n\n"
         "Size : %d x %d\n"
         "Tiles: %d\n"
         "POIs : %d\n"
-        "Seed : %llu (R: renew)",
+        "Seed : %llu\n\n"
+        "Tab/Sh+Tab: mode\n"
+        "1-3: overlays\n"
+        "R: new seed",
         TM_W, TM_H, TM_W * TM_H,
         w->gen.pois.n,
         (unsigned long long)w->gen.seed);
@@ -440,7 +443,7 @@ src_world_tile_info(char *buf, size_t cap, const void *data, int wx, int wy) {
     const src_world_t *w = (const src_world_t *)data;
     const rlk_tile_t *tile = rlk_tilemap_get(&w->gen.tm, wx, wy);
     if (!tile) {
-        snprintf(buf, cap, "     TILE\n\n(%d,%d): out of map", wx, wy);
+        snprintf(buf, cap, "TILE\n\n(%d,%d): out of map", wx, wy);
         return;
     }
 
@@ -478,11 +481,11 @@ src_world_tile_info(char *buf, size_t cap, const void *data, int wx, int wy) {
     if (near_poi && near_dist <= 256 && near_poi->type < POI_KIND_COUNT) {
         int dist = (int)sqrtf((float)near_dist);
         snprintf(poi_line, sizeof(poi_line),
-                 "\nPOI: %s d=%d", SRC_WORLD_POI_NAMES[near_poi->type], dist);
+                 "\nPOI     : %s d=%d", SRC_WORLD_POI_NAMES[near_poi->type], dist);
     }
 
     snprintf(buf, cap,
-        "     TILE\n\n"
+        "TILE\n\n"
         "Position: (%d,%d)\n"
         "Type    : %s (%d)\n"
         "Biome   : %s (%d)\n"

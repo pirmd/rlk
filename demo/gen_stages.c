@@ -227,7 +227,9 @@ gen_relief_elev_fn(float px, float py, const void *user) {
     /* Light geology: same structural bias as the tile pipeline (gen_geology_stage) */
     elev += gen_geo_eval(ctx->gen, px, py, elev, NULL, NULL);
 
-    return elev;
+    /* The drain grid requires elevation in [0, RLK_DRAIN_SCALE): clamp the
+       summed amplitudes (hills + mountains + geology can overflow 1.0). */
+    return rlk_clampf(elev, 0.0f, 1.0f - 1.0f / RLK_DRAIN_SCALE);
 }
 
 /* Stage: latitudinal thermal gradient (specialist review 2026-10-30,

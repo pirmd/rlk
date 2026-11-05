@@ -19,10 +19,12 @@ LDFLAGS += $(PXL_LDLIBS)
 SRC_PXL = demo_viewer
 DEMO_PXL = $(SRC_PXL)
 
-# --- Text demos (terminal, no PXL) ---------------------------------------
+# --- Text binaries (terminal, no PXL) ------------------------------------
 # all reuse the shared tilemap_gen objects
-SRC_TXT = demo_world demo_metrics demo_dump
+# demo_* = interactive demos, test_* = runnable harnesses (run by `check`)
+SRC_TXT = demo_world demo_dump test_tilemap_gen
 DEMO_TXT = $(SRC_TXT)
+TST_TXT  = test_tilemap_gen
 
 DEMO = $(DEMO_PXL) $(DEMO_TXT)
 
@@ -31,6 +33,12 @@ GEN_SRC = tilemap_gen gen_stages gen_write gen_post gen_stats
 DEMO_OBJ = $(GEN_SRC:=.o)
 
 all: $(DEMO)
+
+# Non-regression: run the demo-side test harnesses, rc != 0 on failure.
+check: $(TST_TXT)
+	@for t in $(TST_TXT); do \
+		./$${t} || { echo "$${t} FAIL"; exit 1; }; \
+	done
 
 # Auto-build dependencies from sibling projects
 $(RLK_DIR)/librlk.a:
@@ -67,4 +75,4 @@ lint:
 clean:
 	rm -f $(DEMO) $(DEMO_OBJ)
 
-.PHONY: all lint clean
+.PHONY: all lint check clean

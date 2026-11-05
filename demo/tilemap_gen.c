@@ -343,6 +343,6 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
     /* Multi-tile content inside each POI bbox (first POI wins on overlap) */
     gen_poi_content_pass(gen);
 
-    /* Cosmetic: karst dolines, river-mouth deltas, oxbow ponds, karst caves */
+    /* Cosmetic: sinkholes, river-mouth deltas, oxbow ponds, karst caves */
     gen_cosmetic_pass(gen);
 }

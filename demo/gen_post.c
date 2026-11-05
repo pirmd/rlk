@@ -3,7 +3,8 @@
  *
  * gen_poi_content_pass stamps multi-tile content inside each POI bbox
  * (first POI in emission order wins on overlap); gen_cosmetic_pass adds
- * karst dolines, river-mouth deltas, oxbow ponds and karst cave entrances.
+ * sinkholes (karst dolines), river-mouth deltas, oxbow ponds and karst cave
+ * entrances.
  */
 
 #include <math.h>
@@ -125,13 +126,13 @@ gen_poi_content_pass(tilemap_gen_t *gen) {
 }
 
 /* --- Cosmetic pass (post-fill, post-POI content) ---------------------------
-   Karst dolines on limestone lowlands, sand deltas where a river meets the
+   Sinkholes on limestone lowlands, sand deltas where a river meets the
    sea, oxbow ponds next to carved (meandering) reaches, and karst cave
    entrances (a cave POI anchor on limestone becomes a sinkhole). Never
    overwrites POI-reserved tiles (poi_res) and never turns land into water
    except oxbow ponds on plain land. */
 
-#define KARST_DENS    0.012f  /* doline probability per limestone lowland tile */
+#define KARST_DENS    0.012f  /* sinkhole probability per limestone lowland tile */
 #define DELTA_RADIUS  2       /* sand-fan reach around a river mouth (tiles) */
 #define DELTA_DENS    0.70f   /* probability to deposit sand on a shallow tile */
 #define OXBOW_DENS    0.03f   /* pond probability on land next to a carved river */
@@ -144,7 +145,7 @@ cosmetic_land(uint8_t type) {
 
 void
 gen_cosmetic_pass(tilemap_gen_t *gen) {
-    /* Karst dolines on sedimentary (limestone) lowlands */
+    /* Sinkholes on sedimentary (limestone) lowlands */
     for (int y = 0; y < TM_H; y++) {
         for (int x = 0; x < TM_W; x++) {
             int idx = y * TM_W + x;

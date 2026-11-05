@@ -166,12 +166,14 @@ static inline void
 src_dungeon_map_info(char *buf, size_t cap, const void *data) {
     const src_dungeon_t *d = (const src_dungeon_t *)data;
     snprintf(buf, cap,
-        "     MAP\n\n"
+        "MAP\n\n"
         "Gen  : %s\n"
         "Size : %d x %d\n"
         "%s: %d\n"
-        "Seed : %llu (R: renew)\n"
-        "Spawn: (%d,%d)",
+        "Seed : %llu\n"
+        "Spawn: (%d,%d)\n\n"
+        "Tab/Sh+Tab: mode\n"
+        "1: overlay  R: renew",
         d->kind == DUN_SRC_BSP ? "BSP" : "CA",
         DUN_W, DUN_H,
         d->kind == DUN_SRC_BSP ? "Rooms" : "Regions", d->region_count,
@@ -184,7 +186,7 @@ src_dungeon_tile_info(char *buf, size_t cap, const void *data, int wx, int wy) {
     const src_dungeon_t *d = (const src_dungeon_t *)data;
     const rlk_tile_t *t = rlk_tilemap_get(&d->tm, wx, wy);
     snprintf(buf, cap,
-        "     TILE\n\n"
+        "TILE\n\n"
         "Position: (%d,%d)\n"
         "Type    : %s (%d)\n"
         "Walkable: %s\n"

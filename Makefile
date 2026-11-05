@@ -28,9 +28,12 @@ test: $(LIB)
 demo: $(LIB)
 	$(MAKE) -C demo
 
+check: test
+	$(MAKE) -C demo check
+
 clean:
 	rm -f *.o $(LIB)
 	$(MAKE) -C test clean
 	$(MAKE) -C demo clean
 
-.PHONY: all lint test demo clean
+.PHONY: all lint test demo check clean

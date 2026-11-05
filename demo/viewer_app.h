@@ -6,6 +6,7 @@
  *
  * Owns the layout (map + sidebar: minimap, map info, tile info, legend,
  * mode bar, overlay bar), the input (camera, minimap pan, tile selection,
+ * Tab/Shift+Tab = cycle modes, number row 1..9 = toggle overlays,
  * R = source regen) and the frame rendering. The map content, modes,
  * overlays and panels all come from the source callbacks (source.h).
  *
@@ -39,6 +40,7 @@
 #define VAPP_MAP_INFO_H_RATIO   14  /* map info takes 14% of sidebar height */
 #define VAPP_TILE_INFO_H_RATIO  28  /* tile info takes 28% (legend same, bottom) */
 #define VAPP_BTN_H              22  /* button bar height (font 6x10 + padding) */
+#define VAPP_MODE_BAR_H         (2 * VAPP_BTN_H)  /* mode grid: up to 2 rows */
 
 #define VAPP_MODE_MAX    16   /* max base modes in the mode bar */
 #define VAPP_OVERLAY_MAX 16   /* max overlays in the overlay bar */
@@ -110,9 +112,9 @@ vapp_compute_layout(int win_w, int win_h, int tile_px) {
     l.map_info   = pxl_split_rect(&sidebar, sidebar.h * VAPP_MAP_INFO_H_RATIO / 100, PXL_SIDE_TOP);
     l.tile_info  = pxl_split_rect(&sidebar, sidebar.h * VAPP_TILE_INFO_H_RATIO / 100, PXL_SIDE_TOP);
     l.legend     = pxl_split_rect(&sidebar, l.tile_info.h, PXL_SIDE_BOTTOM);
-    /* Two button bars at the bottom: overlays on bottom, modes above */
+    /* Two button bars at the bottom: overlays on bottom, modes above (grid) */
     l.overlay_bar = pxl_split_rect(&sidebar, VAPP_BTN_H, PXL_SIDE_BOTTOM);
-    l.mode_bar    = pxl_split_rect(&sidebar, VAPP_BTN_H, PXL_SIDE_BOTTOM);
+    l.mode_bar    = pxl_split_rect(&sidebar, VAPP_MODE_BAR_H, PXL_SIDE_BOTTOM);
 
     return l;
 }
@@ -212,7 +214,8 @@ vapp_render_minimap(pxl_canvas_t *cnv, vapp_t *a) {
     }
 }
 
-/* Framed text panel (map info / tile info) */
+/* Framed text panel (map info / tile info): text top-left with padding,
+   left-aligned lines read better than centered ones in a narrow sidebar. */
 static inline void
 vapp_panel_text(pxl_canvas_t *cnv, const ui_t *ui, const char *txt) {
     assert(cnv && ui && txt);
@@ -221,7 +224,10 @@ vapp_panel_text(pxl_canvas_t *cnv, const ui_t *ui, const char *txt) {
     pxl_canvas_set_color(cnv, VAPP_FG_COLOR);
     pxl_draw_rect(cnv, r.x, r.y, r.w, r.h);
 
-    widget_draw_text(ui, cnv, txt, PXL_ALIGN_V_CENTER | PXL_ALIGN_H_CENTER);
+    pxl_writer_t w;
+    pxl_writer_init(&w, ui->fonts, ui->font_count);
+    pxl_writer_set_cursor(&w, r.x + 4, r.y + 4);
+    pxl_draw_text(cnv, &w, txt);
 }
 
 static inline void
@@ -241,10 +247,20 @@ vapp_render_legend(pxl_canvas_t *cnv, vapp_t *a) {
     if (n <= 0)
         return;
 
+    /* Top-aligned grid; truncate with a "+k" marker when it does not fit. */
     const int line_h = 14;
-    int area_h = view.h - 8;
-    int y = 4 + (area_h - n * line_h) / 2;
-    (void)widget_legend(&a->ui, cnv, y, items, n, (n + 1) / 2);
+    int max_rows = (view.h - 8) / line_h;
+    if (max_rows < 1) max_rows = 1;
+    int max_items = widget_legend_cols(view.w) * max_rows;
+    if (max_items > VAPP_LEGEND_MAX) max_items = VAPP_LEGEND_MAX;
+    char more[16];
+    if (n > max_items) {
+        int shown = max_items - 1;
+        snprintf(more, sizeof more, "+%d", n - shown);
+        items[shown] = (widget_item_t){ 0xFF808080U, more };
+        n = shown + 1;
+    }
+    (void)widget_legend(&a->ui, cnv, 4, items, n);
 }
 
 static inline void
@@ -278,13 +294,14 @@ vapp_render_frame(pxl_buf_t *pb, vapp_t *a) {
     vapp_render_map(&cnv_map, a);
     vapp_render_minimap(&cnv_minimap, a);
 
-    /* Mode bar (radio: one active at a time) */
+    /* Mode bar (radio: one active at a time), grid layout: the 13 world
+       mode labels do not fit in one row of the sidebar */
     if (s->nmodes > 0) {
         bool active[VAPP_MODE_MAX];
         for (int i = 0; i < s->nmodes; i++)
             active[i] = (a->mode == i);
-        int clicked = widget_menu(&a->ui, &cnv_mode, s->mode_names, s->nmodes,
-                                  active, VAPP_SELECT_COLOR, true);
+        int clicked = widget_menu_grid(&a->ui, &cnv_mode, s->mode_names, s->nmodes,
+                                       active, VAPP_SELECT_COLOR, 36);
         if (clicked >= 0)
             a->mode = clicked;
     }
@@ -330,6 +347,19 @@ vapp_input(pxl_app_t *pxl, vapp_t *a) {
         a->sel_wx = -1;
         a->sel_wy = -1;
     }
+
+    /* Mode cycling: Tab / Shift+Tab */
+    if (s->nmodes > 0 && pxl_app_was_triggered(pxl, PXL_KEYB_TAB)) {
+        bool back = pxl_app_is_active(pxl, PXL_KEYB_LSHIFT) ||
+                    pxl_app_is_active(pxl, PXL_KEYB_RSHIFT);
+        a->mode = back ? (a->mode + s->nmodes - 1) % s->nmodes
+                       : (a->mode + 1) % s->nmodes;
+    }
+
+    /* Overlay toggles: number row 1..9 -> overlay 0..8 */
+    for (int k = 0; k < s->noverlays && k < 9; k++)
+        if (pxl_app_was_triggered(pxl, (pxl_input_code_t)(PXL_KEYB_1 + k)))
+            a->overlays ^= (1u << k);
 
     int mx = a->ui.mx;
     int my = a->ui.my;

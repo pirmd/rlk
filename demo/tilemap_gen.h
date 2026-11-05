@@ -88,7 +88,7 @@ enum {
     TILE_HOUSE,   /* building: stamped by the POI content pass (village, fort...) */
     TILE_PLAZA,   /* village square */
     TILE_DOCK,    /* quay: port POI, over water */
-    TILE_SINKHOLE, /* karst doline: limestone lowland depression */
+    TILE_SINKHOLE, /* sinkhole (karst doline): limestone lowland depression */
     TILE_COUNT
 };
 
@@ -287,11 +287,20 @@ typedef struct {
     float water_frac;                 /* WATER + LAKE fraction */
     float river_frac;                 /* RIVER fraction */
     float land_frac;                  /* walkable land fraction */
+    float edge_frac;                  /* adjacent (4-conn) tile pairs with different types: spatial diversity */
+    float pair_entropy;               /* Shannon entropy of adjacent tile pairs (right/down), bits per pair */
+    float moran_elev;                 /* Moran's I of the final elevation field (4-conn): terrain clumpiness, ~[-1,1] */
+    float compress_ratio;             /* LZSS bit count / raw bit count of the tilemap: low = regular/repetitive */
     int n_components;                 /* connected walkable components (4-conn) */
     int largest_component;            /* size in tiles of the largest one */
-    int n_sinkholes;                  /* karst dolines */
+    int n_patches;                    /* connected same-type patches (4-conn): spatial fragmentation */
+    int n_sinkholes;                  /* sinkholes (karst dolines) */
     int n_poi[POI_KIND_COUNT];        /* POIs per kind */
 } tilemap_gen_stats_t;
+
+/* Walkable-land predicate used by the stats (same set as the road mask of
+   demo_world: no water, rock, house or void). */
+int tilemap_gen_walkable(uint8_t type);
 
 /* Fill st from gen. scratch = TM_W*TM_H caller-owned bytes (flood fill). */
 void tilemap_gen_stats(const tilemap_gen_t *gen, tilemap_gen_stats_t *st,

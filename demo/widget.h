@@ -100,18 +100,59 @@ widget_menu(const ui_t *ui, pxl_canvas_t *cnv, const char *const *labels, int n,
     return clicked;
 }
 
+/* Grid menu: n labels in as many columns as fit (cells at least cell_w_min
+   wide), rows sharing the canvas height. Returns the clicked cell index, or
+   -1. Use for wide bars whose labels do not fit in a single row. */
+static inline int
+widget_menu_grid(const ui_t *ui, pxl_canvas_t *cnv, const char *const *labels,
+                 int n, const bool *active, uint32_t active_color, int cell_w_min) {
+    assert(ui && cnv && labels && n > 0 && cell_w_min > 0);
+
+    pxl_rect_t abs = cnv->scissor;
+    int cols = abs.w / cell_w_min;
+    if (cols < 1) cols = 1;
+    if (cols > n) cols = n;
+    int rows = (n + cols - 1) / cols;
+    int cw = abs.w / cols;
+    int ch = abs.h / rows;
+    int clicked = -1;
+    for (int i = 0; i < n; i++) {
+        int col = i % cols, row = i / cols;
+        pxl_rect_t cell = { abs.x + col * cw, abs.y + row * ch, cw, ch };
+        if (col == cols - 1) cell.w = abs.x + abs.w - cell.x;
+        if (row == rows - 1) cell.h = abs.y + abs.h - cell.y;
+        pxl_canvas_t sub;
+        pxl_canvas_init_view(&sub, cnv->pb, cell);
+        if (widget_button(ui, &sub, labels[i], active ? active[i] : false,
+                          active_color))
+            clicked = i;
+    }
+    return clicked;
+}
+
 /* One legend item: color swatch + label */
 typedef struct {
     uint32_t color;
     const char *label;
 } widget_item_t;
 
-/* Draw n items in columns of `rows` items each (two columns max),
-   starting at y. Returns the y after the section. */
+/* Legend columns for a view of width view_w (min WIDGET_LEGEND_COL_MIN px
+   per column, so labels like "Lighthouse" fit next to the swatch). */
+#define WIDGET_LEGEND_COL_MIN 96
+
+static inline int
+widget_legend_cols(int view_w) {
+    int cols = view_w / WIDGET_LEGEND_COL_MIN;
+    return cols > 0 ? cols : 1;
+}
+
+/* Draw n items column-major in widget_legend_cols columns, starting at y.
+   Returns the y after the last row. The caller truncates n to the rows that
+   fit the view height. */
 static inline int
 widget_legend(const ui_t *ui, pxl_canvas_t *cnv, int y,
-              const widget_item_t *items, int n, int rows) {
-    assert(ui && cnv && items && n > 0 && rows > 0);
+              const widget_item_t *items, int n) {
+    assert(ui && cnv && items && n > 0);
 
     pxl_rect_t view = pxl_canvas_view(cnv);
 
@@ -122,7 +163,9 @@ widget_legend(const ui_t *ui, pxl_canvas_t *cnv, int y,
     const int line_h = 14;
     const int gap    = 4;
     const int pad    = 4;
-    int col_w = view.w / 2;
+    int cols = widget_legend_cols(view.w);
+    int rows = (n + cols - 1) / cols;
+    int col_w = view.w / cols;
 
     for (int i = 0; i < n; i++) {
         int col = i / rows, row = i % rows;
