@@ -92,11 +92,86 @@ test_from_tilemap(void) {
     assert(rlk_mask_from_tilemap(&m2, &tm, &props, F_WALKABLE, NULL) == RLK_E_INVALID);
 }
 
+/* flood / components: 4-connected labelling over weight > 0 cells. */
+
+static void
+test_flood_components(void) {
+    static int labels[MW * MH];
+    static int stack[MW * MH];
+
+    fixture();
+    memset(m_buf, 255, sizeof(m_buf));
+    for (int j = 0; j < MH; j++)
+        m_buf[(size_t)j * MW + 4] = 0;  /* vertical wall at i = 4 */
+
+    /* The wall splits the mask into two halves of 24 cells. */
+    int ncomp = rlk_mask_components(&g_mask, labels, stack);
+    assert(ncomp == 2);
+    for (int j = 0; j < MH; j++) {
+        assert(labels[(size_t)j * MW + 4] == 0);  /* wall excluded */
+        assert(labels[(size_t)j * MW + 0] == 1);
+        assert(labels[(size_t)j * MW + 7] == 2);
+    }
+
+    /* Flood from world (10,20) = cell (0,0): left half only, label 7. */
+    memset(labels, 0, sizeof(labels));
+    int n = rlk_mask_flood(&g_mask, 10, 20, 7, labels, stack);
+    assert(n == (MW / 2) * MH);
+    assert(labels[0] == 7);
+    assert(labels[MW * MH - 1] == 0);  /* right half untouched */
+    for (int j = 0; j < MH; j++)
+        assert(labels[(size_t)j * MW + 4] == 0);
+
+    /* Flood from an excluded or outside cell reaches nothing. */
+    memset(labels, 0, sizeof(labels));
+    assert(rlk_mask_flood(&g_mask, 10 + 4 * 2, 20, 3, labels, stack) == 0);
+    assert(rlk_mask_flood(&g_mask, 0, 0, 3, labels, stack) == 0);
+    assert(labels[0] == 0);
+
+    /* Single-cell component. */
+    memset(m_buf, 0, sizeof(m_buf));
+    m_buf[3 * MW + 2] = 128;
+    assert(rlk_mask_components(&g_mask, labels, stack) == 1);
+    assert(labels[3 * MW + 2] == 1);
+    assert(labels[0] == 0);
+}
+
+/* Example from the rlk_mask_flood banner. */
+
+static void
+test_example_rlk_mask_flood(void) {
+    fixture();
+    memset(m_buf, 255, sizeof(m_buf));  /* all cells allowed */
+    int labels[MW * MH], stack[MW * MH];
+    memset(labels, 0, sizeof(labels));
+    int n = rlk_mask_flood(&g_mask, 10, 20, 1, labels, stack);
+    assert(n == MW * MH);
+    assert(labels[0] == 1);
+    assert(labels[MW * MH - 1] == 1);
+}
+
+/* Example from the rlk_mask_components banner. */
+
+static void
+test_example_rlk_mask_components(void) {
+    fixture();
+    memset(m_buf, 255, sizeof(m_buf));
+    m_buf[0] = 0;  /* one excluded cell */
+    int labels[MW * MH], stack[MW * MH];
+    int ncomp = rlk_mask_components(&g_mask, labels, stack);
+    assert(ncomp == 1);
+    assert(labels[0] == 0);
+    assert(labels[1] == 1);
+}
+
 /* Main */
 
 int
 main(void) {
     test_sample_allows();
     test_from_tilemap();
+    test_flood_components();
+    test_example_rlk_mask_flood();
+    test_example_rlk_mask_components();
     return 0;
 }

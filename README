@@ -47,6 +47,7 @@ Headers:
     geom.h             # Rect (region) + lattice (grid geometry on world)
     grid.h             # Coarse float grid with bilinear sampling
     mask.h             # Uint8 mask (weight, density, visibility) + constructors
+                       # + 4-connected flood fill / component labelling (rlk_mask_flood, rlk_mask_components)
     poi.h              # Points of Interest (anchor, bbox, type, seed)
     scatter.h          # Stateless jittered-grid scatter (one point per cell)
     tilemap.h          # Tile grid over a world rect + tile props + line drawing

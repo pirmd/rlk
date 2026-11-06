@@ -10,6 +10,7 @@
 #include <string.h>
 
 #include "gen_internal.h"
+#include "mask.h"
 
 /* Walkable land for connectivity: same set as the road mask of demo_world
    (no water, rock, house or void). */
@@ -167,35 +168,31 @@ tilemap_gen_stats(const tilemap_gen_t *gen, tilemap_gen_stats_t *st,
         stream[i] = gen->tm.tiles[i].type;
     st->compress_ratio = (float)lzss_bits(stream, n) / (8.0f * (float)n);
 
-    /* Connected walkable components (4-connected flood fill) */
-    memset(scratch, 0, (size_t)n);
+    /* Connected walkable components (4-connected, via rlk_mask_components) */
+    {
+        static uint8_t wbuf[TM_W * TM_H];
+        static int labels[TM_W * TM_H];
+        static int fstack[TM_W * TM_H];
+        uint8_t wflags[TILE_COUNT];
+        for (int t = 0; t < TILE_COUNT; t++)
+            wflags[t] = (uint8_t)(tilemap_gen_walkable((uint8_t)t) ? 1 : 0);
+        rlk_tile_props_t wprops = { .flags = wflags, .ntypes = TILE_COUNT };
+        rlk_mask_t wm = { .lattice = rlk_tilemap_lattice(&gen->tm), .weights = wbuf };
+        assert(rlk_mask_from_tilemap(&wm, &gen->tm, &wprops, 1, NULL) == RLK_OK);
+        st->n_components = rlk_mask_components(&wm, labels, fstack);
+        static int hist[TM_W * TM_H + 1];
+        memset(hist, 0, (size_t)(st->n_components + 1) * sizeof(int));
+        for (int i = 0; i < n; i++)
+            if (labels[i] > 0)
+                hist[labels[i]]++;
+        st->largest_component = 0;
+        for (int c = 1; c <= st->n_components; c++)
+            if (hist[c] > st->largest_component)
+                st->largest_component = hist[c];
+    }
+
     static const int d4[4][2] = { {1,0}, {-1,0}, {0,1}, {0,-1} };
     int stack[TM_W * TM_H];
-    for (int i = 0; i < n; i++) {
-        if (scratch[i] || !tilemap_gen_walkable(rlk_tilemap_get(&gen->tm, i % TM_W, i / TM_W)->type))
-            continue;
-        int top = 0, size = 0;
-        stack[top++] = i;
-        scratch[i] = 1;
-        while (top > 0) {
-            int c = stack[--top];
-            size++;
-            int cx = c % TM_W, cy = c / TM_W;
-            for (int k = 0; k < 4; k++) {
-                int nx = cx + d4[k][0], ny = cy + d4[k][1];
-                if (nx < 0 || nx >= TM_W || ny < 0 || ny >= TM_H)
-                    continue;
-                int ni = ny * TM_W + nx;
-                if (scratch[ni] || !tilemap_gen_walkable(rlk_tilemap_get(&gen->tm, nx, ny)->type))
-                    continue;
-                scratch[ni] = 1;
-                stack[top++] = ni;
-            }
-        }
-        st->n_components++;
-        if (size > st->largest_component)
-            st->largest_component = size;
-    }
 
     /* Spatial diversity: number of 4-connected same-type patches. */
     memset(scratch, 0, (size_t)n);
