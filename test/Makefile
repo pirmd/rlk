@@ -1,22 +1,24 @@
 # rlk - Unit tests
 
-TST  = test_tilemap test_fmath test_geom test_hash test_noise test_err test_wg test_wg_region test_wg_drain test_wg_hydro test_wg_rivers test_wg_relief test_ca test_bsp test_grid test_drain test_hydro test_mask test_slope test_path test_fov test_poi test_wg_poi
+TST  = test_err test_hash test_noise test_fmath
+TST += test_geom test_grid test_mask test_poi test_tilemap
+TST += test_slope test_drain test_hydro
+TST += test_path
+TST += test_fov
+TST += test_wg test_wg_region test_wg_drain test_wg_hydro test_wg_relief test_wg_rivers test_wg_poi
+TST += test_ca test_bsp
 
 RLK_DIR=..
 
 include $(RLK_DIR)/Makefile.inc
 
 CFLAGS  += $(RLK_CFLAGS)
-CFLAGS  += -I.
-
 LDFLAGS += $(RLK_LDLIBS)
 
-all: test
-
-test: $(TST)
-	@for t in $(TST); do \
-		./$${t} >/dev/null || { echo "$${t} FAIL"; exit 1; }; \
-		done
+all: $(TST)
+.for t in $(TST)
+	@./$(t) >/dev/null || { echo "$(t) FAIL"; exit 1; }
+.endfor
 
 .for t in $(TST)
 $(t): $(t).c $(RLK_DIR)/librlk.a
@@ -25,10 +27,13 @@ $(t): $(t).c $(RLK_DIR)/librlk.a
 
 ${TST}: $(RLK_HDR)
 
+$(RLK_DIR)/librlk.a:
+	$(MAKE) -C $(RLK_DIR)
+
 lint:
 	$(CC) -Werror -fsyntax-only $(CFLAGS) $(CFLAGS_LINT) *.c
 
 clean:
-	@rm -f $(TST)
+	rm -f $(TST)
 
-.PHONY: all test lint clean
+.PHONY: all lint clean

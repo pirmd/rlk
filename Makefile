@@ -2,7 +2,11 @@
 
 LIB = librlk.a
 
-SRC = wg.c wg_region.c wg_drain.c wg_hydro.c wg_rivers.c wg_relief.c ca.c bsp.c drain.c hydro.c wg_poi.c path.c fov.c
+SRC  = drain.c hydro.c
+SRC += path.c
+SRC += fov.c
+SRC += wg.c wg_region.c wg_drain.c wg_hydro.c wg_relief.c wg_rivers.c wg_poi.c
+SRC += ca.c bsp.c
 
 include Makefile.inc
 
@@ -23,13 +27,13 @@ lint:
 	$(MAKE) -C demo lint
 
 test: $(LIB)
-	$(MAKE) -C test test
+	$(MAKE) -C test
+	$(MAKE) -C demo test
 
 demo: $(LIB)
 	$(MAKE) -C demo
 
-check: test
-	$(MAKE) -C demo check
+check: lint test
 
 clean:
 	rm -f *.o $(LIB)

@@ -6,17 +6,20 @@ Minimal C99 library for 2D grid-based games and roguelikes.
 Build:
   make                  # Build librlk.a
   make lint             # Static analysis (-Werror): lib + test/ + demo/
-  make test             # Unit tests only (lib, test/)
-  make demo             # Compile+link all demos (incl. PXL viewer)
-  make check            # All validation: unit tests + demo-side tests (demo/test_*.c,
-                        # e.g. test_tilemap_gen golden non-regression), headless
+  make test             # Build + run all tests: unit (test/) + demo harnesses (demo/)
+  make demo             # Compile+link the demos (PXL viewer only when PXL_DIR is set)
+  make check            # Full validation: lint + test
   make clean            # Remove build artifacts
 
 Note: the Makefiles use BSD make. On Linux, use `bmake` or `pmake`
 instead of GNU make.
 
 Configuration:
-  Copy config.mk.example to config.mk to customize CFLAGS or library paths.
+  Main configuration is defined in Makefile.inc. Copy config.mk.example to
+  config.mk to customize CFLAGS, PXL_DIR or library paths. PXL_DIR is unset
+  by default: without it, `make demo` builds only the standalone text demos;
+  set it to a pxl checkout (e.g. PXL_DIR = ../../pxl) to also build the PXL
+  viewer demo_viewer, with PXL_BACKEND = x11 (default) or sdl.
 
 Design:
   - Zero allocation: the lib never calls malloc/free; all buffers are

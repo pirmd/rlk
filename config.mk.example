@@ -8,6 +8,21 @@ CFLAGS = -O0 -g -std=c99 -Wall -Wextra
 # For release builds:
 # CFLAGS = -O2 -std=c99 -Wall -Wextra
 
+# PXL_DIR — location of the sibling pxl project (read from this config.mk;
+# the environment or the bmake command line work too). Optional: setting
+# it enables the PXL viewer demo (demo/demo_viewer.c); without it,
+# `make demo` builds only the standalone text demos. A set PXL_DIR must
+# point at a valid pxl checkout (its Makefile.inc is included, hard):
+# PXL_DIR = ../../pxl        # sibling checkout
+# PXL_DIR = /path/to/pxl     # anywhere else
+
+# PXL_BACKEND — rendering backend of the pxl viewer demo: x11 (default)
+# or sdl. Only used when PXL_DIR is set. This config.mk is read before
+# pxl's Makefile.inc (which does `PXL_BACKEND ?= x11`), so a value here
+# wins; pxl's own config.mk, the environment or `bmake PXL_BACKEND=sdl`
+# work too (command line always wins):
+# PXL_BACKEND = sdl
+
 # Determinism contract: never add -ffast-math here. Makefile.inc appends
 # -ffp-contract=off (no implicit FMA) after this file, so a custom CFLAGS
 # cannot drop it.
