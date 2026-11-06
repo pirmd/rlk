@@ -48,6 +48,7 @@ Headers:
     grid.h             # Coarse float grid with bilinear sampling
     mask.h             # Uint8 mask (weight, density, visibility) + constructors
     poi.h              # Points of Interest (anchor, bbox, type, seed)
+    scatter.h          # Stateless jittered-grid scatter (one point per cell)
     tilemap.h          # Tile grid over a world rect + tile props + line drawing
 
   Domain terrain:
@@ -78,7 +79,8 @@ Headers:
 Demos (demo/ is flat like the lib; prefixes mark generic vs demo-only blocks):
   demo/demo_viewer.c         # Generic PXL viewer: demo_viewer [world|ca|bsp|nav] [seed]
   demo/demo_world.c          # Fantasy map in terminal: tilemap_gen + local ca/bsp content per POI
-                             # (headless ASCII + stats; roads/POI networks = game logic, not demoed)
+                             # + rlk_scatter_mask points on the forest mask (headless ASCII + stats;
+                             # roads/POI networks = game logic, not demoed)
   demo/demo_gis.c            # GIS export: .asc/.pgm rasters for external tools (QGIS/GDAL, terminal);
                              # the same stage/field probes are browsable interactively in demo_viewer
   demo/test_tilemap_gen.c    # Golden map stats per seed, run by `make check` (test_* = harness)

@@ -42,6 +42,7 @@
 enum {
     DEMO_F_WALKABLE    = 1 << 0,
     DEMO_F_TRANSPARENT = 1 << 1,
+    DEMO_F_FOREST      = 1 << 2,   /* tree/pine/forest-floor tiles: scatter mask */
 };
 
 /* Ready-made writer for the ca/bsp `write` callback: wall/floor by biome

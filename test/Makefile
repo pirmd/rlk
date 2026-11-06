@@ -1,7 +1,7 @@
 # rlk - Unit tests
 
 TST  = test_err test_hash test_noise test_fmath
-TST += test_geom test_grid test_mask test_poi test_tilemap
+TST += test_geom test_grid test_mask test_poi test_scatter test_tilemap
 TST += test_slope test_drain test_hydro
 TST += test_path test_path_distance
 TST += test_fov

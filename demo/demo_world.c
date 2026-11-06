@@ -83,6 +83,13 @@ poi_char(const rlk_poi_t *p) {
     }
 }
 
+/* Per-type flags for the forest scatter mask (game-defined bits). */
+static const uint8_t TILE_FLAGS[TILE_DEMO_COUNT] = {
+    [TILE_TREE]  = DEMO_F_FOREST,
+    [TILE_PINE]  = DEMO_F_FOREST,
+    [TILE_FLOOR] = DEMO_F_FOREST,
+};
+
 /* Count POIs of `type` (user-land helper: the list is POD, count inline). */
 static int
 poi_count(const rlk_poi_list_t *l, uint8_t type) {
@@ -107,9 +114,9 @@ poi_window(const rlk_poi_t *p, rlk_rect_t map, rlk_lattice_t *out) {
 
 /* --- DISPLAY ------------------------------------------------------------- */
 
-/* Render the tilemap and POI anchors as ASCII. */
+/* Render the tilemap, scattered points and POI anchors as ASCII. */
 static void
-display(const tilemap_gen_t *gen) {
+display(const tilemap_gen_t *gen, const rlk_scatter_point_t *pts, int npts) {
     static char scr[TM_W * TM_H];
     const rlk_tilemap_t *tm = &gen->tm;
     for (int y = 0; y < tm->h; y++) {
@@ -118,6 +125,11 @@ display(const tilemap_gen_t *gen) {
             int ti = (t->type < TILE_DEMO_COUNT) ? t->type : TILE_VOID;
             scr[(size_t)y * (size_t)tm->w + (size_t)x] = TILE_CHARS[ti];
         }
+    }
+    for (int i = 0; i < npts; i++) {
+        int x = (int)pts[i].px, y = (int)pts[i].py;
+        if (x >= 0 && x < tm->w && y >= 0 && y < tm->h)
+            scr[(size_t)y * (size_t)tm->w + (size_t)x] = 'v';
     }
     for (int i = 0; i < gen->pois.n; i++) {
         const rlk_poi_t *p = &gen->pois.pois[i];
@@ -149,6 +161,8 @@ main(int argc, char **argv) {
     static uint8_t bsp_grid[MAX_POI_SZ * MAX_POI_SZ];
     static rlk_bsp_node_t bsp_nodes[RLK_BSP_MAX_NODES];
     static rlk_poi_t done_buf[256];
+    static uint8_t forest_buf[TM_W * TM_H];
+    static rlk_scatter_point_t scat_buf[TM_W * TM_H];
 
     static const demo_wallfloor_t wf_ca = {
         .wall_type = TILE_CAVE_WALL, .floor_type = TILE_CAVE_FLOOR,
@@ -165,6 +179,16 @@ main(int argc, char **argv) {
     tilemap_gen_stats(&gen, &stats, stat_scratch);
     tilemap_gen_stats_print(&gen, &stats);
     printf("\n");
+
+    /* 1c. Stateless scatter: one jittered point per forest tile, derived
+       from (seed, salt) only — no state, recomputable per window. */
+    rlk_mask_t forest = { .lattice = rlk_tilemap_lattice(&gen.tm),
+                          .weights = forest_buf };
+    rlk_tile_props_t props = { .flags = TILE_FLAGS, .ntypes = TILE_DEMO_COUNT };
+    if (rlk_mask_from_tilemap(&forest, &gen.tm, &props, DEMO_F_FOREST, NULL) != RLK_OK)
+        return 1;
+    int n_scat = rlk_scatter_mask(scat_buf, TM_W * TM_H, forest.lattice, &forest,
+                                  seed, 0x5CA77EULL);
 
     /* 2. Local content per cave/dungeon POI. Processed POIs are reserved so
        later bboxes write nothing inside them (overlap rule of poi.h). */
@@ -237,13 +261,15 @@ main(int argc, char **argv) {
         for (int x = 0; x < TM_W; x++)
             if (rlk_tilemap_get(&gen.tm, x, y)->type == TILE_SINKHOLE)
                 n_sink++;
-    printf("Sinkholes: %d\n\n", n_sink);
+    printf("Sinkholes: %d\n", n_sink);
+    printf("Scatter: %d jittered points on forest tiles (rlk_scatter_mask)\n\n", n_scat);
 
-    display(&gen);
+    display(&gen, scat_buf, n_scat);
 
     printf("\nLegend:\n");
     printf("  ~ water  r river  l lake  ^ rock  : sand  * snow  %% marsh\n");
     printf("  . grass  , floor  T tree  P pine  H house  o plaza  w dock  O sinkhole\n");
+    printf("  v scatter point (rlk_scatter_mask on the forest mask)\n");
     printf("  # cave wall  c cave floor  D dungeon wall  d dungeon floor\n");
     printf("  C/D/V/T/h/M/W/P/L/F POI anchors\n");
 

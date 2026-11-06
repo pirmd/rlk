@@ -30,7 +30,7 @@ one domain, several domains:
                        poi = detectors)
                        structure generators: ca, bsp (windowed, POI-driven)
  ---------------------------------------------------------------
- BASE        data      geom, grid, mask, poi, tilemap
+ BASE        data      geom, grid, mask, poi, scatter, tilemap
              core      err, hash, fmath, noise
 ```
 

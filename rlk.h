@@ -18,6 +18,7 @@
 #include "grid.h"
 #include "mask.h"
 #include "poi.h"
+#include "scatter.h"
 #include "tilemap.h"
 
 /* Domain terrain */

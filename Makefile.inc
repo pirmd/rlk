@@ -26,6 +26,7 @@ CFLAGS_LINT += -Wconversion
 RLK_HDR = $(RLK_DIR)/err.h $(RLK_DIR)/hash.h $(RLK_DIR)/fmath.h \
 	$(RLK_DIR)/noise.h $(RLK_DIR)/geom.h \
 	$(RLK_DIR)/grid.h $(RLK_DIR)/mask.h $(RLK_DIR)/poi.h \
+	$(RLK_DIR)/scatter.h \
 	$(RLK_DIR)/tilemap.h $(RLK_DIR)/slope.h $(RLK_DIR)/drain.h \
 	$(RLK_DIR)/hydro.h $(RLK_DIR)/path.h $(RLK_DIR)/path_distance.h $(RLK_DIR)/fov.h \
 	$(RLK_DIR)/rlk.h \
