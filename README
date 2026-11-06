@@ -57,6 +57,7 @@ Headers:
 
   Domain nav:
     path.h             # A* pathfinding (integer costs, lattice window)
+    path_distance.h    # Multi-source distance field (flow field, nearest source)
 
   Domain vision:
     fov.h              # Field of view (recursive shadowcasting)

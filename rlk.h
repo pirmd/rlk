@@ -27,6 +27,7 @@
 
 /* Domain nav */
 #include "path.h"
+#include "path_distance.h"
 
 /* Domain vision */
 #include "fov.h"

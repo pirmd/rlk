@@ -3,7 +3,7 @@
 LIB = librlk.a
 
 SRC  = drain.c hydro.c
-SRC += path.c
+SRC += path.c path_distance.c
 SRC += fov.c
 SRC += wg.c wg_region.c wg_drain.c wg_hydro.c wg_relief.c wg_rivers.c wg_poi.c
 SRC += ca.c bsp.c

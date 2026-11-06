@@ -22,7 +22,7 @@ one domain, several domains:
                        optional above drain (wg_rivers reads drain only), and
                        both are end-user API because the wg stages take
                        pre-built drain/hydro pointers (two-level generation).
-             nav       path
+             nav       path, path_distance
              vision    fov
              worldgen  pipeline: wg + stages (region = macro-areas from Voronoi
                        cells, drain/hydro = readers of pre-built grids,
