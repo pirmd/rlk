@@ -207,7 +207,7 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
         .hydro = &gen->hydro,
         .slot_slope = D_SLOPE,
         .slot_strahler = D_STRAHLER,
-        .slot_speed = D_SPEED,
+        .slot_speed = RLK_WG_NONE,   /* no demo consumer yet (no Speed viewer mode); D_SPEED slot reserved */
     };
     rlk_wg_add(wg, rlk_wg_hydro(&gen->hydro_stage));
 

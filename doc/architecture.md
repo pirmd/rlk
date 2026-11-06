@@ -243,11 +243,13 @@ opaque to rlk. Extension points, by data density:
   `write`, path cost `fn`). Pure per-tile variation is derived from the
   deterministic hash (seed, x, y) into `variant`, not stored.
 
-Demos (examples, not part of the lib): `demo_viewer.c` (PXL terrain viewer
-over the `tilemap_gen` package: `tilemap_gen.c` + `gen_stages/gen_write/
-gen_post/gen_stats.c`), `demo_world.c` (full world: overworld + POI
-structures + roads, ASCII map, terminal), `test_tilemap_gen.c` (golden map
-stats per seed, non-regression; `report` mode = multi-seed metric table, see
-doc/metrics.md), `demo_dump.c` (raster export .asc/.pgm for
-external tools). Stage/field probes are viewed in `demo_viewer` (PXL modes
-and overlays) or exported by `demo_dump`.
+Demos (examples, not part of the lib; demo/ is flat like the lib, prefixes
+mark generic vs demo-only blocks): `demo_viewer.c` (PXL terrain viewer over
+the tilemap_gen package: tilemap_gen.c + gen_stages/gen_write/gen_post/
+gen_stats.c), `demo_world.c` (overworld map + local ca/bsp content per POI, ASCII,
+terminal; roads/POI networks are game-side composition, not demoed —
+pathfinding is demoed by the nav viewer source), `test_tilemap_gen.c` (golden map stats per
+seed, non-regression, run by `check`; `report` mode = multi-seed metric
+table, see doc/metrics.md), `demo_gis.c` (GIS raster export .asc/.pgm via
+gis_export.h, for external tools such as QGIS/GDAL). Stage/field probes are
+viewed in `demo_viewer` (PXL modes and overlays) or exported by `demo_gis`.

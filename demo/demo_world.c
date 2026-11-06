@@ -1,24 +1,24 @@
 /*
- * World composition demo (level 4/5): POI -> local generators -> roads.
+ * World map demo (terminal): tilemap_gen map + local POI content.
  *
- * Shows the full world pipeline on top of tilemap_gen:
+ * Shows the rlk worldgen pipeline headless on one seed:
  *   1. tilemap_gen generates the overworld (terrain, rivers, POIs)
  *   2. each cave/dungeon POI gets local content (rlk_ca_fill / rlk_bsp_fill)
- *      over its bbox; already-processed POIs are reserved (no overlap);
- *      each generator emits a spawn entrance POI (gen + 1) that grows the
- *      queue as a marker only (gen > MAX_GEN is not generated)
- *   3. roads connect surface sites (villages, towers) as a minimum spanning
- *      tree (Prim over squared distances), outposts link to the nearest site:
- *      walkability mask + slope-weighted cost table + rlk_path_find/draw
+ *      over its bbox; already-processed POIs are reserved (no overlap)
+ *   3. map stats + ASCII render
  *
- * Terminal-only: no PXL dependency. Prints map stats and the ASCII map.
- * Stage/field probes live in demo_viewer (PXL modes/overlays) and
- * demo_dump (raster export).
+ * Deliberately NOT here: roads between POIs, POI networks, spawn-driven
+ * composition — that is game logic (a pirr-style world layer, see the
+ * wg_network backlog item), not an rlk demo. Pathfinding is demoed in
+ * demo_viewer (nav source) and exercised headless by test_tilemap_gen
+ * (playability probe). Stage/field probes: demo_viewer modes/overlays.
+ * Raster export for GIS tools: demo_gis.
+ *
+ * Terminal-only: no PXL dependency.
  *
  *   demo_world [seed]
  */
 
-#include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,12 +27,6 @@
 #include "tilemap_gen.h"
 
 #define SEED 42ULL
-
-/* POIs with gen > MAX_GEN are markers only (entrances), not generated. */
-#define MAX_GEN 0
-
-/* Elevation [0,1] represents 128 tiles of relief (same role as gdaldem -s). */
-#define ELEV_ZSCALE 128.0f
 
 /* Largest POI bbox is the dungeon: 32x32 tiles. */
 #define MAX_POI_SZ 32
@@ -44,16 +38,15 @@ enum {
     TILE_CAVE_FLOOR,
     TILE_DUNGEON_WALL,
     TILE_DUNGEON_FLOOR,
-    TILE_ROAD,
     TILE_DEMO_COUNT
 };
 
 static const char TILE_CHARS[TILE_DEMO_COUNT] = {
     [TILE_VOID]         = ' ',
     [TILE_GRASS]        = '.',
-    [TILE_WATER]        = '~',
-    [TILE_RIVER]        = 'r',
-    [TILE_LAKE]         = 'l',
+    [TILE_WATER]         = '~',
+    [TILE_RIVER]         = 'r',
+    [TILE_LAKE]          = 'l',
     [TILE_ROCK]         = '^',
     [TILE_SAND]         = ':',
     [TILE_TREE]         = 'T',
@@ -69,48 +62,12 @@ static const char TILE_CHARS[TILE_DEMO_COUNT] = {
     [TILE_CAVE_FLOOR]   = 'c',
     [TILE_DUNGEON_WALL] = 'D',
     [TILE_DUNGEON_FLOOR]= 'd',
-    [TILE_ROAD]         = '=',
 };
 
-/* Walkability: water and generated site interiors are not walkable, so
-   roads avoid rivers and POI areas. */
-static const uint8_t TILE_FLAGS[TILE_DEMO_COUNT] = {
-    [TILE_VOID]          = 0,
-    [TILE_GRASS]         = DEMO_F_WALKABLE | DEMO_F_TRANSPARENT,
-    [TILE_WATER]         = DEMO_F_TRANSPARENT,
-    [TILE_RIVER]         = DEMO_F_TRANSPARENT,
-    [TILE_LAKE]          = DEMO_F_TRANSPARENT,
-    [TILE_ROCK]          = 0,
-    [TILE_SAND]          = DEMO_F_WALKABLE | DEMO_F_TRANSPARENT,
-    [TILE_TREE]          = DEMO_F_WALKABLE | DEMO_F_TRANSPARENT,
-    [TILE_SNOW]          = DEMO_F_WALKABLE | DEMO_F_TRANSPARENT,
-    [TILE_MARSH]         = DEMO_F_WALKABLE | DEMO_F_TRANSPARENT,
-    [TILE_FLOOR]         = DEMO_F_WALKABLE | DEMO_F_TRANSPARENT,
-    [TILE_PINE]          = DEMO_F_WALKABLE | DEMO_F_TRANSPARENT,
-    [TILE_HOUSE]         = 0,
-    [TILE_PLAZA]         = DEMO_F_WALKABLE | DEMO_F_TRANSPARENT,
-    [TILE_DOCK]          = DEMO_F_WALKABLE | DEMO_F_TRANSPARENT,
-    [TILE_SINKHOLE]      = DEMO_F_WALKABLE | DEMO_F_TRANSPARENT,
-    [TILE_CAVE_WALL]     = 0,
-    [TILE_CAVE_FLOOR]    = DEMO_F_TRANSPARENT,
-    [TILE_DUNGEON_WALL]  = 0,
-    [TILE_DUNGEON_FLOOR] = DEMO_F_TRANSPARENT,
-    [TILE_ROAD]          = DEMO_F_WALKABLE | DEMO_F_TRANSPARENT,
-};
-
-static const rlk_tile_props_t TILE_PROPS = { .flags = TILE_FLAGS, .ntypes = TILE_DEMO_COUNT };
-
-/* --- Local POI types (entrance markers emitted by ca/bsp) ---------------- */
-
-enum {
-    POI_CAVE_ENTR = POI_KIND_COUNT,
-    POI_DUNGEON_ENTR,
-};
+/* --- Local POI char (anchors only; ca/bsp entrances are not re-marked) ---- */
 
 static char
 poi_char(const rlk_poi_t *p) {
-    if (p->gen > MAX_GEN)
-        return '>';
     switch (p->type) {
     case POI_CAVE:       return 'C';
     case POI_DUNGEON:    return 'D';
@@ -173,73 +130,6 @@ display(const tilemap_gen_t *gen) {
     }
 }
 
-/* Squared euclidean distance between two POI anchors (MST edge weight). */
-static int
-poi_d2(const rlk_poi_t *pa, const rlk_poi_t *pb) {
-    int dx = pb->x - pa->x, dy = pb->y - pa->y;
-    return dx * dx + dy * dy;
-}
-
-/* Snap (x,y) to the nearest walkable tile: Chebyshev rings scanned in a
-   fixed order, so the result is deterministic. Returns 1 if found.
-   POI anchors often sit on a non-walkable tile (HOUSE, site interior);
-   starting the path from the nearest walkable tile fixes the "Not found"
-   routes (bug noted 2026-10-30). */
-static int
-snap_walkable(const rlk_mask_t *walk, int x, int y, int *out_x, int *out_y) {
-    if (rlk_mask_allows(walk, x, y)) {
-        *out_x = x;
-        *out_y = y;
-        return 1;
-    }
-    for (int r = 1; r < TM_W + TM_H; r++) {
-        for (int dy = -r; dy <= r; dy++) {
-            for (int dx = -r; dx <= r; dx++) {
-                if (dx != -r && dx != r && dy != -r && dy != r)
-                    continue;   /* ring cells only */
-                int nx = x + dx, ny = y + dy;
-                if (nx < 0 || nx >= TM_W || ny < 0 || ny >= TM_H)
-                    continue;
-                if (rlk_mask_allows(walk, nx, ny)) {
-                    *out_x = nx;
-                    *out_y = ny;
-                    return 1;
-                }
-            }
-        }
-    }
-    return 0;
-}
-
-/* Draw one road between two POI anchors over the cost table, snapping each
-   anchor to the nearest walkable tile first. Returns the path length, or
-   -1 if no path was found. */
-static int
-road_draw(const rlk_path_cost_t *cost, const rlk_mask_t *walk,
-          rlk_path_scratch_t *scr,
-          rlk_tilemap_t *tm, int *path_buf, int cap,
-          const rlk_poi_t *pa, const rlk_poi_t *pb) {
-    int ax, ay, bx, by;
-    if (!snap_walkable(walk, pa->x, pa->y, &ax, &ay) ||
-        !snap_walkable(walk, pb->x, pb->y, &bx, &by)) {
-        printf("Road (%d,%d) -> (%d,%d): no walkable tile near an anchor\n",
-               pa->x, pa->y, pb->x, pb->y);
-        return -1;
-    }
-    int n = 0;
-    rlk_err_t err = rlk_path_find(cost, scr, ax, ay, bx, by,
-                                  path_buf, cap, &n);
-    if (err != RLK_OK) {
-        printf("Road (%d,%d) -> (%d,%d): %s\n",
-               ax, ay, bx, by, rlk_err_to_string(err));
-        return -1;
-    }
-    rlk_path_draw(tm, path_buf, n, 1, (rlk_tile_t){ .type = TILE_ROAD });
-    printf("Road (%d,%d) -> (%d,%d): %d steps%s\n", ax, ay, bx, by, n,
-           (ax != pa->x || ay != pa->y || bx != pb->x || by != pb->y) ? " (snapped)" : "");
-    return n;
-}
-
 /* --- MAIN ---------------------------------------------------------------- */
 
 int
@@ -259,19 +149,6 @@ main(int argc, char **argv) {
     static uint8_t bsp_grid[MAX_POI_SZ * MAX_POI_SZ];
     static rlk_bsp_node_t bsp_nodes[RLK_BSP_MAX_NODES];
     static rlk_poi_t done_buf[256];
-    static uint8_t walk_buf[TM_W * TM_H];
-    static uint8_t cost_buf[TM_W * TM_H];
-    static int p_g[TM_W * TM_H];
-    static int p_parent[TM_W * TM_H];
-    static int p_heap[TM_W * TM_H];
-    static int p_heap_pos[TM_W * TM_H];
-    static int p_f[TM_W * TM_H];
-    static uint8_t p_closed[TM_W * TM_H];
-    static int path_buf[2 * TM_W * TM_H];
-    static int sites[256];
-    static uint8_t tree_in[256];   /* Prim MST: in-tree flags */
-    static int tree_d2[256];       /* Prim MST: best edge weight per site */
-    static int tree_from[256];     /* Prim MST: parent site per site */
 
     static const demo_wallfloor_t wf_ca = {
         .wall_type = TILE_CAVE_WALL, .floor_type = TILE_CAVE_FLOOR,
@@ -289,17 +166,14 @@ main(int argc, char **argv) {
     tilemap_gen_stats_print(&gen, &stats);
     printf("\n");
 
-    /* 2. Local generation per POI. Processed POIs are reserved so later
-       bboxes write nothing inside them (overlap rule of poi.h). Spawn
-       entrances are pushed back into the queue (gen + 1): the loop picks
-       them up but only reserves them. */
+    /* 2. Local content per cave/dungeon POI. Processed POIs are reserved so
+       later bboxes write nothing inside them (overlap rule of poi.h). */
     rlk_poi_list_t done = { done_buf, 0, 256 };
     int n_caves = 0, n_dungeons = 0, n_skipped = 0;
     for (int i = 0; i < gen.pois.n; i++) {
         const rlk_poi_t *p = &gen.pois.pois[i];
-        int is_site = (p->type == POI_CAVE || p->type == POI_DUNGEON);
-        if (p->gen > MAX_GEN || !is_site) {
-            rlk_poi_push(&done, p);   /* surface sites and markers: reserve only */
+        if (p->type != POI_CAVE && p->type != POI_DUNGEON) {
+            rlk_poi_push(&done, p);   /* surface sites: reserve only */
             continue;
         }
 
@@ -311,12 +185,6 @@ main(int argc, char **argv) {
             rlk_poi_push(&done, p);
             continue;
         }
-
-        rlk_poi_t spawn = {
-            .type = (p->type == POI_CAVE) ? POI_CAVE_ENTR : POI_DUNGEON_ENTR,
-            .gen = (uint8_t)(p->gen + 1),
-            .level = p->level,
-        };
 
         if (p->type == POI_CAVE) {
             rlk_ca_t ca = {
@@ -330,7 +198,7 @@ main(int argc, char **argv) {
                 .region_ids = ca_regions,
             };
             rlk_ca_init(&ca);
-            rlk_ca_fill(&ca, &win, &gen.tm, NULL, &done, &spawn);
+            rlk_ca_fill(&ca, &win, &gen.tm, NULL, &done, NULL);
             n_caves++;
         } else {
             rlk_bsp_t bsp = {
@@ -341,110 +209,17 @@ main(int argc, char **argv) {
                 .nodes = bsp_nodes,
             };
             rlk_bsp_init(&bsp);
-            rlk_bsp_fill(&bsp, &win, &gen.tm, NULL, &done, &spawn);
+            rlk_bsp_fill(&bsp, &win, &gen.tm, NULL, &done, NULL);
             n_dungeons++;
         }
-        if (rlk_poi_push(&gen.pois, &spawn) != RLK_OK)
-            n_skipped++;   /* queue full: entrance marker dropped */
         rlk_poi_push(&done, p);
     }
 
-    /* 3. Roads: MST over surface sites (villages, towers, hamlets, forts):
-       walkability mask + slope cost, then Prim (see below). */
-    rlk_mask_t walkable = { .lattice = rlk_tilemap_lattice(&gen.tm), .weights = walk_buf };
-    rlk_mask_from_tilemap(&walkable, &gen.tm, &TILE_PROPS, DEMO_F_WALKABLE, NULL);
-
-    rlk_lattice_t tl = rlk_tilemap_lattice(&gen.tm);
-    for (int y = 0; y < tl.h; y++) {
-        for (int x = 0; x < tl.w; x++) {
-            int idx = y * tl.w + x;
-            if (!rlk_mask_allows(&walkable, x, y)) {
-                cost_buf[idx] = RLK_PATH_BLOCKED;
-                continue;
-            }
-            int ci, cj;
-            float s = 0.0f;
-            if (rlk_grid_cell_of(&gen.elev_grid, x, y, &ci, &cj))
-                s = rlk_slope_get(&gen.elev_grid, ci, cj, ELEV_ZSCALE);
-            cost_buf[idx] = (uint8_t)rlk_clampf(1.0f + 20.0f * s, 1.0f, 255.0f);
-        }
-    }
-    rlk_path_cost_t cost = { .lattice = tl, .table = cost_buf };
-    rlk_path_scratch_t scr = { p_g, p_parent, p_heap, p_heap_pos, p_f, p_closed };
-
-    int nsites = 0;
-    for (int i = 0; i < gen.pois.n; i++) {
-        const rlk_poi_t *p = &gen.pois.pois[i];
-        if (p->gen != 0) continue;
-        switch (p->type) {
-        case POI_VILLAGE: case POI_TOWER: case POI_HAMLET: case POI_FORT:
-            sites[nsites++] = i;
-            break;
-        default:
-            break;
-        }
-    }
-
-    /* Minimum spanning tree (Prim) over the surface sites — specialist review
-       2026-10-30, game designer: nearest-neighbor pairing gives a graph with
-       dead ends and no hierarchy; an MST connects every site with minimal
-       total length. Edge weight = squared euclidean distance (topology is
-       geometric, the path itself is slope-weighted). O(n^2), n <= 256, no
-       allocation; deterministic (strict < keeps the lowest index on ties). */
-    int n_routes = 0, total_len = 0;
-    if (nsites > 0) {
-        tree_in[0] = 1;
-        for (int b = 0; b < nsites; b++) {
-            tree_d2[b] = poi_d2(&gen.pois.pois[sites[0]], &gen.pois.pois[sites[b]]);
-            tree_from[b] = 0;
-        }
-        for (int e = 1; e < nsites; e++) {
-            int best = -1, best_d2 = INT_MAX;
-            for (int b = 0; b < nsites; b++)
-                if (!tree_in[b] && tree_d2[b] < best_d2) { best_d2 = tree_d2[b]; best = b; }
-            if (best < 0) break;   /* unreachable remainder (complete graph: cannot happen) */
-            tree_in[best] = 1;
-            const rlk_poi_t *pa = &gen.pois.pois[sites[tree_from[best]]];
-            const rlk_poi_t *pb = &gen.pois.pois[sites[best]];
-            int n = road_draw(&cost, &walkable, &scr, &gen.tm, path_buf, TM_W * TM_H, pa, pb);
-            if (n > 0) { n_routes++; total_len += n; }
-            for (int b = 0; b < nsites; b++) {
-                if (tree_in[b]) continue;
-                int d = poi_d2(pb, &gen.pois.pois[sites[b]]);
-                if (d < tree_d2[b]) { tree_d2[b] = d; tree_from[b] = best; }
-            }
-        }
-    }
-
-    /* 3b. POI network: each outpost (mine, mill, port, lighthouse) links to
-       its nearest settlement in the tree — commerce routes mine -> village
-       -> port (specialist review 2026-10-30, game designer). */
-    for (int i = 0; i < gen.pois.n && nsites > 0; i++) {
-        const rlk_poi_t *p = &gen.pois.pois[i];
-        if (p->gen != 0)
-            continue;
-        switch (p->type) {
-        case POI_MINE: case POI_MILL: case POI_PORT: case POI_LIGHTHOUSE:
-            break;
-        default:
-            continue;
-        }
-        int best = -1, best_d2 = INT_MAX;
-        for (int b = 0; b < nsites; b++) {
-            const rlk_poi_t *pb = &gen.pois.pois[sites[b]];
-            int d2 = poi_d2(p, pb);
-            if (d2 < best_d2) { best_d2 = d2; best = b; }
-        }
-        const rlk_poi_t *pb = &gen.pois.pois[sites[best]];
-        int n = road_draw(&cost, &walkable, &scr, &gen.tm, path_buf, TM_W * TM_H, p, pb);
-        if (n > 0) { n_routes++; total_len += n; }
-    }
-
     /* Output. */
-    printf("\n=== World composition (tilemap_gen + POI loop + roads) ===\n");
+    printf("\n=== World map (tilemap_gen + local POI content) ===\n");
     printf("Seed: %llu  Map: %dx%d\n", (unsigned long long)seed, TM_W, TM_H);
     printf("POIs: %d total (cave %d, dungeon %d, village %d, tower %d, hamlet %d, "
-           "mine %d, mill %d, port %d, lighthouse %d, fort %d, entrances %d)\n",
+           "mine %d, mill %d, port %d, lighthouse %d, fort %d)\n",
            gen.pois.n,
            poi_count(&gen.pois, POI_CAVE),
            poi_count(&gen.pois, POI_DUNGEON),
@@ -455,24 +230,22 @@ main(int argc, char **argv) {
            poi_count(&gen.pois, POI_MILL),
            poi_count(&gen.pois, POI_PORT),
            poi_count(&gen.pois, POI_LIGHTHOUSE),
-           poi_count(&gen.pois, POI_FORT),
-           poi_count(&gen.pois, POI_CAVE_ENTR) + poi_count(&gen.pois, POI_DUNGEON_ENTR));
+           poi_count(&gen.pois, POI_FORT));
     printf("Generated: %d caves, %d dungeons (%d skipped)\n", n_caves, n_dungeons, n_skipped);
     int n_sink = 0;
     for (int y = 0; y < TM_H; y++)
         for (int x = 0; x < TM_W; x++)
             if (rlk_tilemap_get(&gen.tm, x, y)->type == TILE_SINKHOLE)
                 n_sink++;
-    printf("Sinkholes: %d\n", n_sink);
-    printf("Roads: %d routes, %d tiles total\n\n", n_routes, total_len);
+    printf("Sinkholes: %d\n\n", n_sink);
 
     display(&gen);
 
     printf("\nLegend:\n");
     printf("  ~ water  r river  l lake  ^ rock  : sand  * snow  %% marsh\n");
-    printf("  . grass  , floor  T tree  P pine  = road  H house  o plaza  w dock  O sinkhole\n");
+    printf("  . grass  , floor  T tree  P pine  H house  o plaza  w dock  O sinkhole\n");
     printf("  # cave wall  c cave floor  D dungeon wall  d dungeon floor\n");
-    printf("  C/D/V/T/H(h)/M/W/P/L/F POI anchors   > entrance marker\n");
+    printf("  C/D/V/T/h/M/W/P/L/F POI anchors\n");
 
     return 0;
 }

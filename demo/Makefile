@@ -1,4 +1,14 @@
 # rlk - Examples
+#
+# Flat layout, like the lib itself. Prefixes mark what is generic vs demo-only:
+#   demo_*     interactive demo binaries (PXL viewer, terminal world, GIS export)
+#   test_*     harnesses run by `check` (golden non-regression)
+#   tilemap_gen + gen_*    fantasy map generator package (pure demo)
+#   src_*      viewer demo sources (pure demo scenarios)
+#   gis_export.h + source/viewer/viewer_app/widget/font_6x10.h
+#              generic reusable blocks (GIS export helpers, PXL viewer harness) —
+#              candidates for future tools (e.g. pirr map report / HUD probes);
+#              promote only with a real second consumer (YAGNI)
 
 RLK_DIR=..
 PXL_DIR=../../pxl
@@ -15,22 +25,22 @@ CFLAGS  += -I.
 LDFLAGS += $(RLK_LDLIBS)
 LDFLAGS += $(PXL_LDLIBS)
 #
-# --- PXL demos (graphical) -----------------------------------------------
+# --- PXL demo (graphical) --------------------------------------------------
 SRC_PXL = demo_viewer
 DEMO_PXL = $(SRC_PXL)
 
-# --- Text binaries (terminal, no PXL) ------------------------------------
+# --- Text binaries (terminal, no PXL) --------------------------------------
 # all reuse the shared tilemap_gen objects
 # demo_* = interactive demos, test_* = runnable harnesses (run by `check`)
-SRC_TXT = demo_world demo_dump test_tilemap_gen
+SRC_TXT = demo_world demo_gis test_tilemap_gen
 DEMO_TXT = $(SRC_TXT)
 TST_TXT  = test_tilemap_gen
 
 DEMO = $(DEMO_PXL) $(DEMO_TXT)
 
-# Shared demo objects (tilemap_gen split into modules), linked into the demos
+# Shared objects of the tilemap_gen package, linked into the demos
 GEN_SRC = tilemap_gen gen_stages gen_write gen_post gen_stats
-DEMO_OBJ = $(GEN_SRC:=.o)
+GEN_OBJ = $(GEN_SRC:=.o)
 
 all: $(DEMO)
 
@@ -49,8 +59,8 @@ $(PXL_DIR)/libpxl.a:
 
 # PXL demos: link libpxl
 .for d in $(DEMO_PXL)
-$(d): $(d).c $(DEMO_OBJ) $(RLK_DIR)/librlk.a $(PXL_DIR)/libpxl.a
-	$(CC) $(CFLAGS) $(PXL_CFLAGS) $(d).c $(DEMO_OBJ) $(RLK_DIR)/librlk.a $(PXL_DIR)/libpxl.a -o $@ $(RLK_LDLIBS) $(PXL_LDLIBS)
+$(d): $(d).c $(GEN_OBJ) $(RLK_DIR)/librlk.a $(PXL_DIR)/libpxl.a
+	$(CC) $(CFLAGS) $(PXL_CFLAGS) $(d).c $(GEN_OBJ) $(RLK_DIR)/librlk.a $(PXL_DIR)/libpxl.a -o $@ $(RLK_LDLIBS) $(PXL_LDLIBS)
 .endfor
 
 .for o in $(GEN_SRC)
@@ -58,14 +68,17 @@ $(o).o: $(o).c gen_internal.h tilemap_gen.h $(RLK_HDR)
 	$(CC) $(CFLAGS) -c $(o).c -o $@
 .endfor
 
-# Text demos: link librlk + libm only (plus the shared tilemap_gen object)
+# Text demos: link librlk + libm only (plus the shared tilemap_gen objects)
 .for d in $(DEMO_TXT)
-$(d): $(d).c $(DEMO_OBJ) $(RLK_DIR)/librlk.a
-	$(CC) $(CFLAGS) $(d).c $(DEMO_OBJ) -o $@ $(RLK_LDLIBS)
+$(d): $(d).c $(GEN_OBJ) $(RLK_DIR)/librlk.a
+	$(CC) $(CFLAGS) $(d).c $(GEN_OBJ) -o $@ $(RLK_LDLIBS)
 .endfor
 
-$(DEMO_PXL): $(RLK_HDR) $(PXL_HDR)
-$(DEMO_TXT): $(RLK_HDR)
+$(DEMO_PXL): $(RLK_HDR) $(PXL_HDR) source.h viewer.h viewer_app.h widget.h \
+	font_6x10.h src_world.h src_dungeon.h src_nav.h tilemap_gen.h
+demo_world: $(RLK_HDR) tilemap_gen.h gen_internal.h
+demo_gis: $(RLK_HDR) tilemap_gen.h gen_internal.h gis_export.h
+test_tilemap_gen: $(RLK_HDR) tilemap_gen.h gen_internal.h
 
 lint:
 .for d in $(DEMO_PXL) $(DEMO_TXT) $(GEN_SRC)
@@ -73,6 +86,6 @@ lint:
 .endfor
 
 clean:
-	rm -f $(DEMO) $(DEMO_OBJ)
+	rm -f $(DEMO) $(GEN_OBJ)
 
 .PHONY: all lint check clean

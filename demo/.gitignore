@@ -1,4 +1,5 @@
 *.o
 demo_*
+test_tilemap_gen
 !*.c
 !*.h

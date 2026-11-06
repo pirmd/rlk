@@ -71,19 +71,20 @@ Headers:
     ca.h               # Cellular Automata (caves)
     bsp.h              # Binary Space Partitioning (dungeons)
 
-Demos:
+Demos (demo/ is flat like the lib; prefixes mark generic vs demo-only blocks):
   demo/demo_viewer.c         # Generic PXL viewer: demo_viewer [world|ca|bsp|nav] [seed]
-  demo/demo_world.c          # World composition: tilemap_gen + POI loop (ca/bsp) + roads (terminal)
-  demo/test_tilemap_gen.c        # Demo-side test: golden map stats per seed (run by `make check`, not a demo_)
-  demo/demo_dump.c           # Raster export (.asc/.pgm) for external validation (terminal)
-  demo/tilemap_gen.h/c       # Reusable fantasy map generator (noise + drain + wg + POI)
-  demo/widget.h              # UI elements (text, button, menu, legend; header-only)
-  demo/viewer.h              # View bricks (camera, minimap, input snapshot; header-only)
-  demo/source.h              # Viewer source interface (POD + callbacks; header-only)
-  demo/viewer_app.h          # Generic PXL viewer shell over a source (header-only)
-  demo/src_world.h           # World source: tilemap_gen + modes/probes/overlays (header-only)
-  demo/src_dungeon.h         # ca/bsp sources (header-only)
-  demo/src_nav.h             # nav scenario source (header-only)
+  demo/demo_world.c          # Fantasy map in terminal: tilemap_gen + local ca/bsp content per POI
+                             # (headless ASCII + stats; roads/POI networks = game logic, not demoed)
+  demo/demo_gis.c            # GIS export: .asc/.pgm rasters for external tools (QGIS/GDAL, terminal);
+                             # the same stage/field probes are browsable interactively in demo_viewer
+  demo/test_tilemap_gen.c    # Golden map stats per seed, run by `make check` (test_* = harness)
+  demo/tilemap_gen.* gen_*   # Fantasy map generator package (pure demo)
+  demo/src_*.h               # Viewer demo sources (world/dungeon/nav; pure demo)
+  demo/gis_export.h          # Generic GIS export helpers (.asc/.pgm) — reusable as-is by future tools
+  demo/source.h viewer.h viewer_app.h widget.h font_6x10.h
+                             # Generic PXL viewer harness (header-only). Both generic blocks are
+                             # candidates for future tools (e.g. pirr map report / HUD probes),
+                             # promoted only with a real second consumer (YAGNI)
 
 License:
   MIT. See LICENSE.

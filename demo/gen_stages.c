@@ -16,7 +16,7 @@
    weights depend on (x, y), the other field values are irrelevant (their
    bias/gain are 0). Used to bias the coarse drain grid exactly like the tile
    pipeline. */
-float
+static float
 gen_province_mod_field(const tilemap_gen_t *gen, int f, float value, float x, float y) {
     rlk_wg_ctx_t ctx = {0};
     ctx.wg = &gen->wg;

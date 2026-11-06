@@ -46,8 +46,6 @@ typedef struct {
     const rlk_wg_relief_cfg_t *relief_cfg;  /* single source of relief params */
 } gen_relief_ctx_t;
 
-float gen_province_mod_field(const tilemap_gen_t *gen, int f, float value,
-                             float x, float y);
 void  gen_province_stage(rlk_wg_ctx_t *ctx, const void *data);
 void  gen_relief_rain_stage(rlk_wg_ctx_t *ctx, const void *data);
 void  gen_strahler_stage(rlk_wg_ctx_t *ctx, const void *data);
