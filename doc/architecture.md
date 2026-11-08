@@ -239,8 +239,9 @@ opaque to rlk. Extension points, by data density:
   `rlk_mask_from_tilemap`. The tile's own 5-byte record (`type`, `flags`,
   `biome`, `variant`, `depth`) is the game's per-tile attribute.
 - Dense per-tile game data (ownership, fertility, cost): a caller-owned side
-  grid over the same lattice (demo: `cost_buf`, `poi_res`), not a field of
-  the tile -- the tile stays 5 bytes and cache-friendly.
+  grid over the same lattice, addressed with `rlk_tilemap_index` (demo:
+  `cost_buf`, `poi_res`), not a field of the tile -- the tile stays 5 bytes
+  and cache-friendly.
 - Behaviour: callbacks with an opaque `void *data` (wg zone writers, ca/bsp
   `write`, path cost `fn`). Pure per-tile variation is derived from the
   deterministic hash (seed, x, y) into `variant`, not stored.

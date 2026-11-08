@@ -51,15 +51,24 @@ rlk_tilemap_init(rlk_tilemap_t *tm, int w, int h,
     tm->tiles = (rlk_tile_t *)buf;
 }
 
-/* Get a tile pointer at world position (x, y), or NULL if outside the
-   tilemap. World coords: bounds [origin_x, origin_x+w) x [origin_y, origin_y+h). For a tilemap at
-   origin (0,0) this is identical to local coordinates. */
-static inline rlk_tile_t *
-rlk_tilemap_get(const rlk_tilemap_t *tm, int x, int y) {
+/* Linear index of world position (x, y) in tiles[], or -1 if outside the
+   tilemap. World coords: bounds [origin_x, origin_x+w) x [origin_y, origin_y+h).
+   The same index addresses every caller-owned w*h layer parallel to the
+   tilemap. For a tilemap at origin (0,0) it is the local row-major index. */
+static inline int
+rlk_tilemap_index(const rlk_tilemap_t *tm, int x, int y) {
     assert(tm);
     int lx = x - tm->origin_x, ly = y - tm->origin_y;
-    if (lx < 0 || ly < 0 || lx >= tm->w || ly >= tm->h) return NULL;
-    return &tm->tiles[(size_t)ly * (size_t)tm->w + (size_t)lx];
+    if (lx < 0 || ly < 0 || lx >= tm->w || ly >= tm->h) return -1;
+    return ly * tm->w + lx;
+}
+
+/* Get a tile pointer at world position (x, y), or NULL if outside the
+   tilemap. */
+static inline rlk_tile_t *
+rlk_tilemap_get(const rlk_tilemap_t *tm, int x, int y) {
+    int i = rlk_tilemap_index(tm, x, y);
+    return i < 0 ? NULL : &tm->tiles[i];
 }
 
 /* Write a tile at world position (x, y). No effect if outside the tilemap. */

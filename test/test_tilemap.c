@@ -48,6 +48,43 @@ test_rlk_tilemap_lattice(void) {
 	assert(l.origin_x == 10 && l.origin_y == -5);
 }
 
+/* rlk_tilemap_index tests ----------------------------------------------------- */
+
+static void
+test_rlk_tilemap_index(void) {
+	fixture_setup();
+	assert(rlk_tilemap_index(&g_tm, 0, 0) == 0);
+	assert(rlk_tilemap_index(&g_tm, 3, 2) == 2 * FIXTURE_W + 3);
+	assert(rlk_tilemap_index(&g_tm, -1, 0) == -1);
+	assert(rlk_tilemap_index(&g_tm, 0, -1) == -1);
+	assert(rlk_tilemap_index(&g_tm, FIXTURE_W, 0) == -1);
+	assert(rlk_tilemap_index(&g_tm, 0, FIXTURE_H) == -1);
+	/* consistent with get: same address */
+	int i = rlk_tilemap_index(&g_tm, 2, 1);
+	assert(&g_tm.tiles[i] == rlk_tilemap_get(&g_tm, 2, 1));
+	/* a parallel w*h layer is addressed with the same index */
+	uint8_t layer[FIXTURE_W * FIXTURE_H] = {0};
+	layer[i] = 9;
+	assert(layer[rlk_tilemap_index(&g_tm, 2, 1)] == 9);
+	fixture_teardown();
+}
+
+static void
+test_rlk_tilemap_index_origin(void) {
+	rlk_tile_t buf[4 * 3];
+	rlk_tilemap_t tm;
+	rlk_tilemap_init(&tm, 4, 3, buf, sizeof(buf));
+	tm.origin_x = 10;
+	tm.origin_y = -5;   /* covers world [10,14) x [-5,-2) */
+	assert(rlk_tilemap_index(&tm, 10, -5) == 0);
+	assert(rlk_tilemap_index(&tm, 13, -3) == 2 * 4 + 3);
+	assert(rlk_tilemap_index(&tm, 9, -5) == -1);
+	assert(rlk_tilemap_index(&tm, 14, -3) == -1);
+	assert(rlk_tilemap_index(&tm, 10, -2) == -1);
+	assert(&tm.tiles[rlk_tilemap_index(&tm, 12, -4)] ==
+	       rlk_tilemap_get(&tm, 12, -4));
+}
+
 /* rlk_tilemap_contains_lattice tests ------------------------------------------ */
 
 static void
@@ -219,6 +256,8 @@ int
 main(void) {
 	test_rlk_tilemap_init_valid();
 	test_rlk_tilemap_lattice();
+	test_rlk_tilemap_index();
+	test_rlk_tilemap_index_origin();
 	test_rlk_tilemap_contains_lattice();
 
 	/* rlk_tilemap_get tests (includes const assignment test) */

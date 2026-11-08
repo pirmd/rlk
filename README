@@ -51,7 +51,7 @@ Headers:
                        # + 4-connected flood fill / component labelling (rlk_mask_flood, rlk_mask_components)
     poi.h              # Points of Interest (anchor, bbox, type, seed)
     scatter.h          # Stateless jittered-grid scatter (one point per cell)
-    tilemap.h          # Tile grid over a world rect + tile props + line drawing
+    tilemap.h          # Tile grid over a world rect + tile props + index/line drawing
 
   Domain terrain:
     slope.h            # Slope from an elevation grid (Horn 3x3)
