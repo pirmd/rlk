@@ -2,14 +2,13 @@
  * Generic tilemap viewer: one PXL shell (viewer_app.h) over pluggable
  * sources (source.h). Select the source by argv:
  *
- *   demo_viewer [world|ca|bsp|nav] [seed]
+ *   demo_viewer [world|ca|bsp] [seed]
  *
- *   world  tilemap_gen fantasy map (modes: type/biome/variant/depth +
+ *   world  tilemap_gen fantasy map (modes: type/biome/depth +
  *          stages elev/relief/flow/lake/cont/temp/hum/slope/strahler;
- *          overlays: river/detail/POI)
+ *          overlays: river/detail/POI/A* path between two POIs)
  *   ca     cellular-automaton cave (rlk_ca_fill + entrance POI)
  *   bsp    BSP dungeon (rlk_bsp_fill + spawn POI)
- *   nav    in-game navigation scenario (mask + A* + overlays)
  */
 
 #include <stdint.h>
@@ -24,7 +23,6 @@
 #include "viewer_app.h"
 #include "src_world.h"
 #include "src_dungeon.h"
-#include "src_nav.h"
 
 #define W 1024
 #define H 768
@@ -63,15 +61,8 @@ main(int argc, char **argv) {
         src = src_dungeon_source(&dun);
         cfg.src = &src;
         cfg.title = !strcmp(which, "bsp") ? "RLK demo_viewer - bsp" : "RLK demo_viewer - ca";
-    } else if (!strcmp(which, "nav")) {
-        static src_nav_t nav;
-        static src_t src;
-        src_nav_init(&nav);
-        src = src_nav_source(&nav);
-        cfg.src = &src;
-        cfg.title = "RLK demo_viewer - nav";
     } else {
-        fprintf(stderr, "usage: %s [world|ca|bsp|nav] [seed]\n", argv[0]);
+        fprintf(stderr, "usage: %s [world|ca|bsp] [seed]\n", argv[0]);
         return 2;
     }
 

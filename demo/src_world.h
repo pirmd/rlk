@@ -5,9 +5,10 @@
  * src_world - viewer source over tilemap_gen (demo component).
  *
  * The fantasy-world source of demo_viewer: tilemap_gen map with display
- * modes (tile type, biome, variant, depth + generation stages: coarse elev,
+ * modes (tile type, biome, depth + generation stages: coarse elev,
  * final relief, flow accumulation, lake depth, sampled fields cont/temp/hum,
- * hydro slope and Strahler order) and overlays (river network, detail, POI).
+ * hydro slope and Strahler order) and overlays (river network, detail, POI,
+ * A* path between two surface POIs).
  *
  *   static src_world_t w;
  *   src_world_init(&w, seed);
@@ -27,6 +28,7 @@
 #include "grid.h"
 #include "drain.h"
 #include "hash.h"
+#include "path.h"
 #include "tilemap_gen.h"
 
 /* --- PALETTE ------------------------------------------------------------- */
@@ -89,7 +91,6 @@ static const char *const SRC_WORLD_POI_NAMES[POI_KIND_COUNT] = {
 enum {
     W_MODE_TYPE = 0,   /* tile palette by type+variant */
     W_MODE_BIOME,      /* biome id color */
-    W_MODE_VARIANT,    /* variant index, gray ramp */
     W_MODE_DEPTH,      /* tile depth field, blue ramp */
     W_MODE_ELEV,       /* probe: coarse elevation grid (sampled) */
     W_MODE_RELIEF,     /* probe: final per-tile elevation (wg_relief) */
@@ -107,23 +108,105 @@ enum {
     W_OVL_RIVER = 0,   /* wg_rivers mask + floodplain carve */
     W_OVL_DETAIL,      /* per-tile detail marks (Type mode only) */
     W_OVL_POI,         /* POI markers */
+    W_OVL_PATH,        /* A* path between two surface POIs */
     W_OVL_COUNT
 };
 
 #define W_OVL_RIVER_BIT  (1u << W_OVL_RIVER)
 #define W_OVL_DETAIL_BIT (1u << W_OVL_DETAIL)
 #define W_OVL_POI_BIT    (1u << W_OVL_POI)
+#define W_OVL_PATH_BIT   (1u << W_OVL_PATH)
 
 /* --- STATE --------------------------------------------------------------- */
 
 typedef struct {
     tilemap_gen_t gen;
+    /* A* path overlay between two surface POIs (same cost model as the
+       playability probe of test_tilemap_gen) */
+    uint8_t cost[TM_W * TM_H];
+    uint8_t on_path[TM_W * TM_H];
+    int path[2 * TM_W * TM_H];
+    int path_n;
+    int p_g[TM_W * TM_H], p_parent[TM_W * TM_H], p_heap[TM_W * TM_H];
+    int p_heap_pos[TM_W * TM_H], p_f[TM_W * TM_H];
+    uint8_t p_closed[TM_W * TM_H];
 } src_world_t;
+
+/* Nearest walkable tile to (x, y), Chebyshev rings, fixed scan order. */
+static inline int
+world_snap_walkable(const uint8_t *cost, int x, int y, int *ox, int *oy) {
+    for (int r = 0; r < 8; r++) {
+        for (int dy = -r; dy <= r; dy++) {
+            for (int dx = -r; dx <= r; dx++) {
+                if (dx != -r && dx != r && dy != -r && dy != r)
+                    continue;  /* ring only */
+                int nx = x + dx, ny = y + dy;
+                if (nx < 0 || ny < 0 || nx >= TM_W || ny >= TM_H)
+                    continue;
+                if (cost[ny * TM_W + nx] != RLK_PATH_BLOCKED) {
+                    *ox = nx;
+                    *oy = ny;
+                    return 1;
+                }
+            }
+        }
+    }
+    return 0;
+}
+
+/* Compute the path overlay between the first pair of surface settlement
+   POIs (village/tower/hamlet/fort) that connects. path_n = 0 when none. */
+static inline void
+src_world_build_path(src_world_t *w) {
+    assert(w);
+    for (int i = 0; i < TM_W * TM_H; i++)
+        w->cost[i] = tilemap_gen_walkable(w->gen.tm.tiles[i].type)
+                     ? 1 : RLK_PATH_BLOCKED;
+    rlk_path_cost_t pcost = { .lattice = rlk_tilemap_lattice(&w->gen.tm),
+                              .table = w->cost };
+    rlk_path_scratch_t scr = { w->p_g, w->p_parent, w->p_heap, w->p_heap_pos,
+                               w->p_f, w->p_closed };
+
+    int sites[64], nsites = 0;
+    for (int i = 0; i < w->gen.pois.n && nsites < 64; i++) {
+        const rlk_poi_t *p = &w->gen.pois.pois[i];
+        if (p->gen != 0)
+            continue;
+        if (p->type == POI_VILLAGE || p->type == POI_TOWER
+            || p->type == POI_HAMLET || p->type == POI_FORT)
+            sites[nsites++] = i;
+    }
+
+    w->path_n = 0;
+    for (int i = 0; i < TM_W * TM_H; i++)
+        w->on_path[i] = 0;
+    for (int a = 0; a < nsites && w->path_n == 0; a++) {
+        for (int b = a + 1; b < nsites; b++) {
+            int ax, ay, bx, by;
+            if (!world_snap_walkable(w->cost, w->gen.pois.pois[sites[a]].x,
+                                     w->gen.pois.pois[sites[a]].y, &ax, &ay))
+                continue;
+            if (!world_snap_walkable(w->cost, w->gen.pois.pois[sites[b]].x,
+                                     w->gen.pois.pois[sites[b]].y, &bx, &by))
+                continue;
+            if (rlk_path_find(&pcost, &scr, ax, ay, bx, by,
+                              w->path, TM_W * TM_H, &w->path_n) == RLK_OK)
+                break;
+            w->path_n = 0;
+        }
+    }
+    for (int i = 0; i < w->path_n; i++) {
+        int px = w->path[2 * i], py = w->path[2 * i + 1];
+        if (px >= 0 && px < TM_W && py >= 0 && py < TM_H)
+            w->on_path[py * TM_W + px] = 1;
+    }
+}
 
 static inline void
 src_world_init(src_world_t *w, uint64_t seed) {
     assert(w);
     tilemap_gen_generate(&w->gen, seed);
+    src_world_build_path(w);
 }
 
 /* --- COLOR HELPERS ------------------------------------------------------- */
@@ -189,11 +272,6 @@ src_world_color(void *data, int mode, int wx, int wy) {
     switch (mode) {
     case W_MODE_BIOME:
         return tile ? src_world_biome_color(tile->biome) : SRC_WORLD_BG;
-    case W_MODE_VARIANT: {
-        uint8_t v = tile ? (tile->variant & 3) : 0;
-        uint32_t g = 0x30U + (uint32_t)v * 0x40U;
-        return 0xFF000000U | (g << 16) | (g << 8) | g;
-    }
     case W_MODE_DEPTH: {
         uint32_t d = tile ? tile->depth : 0;
         return 0xFF000000U | d;   /* blue ramp 0..255 */
@@ -265,6 +343,12 @@ src_world_color(void *data, int mode, int wx, int wy) {
 static inline uint32_t
 src_world_overlay(void *data, int o, int wx, int wy, uint32_t base) {
     const src_world_t *w = (const src_world_t *)data;
+    if (o == W_OVL_PATH) {
+        if (wx >= 0 && wx < TM_W && wy >= 0 && wy < TM_H
+            && w->on_path[wy * TM_W + wx])
+            return 0xFFFFFF00U;   /* A* path: yellow */
+        return base;
+    }
     if (o != W_OVL_RIVER)
         return base;
     if (wx < 0 || wx >= TM_W || wy < 0 || wy >= TM_H)
@@ -429,12 +513,14 @@ src_world_map_info(char *buf, size_t cap, const void *data) {
         "Size : %d x %d\n"
         "Tiles: %d\n"
         "POIs : %d\n"
+        "Path : %d steps\n"
         "Seed : %llu\n\n"
         "Tab/Sh+Tab: mode\n"
-        "1-3: overlays\n"
+        "1-4: overlays\n"
         "R: new seed",
         TM_W, TM_H, TM_W * TM_H,
         w->gen.pois.n,
+        w->path_n,
         (unsigned long long)w->gen.seed);
 }
 
@@ -518,16 +604,6 @@ src_world_legend(widget_item_t *items, int cap, const void *data,
             n++;
         }
         break;
-    case W_MODE_VARIANT: {
-        static const char *const lbl[4] = { "V0", "V1", "V2", "V3" };
-        for (int i = 0; i < 4 && n < cap; i++) {
-            uint32_t g = 0x30U + (uint32_t)i * 0x40U;
-            items[n].color = 0xFF000000U | (g << 16) | (g << 8) | g;
-            items[n].label = lbl[i];
-            n++;
-        }
-        break;
-    }
     case W_MODE_DEPTH: {
         static const char *const lbl[4] = { "0", "64", "128", "255" };
         for (int i = 0; i < 4 && n < cap; i++) {
@@ -623,6 +699,13 @@ src_world_legend(widget_item_t *items, int cap, const void *data,
         }
     }
 
+    /* Path overlay legend */
+    if ((overlays & W_OVL_PATH_BIT) && n < cap) {
+        items[n].color = 0xFFFFFF00U;
+        items[n].label = "Path";
+        n++;
+    }
+
     return n;
 }
 
@@ -630,6 +713,7 @@ static inline void
 src_world_regen(void *data) {
     src_world_t *w = (src_world_t *)data;
     tilemap_gen_generate(&w->gen, w->gen.seed + 1);
+    src_world_build_path(w);
 }
 
 /* --- SOURCE DESCRIPTOR --------------------------------------------------- */
@@ -639,11 +723,11 @@ src_world_source(src_world_t *w) {
     assert(w);
 
     static const char *const mode_names[W_MODE_COUNT] = {
-        "Type", "Biome", "Var", "Dpth", "Elev", "Rel", "Flow", "Lake",
+        "Type", "Biome", "Dpth", "Elev", "Rel", "Flow", "Lake",
         "Cont", "Temp", "Hum", "Slope", "Str"
     };
     static const char *const overlay_names[W_OVL_COUNT] = {
-        "River", "Detail", "POI"
+        "River", "Detail", "POI", "Path"
     };
 
     src_t s = {
@@ -653,7 +737,8 @@ src_world_source(src_world_t *w) {
         .h = TM_H,
         .bg = SRC_WORLD_BG,
         .def_mode = W_MODE_TYPE,
-        .def_overlays = W_OVL_RIVER_BIT | W_OVL_DETAIL_BIT | W_OVL_POI_BIT,
+        .def_overlays = W_OVL_RIVER_BIT | W_OVL_DETAIL_BIT | W_OVL_POI_BIT
+                        | W_OVL_PATH_BIT,
         .nmodes = W_MODE_COUNT,
         .mode_names = mode_names,
         .color = src_world_color,

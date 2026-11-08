@@ -79,7 +79,8 @@ Headers:
     bsp.h              # Binary Space Partitioning (dungeons)
 
 Demos (demo/ is flat like the lib; prefixes mark generic vs demo-only blocks):
-  demo/demo_viewer.c         # Generic PXL viewer: demo_viewer [world|ca|bsp|nav] [seed]
+  demo/demo_viewer.c         # Generic PXL viewer: demo_viewer [world|ca|bsp] [seed]
+                             # (world: stage probes + river/POI/A* path overlays)
   demo/demo_world.c          # Fantasy map in terminal: tilemap_gen + local ca/bsp content per POI
                              # + rlk_scatter_mask points on the forest mask (headless ASCII + stats;
                              # roads/POI networks = game logic, not demoed)
@@ -87,12 +88,10 @@ Demos (demo/ is flat like the lib; prefixes mark generic vs demo-only blocks):
                              # the same stage/field probes are browsable interactively in demo_viewer
   demo/test_tilemap_gen.c    # Golden map stats per seed, run by `make check` (test_* = harness)
   demo/tilemap_gen.* gen_*   # Fantasy map generator package (pure demo)
-  demo/src_*.h               # Viewer demo sources (world/dungeon/nav; pure demo)
-  demo/gis_export.h          # Generic GIS export helpers (.asc/.pgm) — reusable as-is by future tools
+  demo/src_*.h               # Viewer demo sources (world/dungeon; pure demo)
+  demo/gis_export.h          # Generic GIS export helpers (.asc/.pgm)
   demo/source.h viewer.h viewer_app.h widget.h font_6x10.h
-                             # Generic PXL viewer harness (header-only). Both generic blocks are
-                             # candidates for future tools (e.g. pirr map report / HUD probes),
-                             # promoted only with a real second consumer (YAGNI)
+                             # Generic PXL viewer harness (header-only).
 
 License:
   MIT. See LICENSE.

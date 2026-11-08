@@ -50,7 +50,7 @@ $(d): $(d).c $(GEN_OBJ) $(RLK_DIR)/librlk.a $(PXL_DIR)/libpxl.a
 .endfor
 
 $(DEMO_PXL): $(RLK_HDR) $(PXL_HDR) source.h viewer.h viewer_app.h widget.h \
-	font_6x10.h src_world.h src_dungeon.h src_nav.h tilemap_gen.h
+	font_6x10.h src_world.h src_dungeon.h tilemap_gen.h
 .endif
 
 test_tilemap_gen: $(RLK_HDR) tilemap_gen.h gen_internal.h
