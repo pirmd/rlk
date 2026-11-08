@@ -9,6 +9,8 @@
  * writing it (contract, not checked).
  */
 
+#include <stdint.h>
+
 #include "wg.h"
 
 /* Relief stage configuration; treat as const after construction. */

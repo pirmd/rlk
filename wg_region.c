@@ -1,6 +1,9 @@
 #include "wg_region.h"
 
 #include <assert.h>
+#include <math.h>
+#include <stdint.h>
+
 #include "hash.h"
 #include "fmath.h"
 #include "noise.h"

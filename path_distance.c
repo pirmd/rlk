@@ -1,6 +1,8 @@
 #include "path_distance.h"
+#include "geom.h"
 
 #include <assert.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #define RLK_PATH_DISTANCE_MAX_CELLS (1 << 20) /* window size limit (asserted): keeps g below RLK_PATH_DISTANCE_INF */

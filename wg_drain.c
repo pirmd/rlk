@@ -1,6 +1,9 @@
 #include "wg_drain.h"
+#include "geom.h"
 
 #include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
 
 static void
 drain_stage(rlk_wg_ctx_t *ctx, const void *data) {

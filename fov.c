@@ -1,5 +1,6 @@
 #include "fov.h"
 
+#include <assert.h>
 #include <string.h>
 
 /* Octant multipliers: cell = origin + (dx*m[0] + dy*m[1], dx*m[2] + dy*m[3])

@@ -1,6 +1,8 @@
 #include "bsp.h"
+#include "geom.h"
 #include "hash.h"
 
+#include <assert.h>
 #include <string.h>
 
 /* Internal cell states for the BSP grid buffer. */

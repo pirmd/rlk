@@ -1,6 +1,9 @@
 #include "wg_hydro.h"
+#include "geom.h"
 
 #include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
 
 static void
 hydro_stage(rlk_wg_ctx_t *ctx, const void *data) {

@@ -1,7 +1,10 @@
 #include "wg_rivers.h"
+#include "geom.h"
 
 #include <assert.h>
 #include <math.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #include "fmath.h"
 

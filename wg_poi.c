@@ -1,8 +1,10 @@
 #include "wg_poi.h"
+#include "geom.h"
 
 #include <assert.h>
 #include <float.h>
 #include <stddef.h>
+#include <stdint.h>
 
 static void
 poi_stage(rlk_wg_ctx_t *ctx, const void *data) {

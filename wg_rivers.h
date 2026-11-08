@@ -12,6 +12,8 @@
  * wg_relief via river_carve_field) must be registered AFTER this stage.
  */
 
+#include <stdint.h>
+
 #include "wg.h"
 #include "drain.h"
 #include "grid.h"

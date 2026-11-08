@@ -1,7 +1,9 @@
 #include "wg.h"
 #include <assert.h>
 #include <math.h>
+#include <stddef.h>
 
+#include "fmath.h"
 #include "hash.h"
 
 /* --- SETUP --------------------------------------------------------------- */

@@ -10,6 +10,7 @@
 
 #include <stdint.h>
 
+#include "geom.h"
 #include "mask.h"
 #include "poi.h"
 #include "tilemap.h"

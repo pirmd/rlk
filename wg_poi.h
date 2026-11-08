@@ -27,6 +27,8 @@
  *   rlk_wg_fill(&wg, 0, 0, &tm);  // fills tm AND pois
  */
 
+#include <stdint.h>
+
 #include "wg.h"
 #include "poi.h"
 #include "drain.h"

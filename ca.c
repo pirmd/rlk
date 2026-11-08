@@ -1,8 +1,11 @@
 #include "ca.h"
 #include "fmath.h"
+#include "geom.h"
 #include "hash.h"
 
+#include <assert.h>
 #include <limits.h>
+#include <stddef.h>
 
 /* Internal cell states for the CA grid buffer (grid[] holds 0 or 1). */
 enum { CA_WALL, CA_FLOOR };

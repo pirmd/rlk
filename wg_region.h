@@ -11,6 +11,8 @@
  * chunk-independent, no state.
  */
 
+#include <stdint.h>
+
 #include "wg.h"
 
 #define RLK_WG_REGION_MAX_TYPES 8  /* max distinct region types */

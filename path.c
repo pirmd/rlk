@@ -1,6 +1,8 @@
 #include "path.h"
 
+#include <assert.h>
 #include <limits.h>
+#include <stddef.h>
 
 #define RLK_PATH_MAX_CELLS (1 << 20) /* window size limit (asserted): keeps path costs below the unreachable sentinel */
 

@@ -11,6 +11,8 @@
  * directly and leaves the slot RLK_WG_NONE.
  */
 
+#include <stdint.h>
+
 #include "wg.h"
 #include "drain.h"
 #include "grid.h"

@@ -12,6 +12,8 @@
  * read as 0.
  */
 
+#include <stdint.h>
+
 #include "wg.h"
 #include "hydro.h"
 
