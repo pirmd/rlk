@@ -20,6 +20,7 @@
 #include "poi.h"
 #include "scatter.h"
 #include "tilemap.h"
+#include "entity.h"
 
 /* Domain terrain */
 #include "slope.h"

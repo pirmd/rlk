@@ -30,7 +30,7 @@ one domain, several domains:
                        poi = detectors)
                        structure generators: ca, bsp (windowed, POI-driven)
  ---------------------------------------------------------------
- BASE        data      geom, grid, mask, poi, scatter, tilemap
+ BASE        data      entity, geom, grid, mask, poi, scatter, tilemap
              core      err, hash, fmath, noise
 ```
 
@@ -233,6 +233,8 @@ opaque to rlk. Extension points, by data density:
 - Sparse per-instance data (structures, quests): the POI list. The index in
   a persistent `rlk_poi_list_t` is the stable id of a POI, so a parallel
   caller array `game_poi[cap]` indexed by that id carries any extra state.
+- Positioned actors: `rlk_entity_list_t` (entity.h) — same stable-id pattern
+  (list index = id), with push/get/move against the tilemap.
 - Per-tile semantics: `rlk_tile_props_t` (per-type flags table) consumed by
   `rlk_mask_from_tilemap`. The tile's own 5-byte record (`type`, `flags`,
   `biome`, `variant`, `depth`) is the game's per-tile attribute.

@@ -1,10 +1,8 @@
-# Requires bmake (NetBSD make). Native on OpenBSD, `apt install bmake` on Linux.
+# Requires bmake (NetBSD make).
 
 RLK_DIR ?= .
 
-# User configuration: config.mk owns CC/CFLAGS when present. The explicit
-# default is required because OpenBSD sys.mk predefines CFLAGS, which would
-# defeat a `CFLAGS ?=` default.
+# User configuration: config.mk owns CC/CFLAGS when present.
 .if exists($(RLK_DIR)/config.mk)
 .include "$(RLK_DIR)/config.mk"
 .else
@@ -27,7 +25,7 @@ RLK_HDR = $(RLK_DIR)/err.h $(RLK_DIR)/hash.h $(RLK_DIR)/fmath.h \
 	$(RLK_DIR)/noise.h $(RLK_DIR)/geom.h \
 	$(RLK_DIR)/grid.h $(RLK_DIR)/mask.h $(RLK_DIR)/poi.h \
 	$(RLK_DIR)/scatter.h \
-	$(RLK_DIR)/tilemap.h $(RLK_DIR)/slope.h $(RLK_DIR)/drain.h \
+	$(RLK_DIR)/tilemap.h $(RLK_DIR)/entity.h $(RLK_DIR)/slope.h $(RLK_DIR)/drain.h \
 	$(RLK_DIR)/hydro.h $(RLK_DIR)/path.h $(RLK_DIR)/path_distance.h $(RLK_DIR)/fov.h \
 	$(RLK_DIR)/rlk.h \
 	$(RLK_DIR)/wg.h $(RLK_DIR)/wg_region.h \

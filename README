@@ -44,6 +44,7 @@ Headers:
     noise.h            # Noise generation (value, perlin, fbm)
 
   Base — data (POD, caller-owned):
+    entity.h           # Generic entities: fixed-capacity list (push/get/move)
     geom.h             # Rect (region) + lattice (grid geometry on world)
     grid.h             # Coarse float grid with bilinear sampling
     mask.h             # Uint8 mask (weight, density, visibility) + constructors
