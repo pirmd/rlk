@@ -11,6 +11,10 @@ TST += test_ca test_bsp
 
 RLK_DIR=..
 
+-include $(RLK_DIR)/config.mk
+CC     ?= cc
+CFLAGS ?= -O0 -g -std=c99 -Wall -Wextra
+
 include $(RLK_DIR)/Makefile.inc
 
 CFLAGS  += $(RLK_CFLAGS)

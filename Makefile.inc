@@ -2,14 +2,6 @@
 
 RLK_DIR ?= .
 
-# User configuration: config.mk owns CC/CFLAGS when present.
-.if exists($(RLK_DIR)/config.mk)
-.include "$(RLK_DIR)/config.mk"
-.else
-CC     = cc
-CFLAGS = -O0 -g -std=c99 -Wall -Wextra
-.endif
-
 # Determinism contract: no -ffast-math, no implicit FMA.
 RLK_CFLAGS = -I$(RLK_DIR) -ffp-contract=off
 RLK_LDLIBS = -L$(RLK_DIR) -lrlk -lm

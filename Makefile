@@ -8,6 +8,10 @@ SRC += fov.c
 SRC += wg.c wg_region.c wg_drain.c wg_hydro.c wg_relief.c wg_rivers.c wg_poi.c
 SRC += ca.c bsp.c
 
+-include config.mk
+CC     ?= cc
+CFLAGS ?= -O0 -g -std=c99 -Wall -Wextra
+
 include Makefile.inc
 
 CFLAGS += $(RLK_CFLAGS)
