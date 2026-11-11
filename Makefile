@@ -7,6 +7,7 @@ SRC += path.c path_distance.c
 SRC += fov.c
 SRC += wg.c wg_region.c wg_drain.c wg_hydro.c wg_relief.c wg_rivers.c wg_poi.c
 SRC += ca.c bsp.c
+SRC += world.c
 
 -include config.mk
 CC     ?= cc

@@ -78,6 +78,11 @@ Headers:
     ca.h               # Cellular Automata (caves)
     bsp.h              # Binary Space Partitioning (dungeons)
 
+  Chunked persistent world (on top of the wg pipeline):
+    world.h            # rlk_world_t: macro field query without fine generation,
+                       # on-demand chunks (seam-coherent), tile diffs applied on
+                       # regeneration, save/load (seed + diffs), predicate search
+
 Demos (demo/ is flat like the lib; prefixes mark generic vs demo-only blocks):
   demo/demo_viewer.c         # Generic PXL viewer: demo_viewer [world|ca|bsp] [seed]
                              # (world: stage probes + river/POI/A* path overlays)

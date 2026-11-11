@@ -47,4 +47,7 @@
 #include "ca.h"
 #include "bsp.h"
 
+/* Chunked persistent world on top of the wg pipeline */
+#include "world.h"
+
 #endif /* RLK_H */

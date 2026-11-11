@@ -29,6 +29,8 @@ one domain, several domains:
                        rivers = river mask + carve, relief = elevation,
                        poi = detectors)
                        structure generators: ca, bsp (windowed, POI-driven)
+                       world: chunked persistent world on a wg (macro field
+                       query, on-demand chunks, tile diffs + save/load)
  ---------------------------------------------------------------
  BASE        data      entity, geom, grid, mask, poi, scatter, tilemap
              core      err, hash, fmath, noise
@@ -193,6 +195,28 @@ at a time and only edits `ctx->field[]`, while `ca`/`bsp` generate over a
 whole window and stamp `cellsize x cellsize` tile blocks into a tilemap.
 Keeping them out of the pipeline keeps the pipeline pure and chunkable;
 the composition stays in user land (recipe below).
+
+## Chunked persistent world (world.h)
+
+`rlk_world_t` wraps a wg pipeline into a world addressed by world tile, for
+games that explore beyond one fixed map:
+
+- Macro layer: `rlk_world_field` samples any wg field at a tile centre, at
+  any scale, without generating fine tiles — the macro layer is a pure
+  function of (seed, wx, wy), so no macro cache is needed. Macro products
+  over a window (drain/hydro) stay composed in user land
+  (`rlk_wg_fill_grid` + `rlk_drain_build`).
+- Fine layer: `rlk_world_fill` generates one chunk (chunk x chunk tiles)
+  into a caller tilemap, `rlk_world_tile` evaluates a single tile. Seams
+  are coherent by construction: a tile depends only on (seed, wx, wy),
+  whatever chunk contains it.
+- Persistence: `rlk_world_set` records a tile diff, applied on every
+  (re)generation of the tile or its chunk. `rlk_world_save`/`rlk_world_load`
+  serialize (seed + chunk + diffs), native-endian; the wg config is code,
+  not data, and is rebuilt by the game before load.
+- Queries: `rlk_world_find` scans a rect with a caller predicate (e.g.
+  spawn "flat + near water" via `rlk_world_field` and neighbouring
+  `rlk_world_tile`), first match row-major.
 
 ## Memory model
 

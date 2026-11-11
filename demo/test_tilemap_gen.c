@@ -338,6 +338,59 @@ report(int nseeds) {
            acc / (double)npairs, npairs);
 }
 
+/* Chunked regeneration through rlk_world must be seam-coherent with a
+   single-shot rlk_wg_fill over the same map: same tile whatever chunk
+   contains it, and a recorded diff is applied when its chunk regenerates.
+   The reference is a direct rlk_wg_fill, not gen->tm: tilemap_gen_generate
+   additionally stamps local POI content (post pass), which is map-level
+   composition outside the chunkable wg fill. */
+static int
+check_chunked(tilemap_gen_t *gen) {
+    enum { CH = 32 };   /* TM_W=128, TM_H=96: an exact 4x3 grid of chunks */
+    static rlk_tile_t chunk_buf[CH * CH], ref_buf[TM_W * TM_H];
+    static rlk_world_diff_t diffs[16];
+    rlk_world_t w = {0};
+    w.wg = gen->wg;    /* stage data pointers reference gen (static in main) */
+    rlk_world_init(&w, CH, diffs, 16);
+
+    const int saved_npoi = gen->pois.n;
+    gen->pois.n = 0;   /* the fill re-runs the POI stage; keep stats unaffected */
+
+    rlk_tilemap_t ref;
+    rlk_tilemap_init(&ref, TM_W, TM_H, ref_buf, sizeof ref_buf);
+    rlk_wg_fill(&w.wg, 0, 0, &ref);
+
+    const int dx = 5, dy = 7;   /* inside chunk (0,0) */
+    const rlk_tile_t marker = { .type = 250, .flags = 1 };
+    if (rlk_world_set(&w, dx, dy, marker) != RLK_OK)
+        return 1;
+
+    int bad = 0;
+    for (int cy = 0; cy * CH < TM_H; cy++)
+        for (int cx = 0; cx * CH < TM_W; cx++) {
+            rlk_tilemap_t ctm;
+            rlk_tilemap_init(&ctm, CH, CH, chunk_buf, sizeof chunk_buf);
+            rlk_world_fill(&w, cx, cy, &ctm);
+            for (int y = 0; y < CH; y++)
+                for (int x = 0; x < CH; x++) {
+                    const int wx = cx * CH + x, wy = cy * CH + y;
+                    const rlk_tile_t *a = rlk_tilemap_get(&ctm, wx, wy);
+                    const rlk_tile_t *b = rlk_tilemap_get(&ref, wx, wy);
+                    if (!a || !b) { bad = 1; continue; }
+                    if (wx == dx && wy == dy) {
+                        if (a->type != marker.type || a->flags != marker.flags)
+                            bad = 1;
+                    } else if (a->type != b->type || a->flags != b->flags ||
+                               a->biome != b->biome || a->variant != b->variant ||
+                               a->depth != b->depth) {
+                        bad = 1;
+                    }
+                }
+        }
+    gen->pois.n = saved_npoi;
+    return bad;
+}
+
 int
 main(int argc, char **argv) {
     int record = argc > 1 && !strcmp(argv[1], "record");
@@ -393,6 +446,11 @@ main(int argc, char **argv) {
                st.n_poi[0] + st.n_poi[1] + st.n_poi[2] + st.n_poi[3] + st.n_poi[4]
                + st.n_poi[5] + st.n_poi[6] + st.n_poi[7] + st.n_poi[8] + st.n_poi[9]);
         n_bad += bad;
+        if (check_chunked(&gen)) {
+            printf("seed %-5llu FAIL chunked coherence (rlk_world)\n",
+                   (unsigned long long)SEEDS[s]);
+            n_bad++;
+        }
     }
     if (n_bad) {
         printf("test_tilemap_gen: %d/%d seeds failed (golden drift or non-determinism)\n",

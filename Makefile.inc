@@ -23,4 +23,4 @@ RLK_HDR = $(RLK_DIR)/err.h $(RLK_DIR)/hash.h $(RLK_DIR)/fmath.h \
 	$(RLK_DIR)/wg.h $(RLK_DIR)/wg_region.h \
 	$(RLK_DIR)/wg_drain.h $(RLK_DIR)/wg_hydro.h \
 	$(RLK_DIR)/wg_rivers.h $(RLK_DIR)/wg_relief.h \
-	$(RLK_DIR)/wg_poi.h $(RLK_DIR)/ca.h $(RLK_DIR)/bsp.h
+	$(RLK_DIR)/wg_poi.h $(RLK_DIR)/ca.h $(RLK_DIR)/bsp.h $(RLK_DIR)/world.h

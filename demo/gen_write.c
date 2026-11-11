@@ -29,7 +29,7 @@ estuary_mask(const rlk_wg_ctx_t *ctx, float mask) {
 void
 gen_capture_write(const rlk_wg_ctx_t *ctx, const void *data, rlk_tile_t *out) {
     const tilemap_gen_capture_t *cap = (const tilemap_gen_capture_t *)data;
-    const int idx = ctx->y * TM_W + ctx->x;
+    const int idx = ctx->wy * TM_W + ctx->wx;   /* world coords: chunkable (map at origin 0,0) */
     cap->gen->final_elev[idx] = ctx->field[F_ELEV];
     cap->gen->river_mask_buf[idx] = ctx->field[F_RIVER_MASK];
     cap->gen->river_carve_buf[idx] = ctx->field[F_RIVER_CARVE];
@@ -40,7 +40,7 @@ gen_capture_write(const rlk_wg_ctx_t *ctx, const void *data, rlk_tile_t *out) {
    mid-tone, sedimentary keeps the depth-based ramp. */
 static uint8_t
 rock_variant(const rlk_wg_ctx_t *ctx, const tilemap_gen_t *gen, float depth) {
-    int idx = ctx->y * TM_W + ctx->x;
+    int idx = ctx->wy * TM_W + ctx->wx;   /* world coords: chunkable */
     switch (gen->litho_buf[idx]) {
     case LITHO_EFFUSIVE:  return 3;
     case LITHO_INTRUSIVE: return (uint8_t)(depth * 2.0f);

@@ -184,7 +184,7 @@ gen_geology_stage(rlk_wg_ctx_t *ctx, const void *data) {
     float bias = gen_geo_eval(gen, (float)ctx->wx, (float)ctx->wy,
                               ctx->field[F_ELEV], &st, &litho);
     ctx->field[F_ELEV] += bias;
-    int idx = ctx->y * TM_W + ctx->x;
+    int idx = ctx->wy * TM_W + ctx->wx;   /* world coords: chunkable (map at origin 0,0) */
     gen->struct_buf[idx] = st;
     gen->litho_buf[idx] = litho;
 }
@@ -322,7 +322,7 @@ gen_poi_terrain_stage(rlk_wg_ctx_t *ctx, const void *data) {
     tilemap_gen_t *gen = (tilemap_gen_t *)data;
     if (ctx->wx < 0 || ctx->wx >= TM_W || ctx->wy < 0 || ctx->wy >= TM_H)
         return;
-    const int idx = ctx->y * TM_W + ctx->x;
+    const int idx = ctx->wy * TM_W + ctx->wx;   /* world coords: chunkable */
     for (size_t k = 0; k < POI_DET_COUNT; k++) {
         const poi_det_t *d = &POI_DETS[k];
         float elev = ctx->field[F_ELEV];

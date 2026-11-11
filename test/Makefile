@@ -8,6 +8,7 @@ TST += test_path test_path_distance
 TST += test_fov
 TST += test_wg test_wg_region test_wg_drain test_wg_hydro test_wg_relief test_wg_rivers test_wg_poi
 TST += test_ca test_bsp
+TST += test_world
 
 RLK_DIR=..
 
