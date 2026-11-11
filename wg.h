@@ -39,6 +39,10 @@ typedef struct rlk_wg_ctx_s rlk_wg_ctx_t;
 
 /* --- FIELDS -------------------------------------------------------------- */
 
+/* Output range of a sampled field: FBM in [0,1), RIDGE in [0,1] — raw fields
+   need no clamping. Stages writing derived slots should stay in [0,1] too:
+   clamp with rlk_clampf where summed amplitudes can overflow. */
+
 typedef enum {
     RLK_WG_FBM,     /* fractal Brownian motion */
     RLK_WG_RIDGE    /* ridged multifractal (1-|2v-1|), for mountain ridges */
