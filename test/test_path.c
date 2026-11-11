@@ -371,6 +371,56 @@ test_example_rlk_path_find(void) {
     assert(g_path[2 * (n - 1)] == 7 && g_path[2 * (n - 1) + 1] == 7);
 }
 
+/* rlk_path_snap tests ------------------------------------------------------- */
+
+static int
+snap_fn(void *ctx, int x, int y) {
+    (void)ctx;
+    return (x == 5 && y == 5) ? 1 : RLK_PATH_BLOCKED;
+}
+
+static void
+test_snap_self(void) {
+    fixture();
+    int ox, oy;
+    /* the cell itself is tried first (r = 0) */
+    assert(rlk_path_snap(&g_cost, 3, 4, 8, &ox, &oy) == RLK_OK);
+    assert(ox == 3 && oy == 4);
+    assert(rlk_path_snap(&g_cost, 0, 0, 0, &ox, &oy) == RLK_OK);
+    assert(ox == 0 && oy == 0);
+}
+
+static void
+test_snap_ring_order(void) {
+    fixture();
+    /* block the 3x3 around (4,4): nearest walkable is on ring r = 2,
+       scanned dy then dx, ring cells only: first hit is (2,2) */
+    for (int j = 3; j <= 5; j++)
+        for (int i = 3; i <= 5; i++)
+            g_table[j * PW + i] = RLK_PATH_BLOCKED;
+    int ox, oy;
+    assert(rlk_path_snap(&g_cost, 4, 4, 8, &ox, &oy) == RLK_OK);
+    assert(ox == 2 && oy == 2);
+    /* radius too small to escape the blocked area */
+    assert(rlk_path_snap(&g_cost, 4, 4, 1, &ox, &oy) == RLK_E_NOTFOUND);
+}
+
+static void
+test_snap_all_blocked_and_callback(void) {
+    fixture();
+    int ox, oy;
+    memset(g_table, RLK_PATH_BLOCKED, sizeof(g_table));
+    assert(rlk_path_snap(&g_cost, 4, 4, 8, &ox, &oy) == RLK_E_NOTFOUND);
+
+    /* callback source: only (5,5) enterable */
+    g_cost.table = NULL;
+    g_cost.fn = snap_fn;
+    g_cost.ctx = NULL;
+    assert(rlk_path_snap(&g_cost, 4, 4, 8, &ox, &oy) == RLK_OK);
+    assert(ox == 5 && oy == 5);
+    assert(rlk_path_snap(&g_cost, 4, 4, 0, &ox, &oy) == RLK_E_NOTFOUND);
+}
+
 /* Main */
 
 int
@@ -390,6 +440,9 @@ main(void) {
     test_callback();
     test_callback_clamp();
     test_path_draw();
+    test_snap_self();
+    test_snap_ring_order();
+    test_snap_all_blocked_and_callback();
     test_example_rlk_path_find();
     return 0;
 }

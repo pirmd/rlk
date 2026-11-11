@@ -132,28 +132,6 @@ typedef struct {
     uint8_t p_closed[TM_W * TM_H];
 } src_world_t;
 
-/* Nearest walkable tile to (x, y), Chebyshev rings, fixed scan order. */
-static inline int
-world_snap_walkable(const uint8_t *cost, int x, int y, int *ox, int *oy) {
-    for (int r = 0; r < 8; r++) {
-        for (int dy = -r; dy <= r; dy++) {
-            for (int dx = -r; dx <= r; dx++) {
-                if (dx != -r && dx != r && dy != -r && dy != r)
-                    continue;  /* ring only */
-                int nx = x + dx, ny = y + dy;
-                if (nx < 0 || ny < 0 || nx >= TM_W || ny >= TM_H)
-                    continue;
-                if (cost[ny * TM_W + nx] != RLK_PATH_BLOCKED) {
-                    *ox = nx;
-                    *oy = ny;
-                    return 1;
-                }
-            }
-        }
-    }
-    return 0;
-}
-
 /* Compute the path overlay between the first pair of surface settlement
    POIs (village/tower/hamlet/fort) that connects. path_n = 0 when none. */
 static inline void
@@ -183,11 +161,11 @@ src_world_build_path(src_world_t *w) {
     for (int a = 0; a < nsites && w->path_n == 0; a++) {
         for (int b = a + 1; b < nsites; b++) {
             int ax, ay, bx, by;
-            if (!world_snap_walkable(w->cost, w->gen.pois.pois[sites[a]].x,
-                                     w->gen.pois.pois[sites[a]].y, &ax, &ay))
+            if (rlk_path_snap(&pcost, w->gen.pois.pois[sites[a]].x,
+                              w->gen.pois.pois[sites[a]].y, 8, &ax, &ay) != RLK_OK)
                 continue;
-            if (!world_snap_walkable(w->cost, w->gen.pois.pois[sites[b]].x,
-                                     w->gen.pois.pois[sites[b]].y, &bx, &by))
+            if (rlk_path_snap(&pcost, w->gen.pois.pois[sites[b]].x,
+                              w->gen.pois.pois[sites[b]].y, 8, &bx, &by) != RLK_OK)
                 continue;
             if (rlk_path_find(&pcost, &scr, ax, ay, bx, by,
                               w->path, TM_W * TM_H, &w->path_n) == RLK_OK)

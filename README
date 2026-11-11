@@ -59,7 +59,8 @@ Headers:
     hydro.h            # Derived hydrology: slope, Strahler order, speed
 
   Domain nav:
-    path.h             # A* pathfinding (integer costs, lattice window)
+    path.h             # A* pathfinding (integer costs, lattice window) +
+                       # rlk_path_snap (nearest enterable cell, ring scan)
     path_distance.h    # Multi-source distance field (flow field, nearest source)
 
   Domain vision:

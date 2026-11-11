@@ -181,28 +181,6 @@ record_one(uint64_t seed, const tilemap_gen_stats_t *st) {
    Not part of the golden check. */
 #define REPORT_MAX_SEEDS 64
 
-/* Nearest walkable tile to (x, y), Chebyshev rings, fixed scan order. */
-static int
-snap_walkable(const uint8_t *cost, int x, int y, int *ox, int *oy) {
-    for (int r = 0; r < 8; r++) {
-        for (int dy = -r; dy <= r; dy++) {
-            for (int dx = -r; dx <= r; dx++) {
-                if (dx != -r && dx != r && dy != -r && dy != r)
-                    continue;  /* ring only */
-                int nx = x + dx, ny = y + dy;
-                if (nx < 0 || ny < 0 || nx >= TM_W || ny >= TM_H)
-                    continue;
-                if (cost[ny * TM_W + nx] != RLK_PATH_BLOCKED) {
-                    *ox = nx;
-                    *oy = ny;
-                    return 1;
-                }
-            }
-        }
-    }
-    return 0;
-}
-
 /* Playability proxy: over all pairs of surface settlement POIs (village,
    tower, hamlet, fort), snap anchors to the nearest walkable tile and try
    rlk_path_find. Returns reach fraction in *reach, mean path length (tiles)
@@ -236,11 +214,11 @@ playability(const tilemap_gen_t *gen, float *reach, float *mean_len) {
     for (int a = 0; a < nsites; a++) {
         for (int b = a + 1; b < nsites; b++) {
             int ax, ay, bx, by;
-            if (!snap_walkable(cost, gen->pois.pois[sites[a]].x,
-                               gen->pois.pois[sites[a]].y, &ax, &ay))
+            if (rlk_path_snap(&pcost, gen->pois.pois[sites[a]].x,
+                              gen->pois.pois[sites[a]].y, 8, &ax, &ay) != RLK_OK)
                 continue;
-            if (!snap_walkable(cost, gen->pois.pois[sites[b]].x,
-                               gen->pois.pois[sites[b]].y, &bx, &by))
+            if (rlk_path_snap(&pcost, gen->pois.pois[sites[b]].x,
+                              gen->pois.pois[sites[b]].y, 8, &bx, &by) != RLK_OK)
                 continue;
             int n = 0;
             pairs++;

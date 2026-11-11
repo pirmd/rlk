@@ -29,6 +29,16 @@ cost_at(const rlk_path_cost_t *c, int i, int j) {
     return v;
 }
 
+/* Enter cost at world tile (x, y): RLK_PATH_BLOCKED if outside the window. */
+static int
+cost_at_world(const rlk_path_cost_t *c, int x, int y) {
+    const rlk_lattice_t *l = &c->lattice;
+    const int i = x - l->origin_x, j = y - l->origin_y;
+    if (i < 0 || j < 0 || i >= l->w || j >= l->h)
+        return RLK_PATH_BLOCKED;
+    return cost_at(c, i, j);
+}
+
 /* --- Binary heap ordered by stored f = g + octile(cell, goal) ------------ */
 
 typedef struct {
@@ -215,6 +225,29 @@ rlk_path_find(const rlk_path_cost_t *cost, rlk_path_scratch_t *scr,
     }
     *out_len = len;
     return RLK_OK;
+}
+
+rlk_err_t
+rlk_path_snap(const rlk_path_cost_t *cost, int x, int y,
+              int max_r, int *out_x, int *out_y) {
+    assert(cost && out_x && out_y);
+    assert(cost->lattice.w > 0 && cost->lattice.h > 0);
+    assert(cost->lattice.cellsize == 1);
+    assert(cost->table || cost->fn);
+    assert(max_r >= 0);
+
+    for (int r = 0; r <= max_r; r++)
+        for (int dy = -r; dy <= r; dy++)
+            for (int dx = -r; dx <= r; dx++) {
+                if (dx != -r && dx != r && dy != -r && dy != r)
+                    continue;  /* ring only */
+                if (cost_at_world(cost, x + dx, y + dy) != RLK_PATH_BLOCKED) {
+                    *out_x = x + dx;
+                    *out_y = y + dy;
+                    return RLK_OK;
+                }
+            }
+    return RLK_E_NOTFOUND;
 }
 
 void

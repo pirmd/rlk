@@ -60,6 +60,14 @@ rlk_err_t rlk_path_find(const rlk_path_cost_t *cost, rlk_path_scratch_t *scr,
                         int sx, int sy, int gx, int gy,
                         int *out, int cap, int *out_len);
 
+/* Nearest enterable cell to (x, y) within Chebyshev radius max_r, scanned
+   ring by ring in fixed scan order (deterministic; the cell itself is
+   tried first, r = 0). Cells outside the window count as blocked.
+   RLK_OK with out_x/out_y set on success, RLK_E_NOTFOUND if none in range.
+   Asserted: a cost source is set, window cellsize == 1. */
+rlk_err_t rlk_path_snap(const rlk_path_cost_t *cost, int x, int y,
+                        int max_r, int *out_x, int *out_y);
+
 /* Draw a path (as produced by rlk_path_find) onto a tilemap: each segment
    is brushed with rlk_tilemap_set_line (square brush of `width` tiles). */
 void rlk_path_draw(rlk_tilemap_t *tm, const int *path, int n,
