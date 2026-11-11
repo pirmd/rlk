@@ -13,7 +13,10 @@ RLK_DIR=..
 
 -include $(RLK_DIR)/config.mk
 CC     ?= cc
-CFLAGS ?= -O0 -g -std=c99 -Wall -Wextra
+CFLAGS ?= -O0 -g
+# Mandatory flags: appended to whatever base came from sys.mk, the
+# environment or config.mk
+CFLAGS += -std=c99 -Wall -Wextra
 
 include $(RLK_DIR)/Makefile.inc
 
