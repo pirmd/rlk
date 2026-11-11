@@ -75,6 +75,43 @@ test_rlk_smoothstep_quadratic(void) {
 	assert(v > 0.15f && v < 0.16f);
 }
 
+/* rlk_smoothstep_ramp tests ------------------------------------------------- */
+
+static void
+test_rlk_smoothstep_ramp_saturates(void) {
+	/* saturating: 0 below lo, 1 above hi (unlike rlk_smoothstep's assert) */
+	assert(rlk_smoothstep_ramp(0.2f, 0.8f, -1.0f) == 0.0f);
+	assert(rlk_smoothstep_ramp(0.2f, 0.8f, 0.2f) == 0.0f);
+	assert(rlk_smoothstep_ramp(0.2f, 0.8f, 0.8f) == 1.0f);
+	assert(rlk_smoothstep_ramp(0.2f, 0.8f, 42.0f) == 1.0f);
+}
+
+static void
+test_rlk_smoothstep_ramp_midpoint(void) {
+	/* ramp(lo,hi,(lo+hi)/2) == smoothstep(0.5) == 0.5 */
+	assert(rlk_smoothstep_ramp(0.2f, 0.8f, 0.5f) == 0.5f);
+	/* equals the manual clamp+smoothstep form at an interior point */
+	float x = 0.35f;
+	float manual = rlk_smoothstep(rlk_clampf((x - 0.2f) / (0.8f - 0.2f), 0.0f, 1.0f));
+	assert(rlk_smoothstep_ramp(0.2f, 0.8f, x) == manual);
+}
+
+static void
+test_rlk_smoothstep_ramp_sweep(void) {
+	/* deterministic sweep: in [0,1], monotone non-decreasing, and bit-equal
+	   to the manual clamp+smoothstep form at every point */
+	float prev = -1.0f;
+	for (int i = -100; i <= 200; i++) {
+		float x = (float)i * 0.01f;
+		float r = rlk_smoothstep_ramp(0.2f, 0.8f, x);
+		float manual = rlk_smoothstep(rlk_clampf((x - 0.2f) / (0.8f - 0.2f), 0.0f, 1.0f));
+		assert(r == manual);
+		assert(r >= 0.0f && r <= 1.0f);
+		assert(r >= prev);
+		prev = r;
+	}
+}
+
 /* rlk_dist_euclideanf tests -------------------------------------------------- */
 
 static void
@@ -140,6 +177,10 @@ main(void) {
 	test_rlk_smoothstep_boundaries();
 	test_rlk_smoothstep_midpoint();
 	test_rlk_smoothstep_quadratic();
+
+	test_rlk_smoothstep_ramp_saturates();
+	test_rlk_smoothstep_ramp_midpoint();
+	test_rlk_smoothstep_ramp_sweep();
 
 	test_rlk_dist_euclideanf_origin();
 	test_rlk_dist_euclideanf_axes();

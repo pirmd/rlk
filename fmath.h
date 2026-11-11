@@ -26,6 +26,14 @@ rlk_smoothstep(float t) {
     return t * t * (3.0f - 2.0f * t);
 }
 
+/* Saturating ramp between lo and hi (GLSL smoothstep edge semantics):
+   0 below lo, 1 above hi, smoothstep weight in between. Requires hi > lo. */
+static inline float
+rlk_smoothstep_ramp(float lo, float hi, float x) {
+    assert(hi > lo);
+    return rlk_smoothstep(rlk_clampf((x - lo) / (hi - lo), 0.0f, 1.0f));
+}
+
 /* Euclidean distance between two 2D points. */
 static inline float
 rlk_dist_euclideanf(float x1, float y1, float x2, float y2) {

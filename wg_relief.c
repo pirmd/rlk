@@ -6,14 +6,6 @@
 
 #include "fmath.h"
 
-/* Smoothstep between lo and hi: t mapped from [lo,hi] to [0,1], clamped at
-   both ends. Requires hi > lo. */
-static inline float
-smoothstep_between(float lo, float hi, float t) {
-    assert(hi > lo);
-    return rlk_smoothstep(rlk_clampf((t - lo) / (hi - lo), 0.0f, 1.0f));
-}
-
 /* Fjord carve at (wxf, wyf): straight, deep valley near cold coasts. */
 static float
 fjord_carve(const rlk_wg_t *wg, const rlk_wg_relief_cfg_t *cfg,
@@ -24,14 +16,14 @@ fjord_carve(const rlk_wg_t *wg, const rlk_wg_relief_cfg_t *cfg,
         return 0.0f;
 
     /* Coast factor: active near the shoreline */
-    const float coast = 1.0f - smoothstep_between(0.0f, cfg->fjord_reach, cont - cfg->sea);
+    const float coast = 1.0f - rlk_smoothstep_ramp(0.0f, cfg->fjord_reach, cont - cfg->sea);
     if (coast <= 0.0f)
         return 0.0f;
 
     /* Cold factor: only in cold regions */
     float cold = 1.0f;
     if (cfg->f_temp != RLK_WG_NONE)
-        cold = 1.0f - smoothstep_between(cfg->fjord_cold0, cfg->fjord_cold1, temp);
+        cold = 1.0f - rlk_smoothstep_ramp(cfg->fjord_cold0, cfg->fjord_cold1, temp);
     if (cold <= 0.0f)
         return 0.0f;
 
@@ -43,7 +35,7 @@ fjord_carve(const rlk_wg_t *wg, const rlk_wg_relief_cfg_t *cfg,
     const float noise = rlk_wg_sample_field(wg, cfg->f_fjord, along * cfg->fjord_stretch, across);
     const float ridge = 1.0f - fabsf(2.0f * noise - 1.0f);  /* 1 on the centreline */
     const float t = rlk_clampf((ridge - (1.0f - cfg->fjord_width)) / cfg->fjord_width, 0.0f, 1.0f);
-    const float profile = smoothstep_between(0.0f, 1.0f, t * cfg->fjord_steep);
+    const float profile = rlk_smoothstep_ramp(0.0f, 1.0f, t * cfg->fjord_steep);
 
     return cfg->fjord_depth * coast * cold * profile;
 }
@@ -83,7 +75,7 @@ relief_stage(rlk_wg_ctx_t *ctx, const void *data) {
         elev += cfg->hills_amp * (hills - 0.5f);
     }
     if (cfg->f_ridge != RLK_WG_NONE) {
-        const float mtn = smoothstep_between(cfg->mountain_lo, cfg->mountain_hi, cont);
+        const float mtn = rlk_smoothstep_ramp(cfg->mountain_lo, cfg->mountain_hi, cont);
         const float ridge = rlk_wg_sample_field(wg, cfg->f_ridge, px, py);
         elev += cfg->mountain_amp * mtn * ridge;
     }

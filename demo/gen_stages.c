@@ -111,18 +111,14 @@ gen_geo_eval(const tilemap_gen_t *gen, float x, float y, float elev,
     /* Faults: ridged-noise lines; offset sign from a second field */
     float g0 = rlk_noise_fbm(&gen->geo_noise[0], x, y, 3, 0.020f, 0.5f);
     float ridge = 1.0f - fabsf(2.0f * g0 - 1.0f);
-    float tf = (ridge - 0.90f) / 0.07f;
-    tf = tf < 0.0f ? 0.0f : (tf > 1.0f ? 1.0f : tf);
-    float fault = rlk_smoothstep(tf);
+    float fault = rlk_smoothstep_ramp(0.90f, 0.97f, ridge);
     float g1 = rlk_noise_fbm(&gen->geo_noise[1], x, y, 2, 0.015f, 0.5f);
     float sign = g1 > 0.5f ? 1.0f : -1.0f;
     float bias_fault = sign * GEO_FAULT_AMP * fault;
 
     /* Folds: sinusoidal bands, regional envelope from low-freq noise */
     float g2 = rlk_noise_fbm(&gen->geo_noise[2], x, y, 2, 0.008f, 0.5f);
-    float te = (g2 - 0.45f) / 0.20f;
-    te = te < 0.0f ? 0.0f : (te > 1.0f ? 1.0f : te);
-    float env = rlk_smoothstep(te);
+    float env = rlk_smoothstep_ramp(0.45f, 0.65f, g2);
     float ang = 0.9f + 3.0f * (g1 - 0.5f);
     float phase = 6.2831853f * 0.018f * (x * cosf(ang) + y * sinf(ang))
                 + 6.2831853f * 2.0f * g2;
@@ -130,9 +126,7 @@ gen_geo_eval(const tilemap_gen_t *gen, float x, float y, float elev,
 
     /* Domes: broad uplifts where a very-low-freq field is high */
     float g3 = rlk_noise_fbm(&gen->geo_noise[2], x, y, 2, 0.011f, 0.5f);
-    float td = (g3 - 0.66f) / 0.14f;
-    td = td < 0.0f ? 0.0f : (td > 1.0f ? 1.0f : td);
-    float dome = rlk_smoothstep(td);
+    float dome = rlk_smoothstep_ramp(0.66f, 0.80f, g3);
     float bias_dome = GEO_DOME_AMP * dome;
 
     /* Volcanoes: rare point cones on a coarse hash grid (3x3 cell search) */
@@ -220,8 +214,7 @@ gen_relief_elev_fn(float px, float py, const void *user) {
     float hills = rlk_wg_sample_field(wg, rc->f_hills, qx, qy);
     elev += rc->hills_amp * (hills - 0.5f);
     float ridge = rlk_wg_sample_field(wg, rc->f_ridge, qx, qy);
-    float mt = rlk_smoothstep(rlk_clampf((cont - rc->mountain_lo) / (rc->mountain_hi - rc->mountain_lo),
-                                         0.0f, 1.0f));
+    float mt = rlk_smoothstep_ramp(rc->mountain_lo, rc->mountain_hi, cont);
     elev += rc->mountain_amp * mt * ridge;
 
     /* Light geology: same structural bias as the tile pipeline (gen_geology_stage) */
