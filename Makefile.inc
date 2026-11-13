@@ -6,12 +6,13 @@ RLK_DIR ?= .
 RLK_CFLAGS = -I$(RLK_DIR) -ffp-contract=off
 RLK_LDLIBS = -L$(RLK_DIR) -lrlk -lm
 
-# Shared lint flags: root lib, tests and demos all use the same set
+# Shared lint flags: root lib, tests and demos all use the same set.
+# Developer-local extras: CFLAGS_LINT_LOCAL (see config.mk.example).
 CFLAGS_LINT  = -Wall -Wextra
 CFLAGS_LINT += -Wpedantic -Wshadow -Wvla
 CFLAGS_LINT += -Wwrite-strings -Wold-style-definition
-CFLAGS_LINT += -Wno-unused-function
 CFLAGS_LINT += -Wconversion
+CFLAGS_LINT += $(CFLAGS_LINT_LOCAL)
 
 RLK_HDR = $(RLK_DIR)/err.h $(RLK_DIR)/hash.h $(RLK_DIR)/fmath.h \
 	$(RLK_DIR)/noise.h $(RLK_DIR)/geom.h \

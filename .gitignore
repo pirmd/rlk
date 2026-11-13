@@ -3,3 +3,4 @@
 *.so
 
 config.mk
+rlk-*.tar.gz

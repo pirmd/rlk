@@ -1,12 +1,20 @@
 # RLK - Custom configuration example
 # Copy this file to config.mk and customize as needed
 
-# Compiler settings
-CC = cc
-CFLAGS = -O0 -g -std=c99 -Wall -Wextra
+#CC = clang
 
-# For release builds:
-# CFLAGS = -O2 -std=c99 -Wall -Wextra
+# Release build: optimizations + assertions disabled.
+# NOTE: these flags REPLACE the default CFLAGS base (-O0 -g); the mandatory
+# -std=c99 -Wall -Wextra are always appended by the Makefiles, and RLK_CFLAGS
+# (-I, -ffp-contract=off) afterwards.
+#CFLAGS = -O2 -DNDEBUG
+
+# Extra lint flags, appended to CFLAGS_LINT by every lint target (root lib,
+# test/, demo/). Keep the repo-wide lint set conservative and portable:
+# the same -W flag can emit different diagnostics across compilers/versions
+# and lint runs with -Werror, so platform-specific extras belong here, local
+# to your config.mk (gitignored), not in the shared Makefiles.
+#CFLAGS_LINT_LOCAL = -Wno-unused-function
 
 # PXL_DIR — location of the sibling pxl project (read from this config.mk;
 # the environment or the bmake command line work too). Optional: setting

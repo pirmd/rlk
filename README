@@ -9,6 +9,7 @@ Build:
   make test             # Build + run all tests: unit (test/) + demo harnesses (demo/)
   make demo             # Compile+link the demos (PXL viewer only when PXL_DIR is set)
   make check            # Full validation: lint + test
+  make dist             # Vendoring snapshot: rlk-<commit>.tar.gz
   make clean            # Remove build artifacts
 
 Note: the Makefiles use BSD make. On Linux, use `bmake` or `pmake`
@@ -20,6 +21,27 @@ Configuration:
   by default: without it, `make demo` builds only the standalone text demos;
   set it to a pxl checkout (e.g. PXL_DIR = ../../pxl) to also build the PXL
   viewer demo_viewer, with PXL_BACKEND = x11 (default) or sdl.
+
+Vendoring:
+  rlk is meant to be vendored as-is: flat sources, no generated files, no
+  config header. Build a clean snapshot and drop it into your project:
+
+    bmake dist                          # -> rlk-<commit>.tar.gz
+    mkdir -p vendor/rlk
+    tar -xzf rlk-<commit>.tar.gz -C vendor/rlk --strip-components=1
+
+  Then either compile the sources directly in your own build system:
+    cc -std=c99 -Ivendor/rlk -c vendor/rlk/*.c
+  or build the static library with bmake: 'bmake -C vendor/rlk', link with
+  -lrlk -lm. Note: Makefile.inc is bmake syntax; with another build system,
+  pass -Ivendor/rlk and -ffp-contract=off (determinism contract) yourself.
+  Keep LICENSE inside vendor/rlk and record the upstream commit there
+  (e.g. in vendor/rlk/VENDORED-AT) so updates stay traceable.
+  When vendoring several flat C libraries side by side (rlk and pxl both
+  ship err.h/geom.h), use a single include root and prefixed paths:
+    cc -Ivendor ...    with #include "rlk/rlk.h"   /* never bare "err.h" */
+  Quoted includes inside a header resolve in its own directory first, so
+  umbrella headers stay unambiguous regardless of -I order.
 
 Design:
   - Zero allocation: the lib never calls malloc/free; all buffers are

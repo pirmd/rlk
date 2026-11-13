@@ -43,9 +43,22 @@ demo: $(LIB)
 
 check: lint test
 
+# Vendoring snapshot: source tarball to drop into a consumer's vendor/rlk
+# (see README "Vendoring").
+GIT_COMMIT != git rev-parse --short HEAD 2>/dev/null || echo dev
+DIST       = rlk-$(GIT_COMMIT)
+DIST_FILES = LICENSE README Makefile Makefile.inc config.mk.example $(SRC) $(RLK_HDR)
+
+dist:
+	mkdir -p $(DIST)
+	cp $(DIST_FILES) $(DIST)/
+	tar -czf $(DIST).tar.gz $(DIST)
+	rm -f $(DIST)/*
+	rmdir $(DIST)
+
 clean:
-	rm -f *.o $(LIB)
+	rm -f *.o $(LIB) rlk-*.tar.gz
 	$(MAKE) -C test clean
 	$(MAKE) -C demo clean
 
-.PHONY: all lint test demo check clean
+.PHONY: all lint test demo check dist clean
