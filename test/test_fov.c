@@ -67,7 +67,8 @@ test_radius_2(void) {
     assert(vis(9, 9));    /* dx=1, dy=1 */
 }
 
-/* A full wall column casts a shadow: the wall is seen, what is behind is not. */
+/* A full wall column casts a shadow: the wall is seen, what is behind
+   is not. */
 
 static void
 test_wall_shadow(void) {

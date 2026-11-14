@@ -10,11 +10,9 @@
 
 #include "gen_internal.h"
 
-/* Widen the river mask near the coast: progressive fade, up to 1.5x at the
-   shoreline (specialist review 2026-10-30, hydrologist P1: estuary at river
-   mouths; 2026-11-05: progressive instead of a hard 2x to avoid blobs).
-   Uses the final elevation to estimate distance from the sea.
-   shore = 0 at waterline, 1 at ELEV_BEACH (landward edge of beach). */
+/* Estuary widening: river mask up to 1.5x at the shoreline, fading inland.
+   shore = 0 at the waterline, 1 at ELEV_BEACH (beach's landward edge),
+   estimated from the final elevation. */
 static inline float
 estuary_mask(const rlk_wg_ctx_t *ctx, float mask) {
     if (mask <= 0.0f) return 0.0f;
@@ -52,10 +50,8 @@ rock_variant(const rlk_wg_ctx_t *ctx, const tilemap_gen_t *gen, float depth) {
     }
 }
 
-/* Varied coasts (specialist review 2026-10-30, geographer P2): beach width =
-   f(local D8 slope, F_SLOPE). Gentle slope -> wide beach (sand rises inland),
-   steep slope -> cliff (rock). Only in the coastal band
-   [ELEV_BEACH, ELEV_BEACH + COAST_EXT] of land zones. */
+/* Coast band [ELEV_BEACH, ELEV_BEACH + COAST_EXT] of land zones: gentle D8
+   slope -> sand beach, steep slope -> cliff (rock). */
 static int
 write_coast(const rlk_wg_ctx_t *ctx, const void *data, rlk_tile_t *out) {
     float elev = ctx->field[F_ELEV];
@@ -126,7 +122,8 @@ write_beach(const rlk_wg_ctx_t *ctx, const void *data, rlk_tile_t *out) {
         return;
     }
     out->type = TILE_SAND;
-    /* Wet sand near the waterline (depth=0, darker), dry sand inland (depth=1, lighter) */
+    /* Wet sand near the waterline (depth=0, darker), dry sand inland
+       (depth=1, lighter) */
     out->variant = (uint8_t)((1.0f - ctx->inside) * 3.0f);
 }
 
@@ -157,9 +154,8 @@ write_land_water(const rlk_wg_ctx_t *ctx, rlk_tile_t *out) {
         out->flags = 0x02;
         return 1;
     }
-    /* Marsh: floodplain next to the channel (review 2026-10-30, hydrologist
-       P1; 2026-11-05: mask > 0.2 instead of any carve>0, which covered the
-       whole 8-tile valley reach and made 9.6% of the map marsh) */
+    /* Marsh: floodplain next to the channel (mask > 0.2, not any carve > 0,
+       which would cover the whole valley reach) */
     if (mask > 0.2f && ctx->field[F_ELEV] < ELEV_BEACH + 0.05f) {
         out->type = TILE_MARSH;
         out->variant = (uint8_t)(ctx->field[F_DETAIL] * 3.0f);
@@ -218,7 +214,7 @@ write_plains(const rlk_wg_ctx_t *ctx, const void *data, rlk_tile_t *out) {
         return;
     }
     out->type = TILE_GRASS;
-    /* Variant: mix detail noise with depth (darker green in the biome centre) */
+    /* Variant: mix detail noise with depth (darker in the biome centre) */
     out->variant = (uint8_t)((ctx->field[F_DETAIL] * 0.6f + ctx->inside * 0.4f) * 3.0f);
     land_rock_outcrop(ctx, data, out);
 }
@@ -289,10 +285,9 @@ write_mountain(const rlk_wg_ctx_t *ctx, const void *data, rlk_tile_t *out) {
 static void
 write_snow(const rlk_wg_ctx_t *ctx, const void *data, rlk_tile_t *out) {
     if (write_land_water(ctx, out)) return;
-    /* Snow line = f(temperature) (specialist review 2026-10-30, geographer P1):
-       0.85 when cold (snow at sea level at the poles), 1.00 when hot (~5000 m
-       at the equator). Smoothstep over 0.05 of elevation: patchy snow near
-       the line, pure white above. */
+    /* Snow line = f(temperature): 0.85 cold (snow at sea level at the poles),
+       1.00 hot. Smoothstep over 0.05 elevation: patchy near the line, pure
+       white above. */
     float snow_line = 0.85f + 0.15f * ctx->field[F_TEMP];
     float t = (ctx->field[F_ELEV] - snow_line) / 0.05f;
     if (t <= 0.0f) {

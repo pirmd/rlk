@@ -2,37 +2,33 @@
 
 ## Structure
 
-Three zones, read bottom-up. You can stop at any level: base only, base +
-one domain, several domains:
-. Within the base, `data` may use `core` and other `data` modules
-  (acyclic).
-. Domains are independent: no cross-domain include. Anything serving
-  several domains lives in the base (`rlk_tilemap_set_line`).
-. Everything that flows between modules is caller-owned POD (grid, mask,
-  POI list, tilemap). No allocation in the lib (see "Memory model").
+Three zones, bottom-up; compose any prefix of them (base only, base + one
+domain, several domains). Rules:
+
+- Within the base, `data` may use `core` and other `data` modules (acyclic).
+- Domains are independent: no cross-domain include; anything serving several
+  domains lives in the base (e.g. `rlk_tilemap_set_line`).
+- Everything exchanged between modules is caller-owned POD (grid, mask, POI
+  list, tilemap); the lib never allocates (see "Memory model").
 
 ```
  USER LAND   your game, your tools, your composition code
              (examples: demo/, recipes below -- never included by rlk)
  ---------------------------------------------------------------
  DOMAINS     terrain   slope; drain (filled/dir/acc/order from an elevation
-                       grid); hydro (slope/strahler/speed per cell, from a
-                       built drain) — chain: elev grid -> drain -> hydro.
-                       drain and hydro stay separate layers: hydro is
-                       optional above drain (wg_rivers reads drain only), and
-                       both are end-user API because the wg stages take
-                       pre-built drain/hydro pointers (two-level generation).
+                       grid); hydro (slope/strahler/speed from a built drain).
+                       Chain: elev grid -> drain -> hydro; hydro is optional
+                       above drain. wg stages take pre-built drain/hydro
+                       pointers (two-level generation, see below)
              nav       path, path_distance
              vision    fov
-             worldgen  pipeline: wg + stages (region = macro-areas from Voronoi
-                       cells, drain/hydro = readers of pre-built grids,
-                       rivers = river mask + carve, relief = elevation,
-                       poi = detectors)
-                       structure generators: ca, bsp (windowed, POI-driven)
-                       world: chunked persistent world on a wg (macro field
-                       query, on-demand chunks, tile diffs + save/load)
+             worldgen  wg pipeline + stages: region (macro-areas from Voronoi
+                       cells), drain/hydro (readers of pre-built grids),
+                       rivers (mask + carve), relief (elevation), poi
+                       (detectors); structure generators ca, bsp (windowed,
+                       POI-driven); world (chunked persistent world on a wg)
  ---------------------------------------------------------------
- BASE        data      entity, geom, grid, mask, poi, scatter, tilemap
+ BASE        data      entity, geom, grid, mask, poi, scatter, stats, tilemap
              core      err, hash, fmath, noise
 ```
 
@@ -54,10 +50,9 @@ centre (`(float)wx + 0.5f, (float)wy + 0.5f`), consistent with
 `rlk_grid_get` / `rlk_grid_center`. Stages that re-sample a field
 (`rlk_wg_sample_field`) follow the same convention.
 
-Stage order is the registration order and is a contract, not checked: a
-stage may only read derived slots written by stages registered before it,
-and an axis may only read slots written by some stage. Register consumers
-after their producers (e.g. wg_relief after wg_rivers for the carve slot).
+Stage order = registration order, a contract, not checked: a stage may read
+only slots written by earlier stages, an axis any written slot. Register
+consumers after producers (e.g. wg_relief after wg_rivers for the carve slot).
 
 Custom stages are user land and typically ~10 lines. Recipe: inject a
 pre-filled grid into a derived slot (scale/offset) — this is how an external
@@ -107,18 +102,14 @@ already gives a relief to classify on — each extra stage refines it:
 
 Rules of thumb:
 
-- Reader stages (`wg_drain`, `wg_hydro`) project a pre-built POD into
-  per-tile derived slots. Rule: consumers that only see the per-tile ctx
-  (zone writers, axes, `wg_poi`'s field threshold) must go through the
-  slots; stages that already hold the source pointer for other data
-  (`wg_rivers` needs the drain SDF and lattice too, `wg_poi`'s `min_acc`)
-  read the POD directly and leave the slot RLK_WG_NONE.
-- Accumulation in a slot is normalized to [0,1] (raw cell count in
-  [1, w*h] divided by the lattice cells): the space in which zone boxes
-  and writers operate. The raw count stays available via the drain
-  pointer for stages that hold it.
-- Macro builds (grid -> drain -> hydro) happen once, outside the wg
-  pipeline, on a coarse lattice; the pipeline stages just read them.
+- Reader stages (`wg_drain`, `wg_hydro`) project a pre-built POD into derived
+  slots, for ctx-only consumers (zone writers, axes, field thresholds).
+  Stages already holding the source pointer (`wg_rivers`, `wg_poi`) read the
+  POD directly and leave the slot RLK_WG_NONE.
+- Slot values are normalized to [0,1] (raw count / lattice cells) — the space
+  zone boxes and writers operate in; raw counts stay on the POD itself.
+- Macro builds (grid -> drain -> hydro) run once, outside the pipeline, on a
+  coarse lattice; the stages just read them.
 
 ### Boilerplate: full pipeline with hydrology
 
@@ -271,13 +262,17 @@ opaque to rlk. Extension points, by data density:
   deterministic hash (seed, x, y) into `variant`, not stored.
 
 Demos (examples, not part of the lib; demo/ is flat like the lib, prefixes
-mark generic vs demo-only blocks): `demo_viewer.c` (PXL terrain viewer over
-the tilemap_gen package: tilemap_gen.c + gen_stages/gen_write/gen_post/
-gen_stats.c), `demo_world.c` (overworld map + local ca/bsp content per POI, ASCII,
-terminal; roads/POI networks are game-side composition, not demoed —
-pathfinding is demoed by the world viewer's path overlay (POI to POI) and
-exercised headless by the playability probe), `test_tilemap_gen.c` (golden map stats per
-seed, non-regression, run by `check`; `report` mode = multi-seed metric
-table, see doc/metrics.md), `demo_gis.c` (GIS raster export .asc/.pgm via
-gis_export.h, for external tools such as QGIS/GDAL). Stage/field probes are
-viewed in `demo_viewer` (PXL modes and overlays) or exported by `demo_gis`.
+mark generic vs demo-only blocks):
+
+- `demo_viewer.c` — PXL viewer over the tilemap_gen package (tilemap_gen.c +
+  gen_stages/gen_write/gen_post/gen_stats.c): stage/field probes, river/POI/A*
+  overlays. Sources in `src_*.h`, generic harness in `source.h`, `viewer*.h`,
+  `widget.h`, `font_6x10.h`.
+- `demo_world.c` — fantasy map in a terminal: tilemap_gen + local ca/bsp per
+  POI, scatter points, ASCII render, rlk_stats_* probes. Roads/POI networks
+  stay game-side (not demoed); pathfinding is demoed by demo_viewer's path
+  overlay and exercised headless by the playability probe.
+- `test_tilemap_gen.c` — golden map stats per seed, run by `make check`;
+  `report` mode prints a multi-seed stats table (see doc/stats.md).
+- `demo_gis.c` — GIS raster export (.asc/.pgm) via `gis_export.h`, for external
+  tools (QGIS/GDAL).

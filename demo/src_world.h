@@ -403,7 +403,7 @@ src_world_draw_details(pxl_canvas_t *cnv, const src_world_t *w, const src_view_t
                 break;
             }
             case TILE_ROCK: {
-                /* rock block: mid fill, light top/left edge, dark bottom/right */
+                /* rock block: mid fill, light top/left, dark bottom/right */
                 const int m = t / 8;
                 pxl_canvas_set_color(cnv, 0xFF8D6E63U);
                 pxl_fill_rect(cnv, px + m, py + m, t - 2 * m, t - 2 * m);

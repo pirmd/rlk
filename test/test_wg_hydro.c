@@ -130,7 +130,7 @@ test_hydro_stage_none_slots(void) {
     assert(t->flags == 0);
 }
 
-/* NULL hydro buffers (skipped at build) read as 0; present buffers still work. */
+/* NULL hydro buffers (skipped at build) read as 0; others still work. */
 static void
 test_hydro_stage_null_buffers(void) {
     hydro_setup();
@@ -148,7 +148,7 @@ test_hydro_stage_null_buffers(void) {
     rlk_tilemap_init(&tm, MAP, MAP, tilebuf, sizeof(tilebuf));
     rlk_wg_fill(&wg, 0, 0, &tm);
 
-    /* Interior tile (6,6) -> cell (1,1): slope/strahler NULL -> 0, speed > 0. */
+    /* Interior (6,6) -> cell (1,1): slope/strahler NULL -> 0, speed > 0. */
     const rlk_tile_t *t = rlk_tilemap_get(&tm, 6, 6);
     assert(t);
     assert(t->type == 0);

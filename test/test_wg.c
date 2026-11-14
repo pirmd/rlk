@@ -76,7 +76,8 @@ stage_derive_complement(rlk_wg_ctx_t *ctx, const void *data) {
     ctx->field[1] = 1.0f - ctx->field[0];
 }
 
-/* Sequence capture for fill-order tests: records coords per tile via the zone writer. */
+/* Sequence capture for fill-order tests: records coords per tile via the
+   zone writer. */
 static int g_run_x[256], g_run_y[256], g_run_wx[256], g_run_wy[256];
 
 static void

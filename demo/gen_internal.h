@@ -10,10 +10,9 @@
 #include "tilemap_gen.h"
 
 /* --- Shared thresholds ---------------------------------------------------
-   Elevation thresholds (relief stage output ~[0,1]). Beach is a thin slice
-   (0.03, like demo_worldgen) so coasts read naturally. ELEV_LOWLAND 0.70 /
-   ELEV_MOUNTAIN 0.85 put mountains at ~15-20% of emerged land (specialist
-   review 2026-10-30, geographer P1), not 10%. */
+   Elevation thresholds on the relief output ~[0,1]. Beach is a thin slice so
+   coasts read naturally; LOWLAND 0.70 / MOUNTAIN 0.85 put mountains at
+   ~15-20% of emerged land. */
 #define ELEV_DEEP     0.33f
 #define ELEV_SHALLOW  0.36f
 #define ELEV_BEACH    0.39f

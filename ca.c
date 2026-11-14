@@ -102,7 +102,8 @@ step(rlk_ca_t *ca) {
     int survive_low = ca->survive_low;
     int survive_high = ca->survive_high;
 
-    /* region_ids is free during CA iterations: use its first W*H bytes as scratch. */
+    /* region_ids is free during CA iterations: use its first W*H bytes
+       as scratch. */
     uint8_t *scratch = (uint8_t *)ca->region_ids;
 
     for (int y = 0; y < height; y++) {
@@ -400,7 +401,7 @@ rlk_ca_fill(rlk_ca_t *ca, const rlk_lattice_t *win, rlk_tilemap_t *tm,
             const int wy = l->origin_y + y * cs;
             uint8_t cell = ca->grid[idx];
             int rid = (cell == CA_FLOOR) ? ca->region_ids[idx] : 0;
-            /* Preset biome to region id, then the writer fills type/flags/variant. */
+            /* Preset biome to region id; the writer fills the rest. */
             rlk_tile_t tile = { .biome = (uint8_t)rid };
             ca->write(ca->seed, ca->write_data, wx, wy, &tile);
             for (int dy = 0; dy < cs; dy++) {

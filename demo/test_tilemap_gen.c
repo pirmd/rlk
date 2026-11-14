@@ -1,26 +1,25 @@
 /*
  * test_tilemap_gen - non-regression test of the tilemap_gen demo pipeline
- * (lives in demo/ because it links the tilemap_gen objects; run by `make check`).
+ * (in demo/ because it links the tilemap_gen objects; run by `make check`).
  *
  * Generates the map on a fixed set of seeds and compares the map probes
- * (tilemap_gen_stats) against golden values captured at a reference commit:
- * any drift in the deterministic per-seed output fails the run.
+ * (tilemap_gen_stats) against golden values: any drift in the deterministic
+ * per-seed output fails the run.
  * Ref: arxiv 2201.10334 (objective metrics for procgen levels).
  *
  *   test_tilemap_gen           check all seeds against GOLDEN, rc = 1 on drift
- *   test_tilemap_gen record    print the current stats as a GOLDEN table to paste
- *   test_tilemap_gen report [n]  multi-seed metrics table (seeds 1..n, default 25)
- *                              with min/max/mean, cross-seed Hamming diversity and
- *                              a playability proxy (POI pair reachability via
- *                              rlk_path_find); exploratory, not part of the golden check
+ *   test_tilemap_gen record    print current stats as a GOLDEN table to paste
+ *   test_tilemap_gen report [n]  multi-seed stats table (seeds 1..n, default
+ *                              25): min/max/mean, cross-seed Hamming diversity,
+ *                              playability proxy (POI pairs via rlk_path_find);
+ *                              exploratory, not golden
  *
- * Two complementary checks per seed:
- * - determinism property: the seed is generated twice, tilemap hashes must
- *   match (never needs re-record, catches non-determinism only);
- * - golden snapshot: stats compared against GOLDEN.
- * Golden policy: floats compared with tolerance (entropy 1e-3, fractions
- * 1e-4), integer counts exactly. Re-record only on an intentional change of
- * the generation output.
+ * Two checks per seed:
+ * - determinism: the seed is generated twice, tilemap hashes must match
+ *   (never needs re-record, catches non-determinism only).
+ * - golden: stats compared against GOLDEN.
+ * Golden policy: floats with tolerance (entropy 1e-3, fractions 1e-4), counts
+ * exact. Re-record only on an intentional change of the output.
  */
 
 #include <math.h>
@@ -174,7 +173,7 @@ record_one(uint64_t seed, const tilemap_gen_stats_t *st) {
            poi_total, (unsigned long long)seed);
 }
 
-/* Report mode: run seeds 1..n (default 25) and print one row of metrics per
+/* Report mode: run seeds 1..n (default 25) and print one row of stats per
    seed plus min/max/mean, the mean pairwise Hamming distance between the
    generated maps (cross-seed diversity) and a playability proxy (fraction of
    surface-POI pairs connected by a walkable path, mean path length).
@@ -236,7 +235,6 @@ playability(const tilemap_gen_t *gen, float *reach, float *mean_len) {
 static void
 report(int nseeds) {
     static tilemap_gen_t gen;
-    static uint8_t scratch[TM_W * TM_H];
     static uint8_t maps[REPORT_MAX_SEEDS][TM_W * TM_H];
     tilemap_gen_stats_t st[REPORT_MAX_SEEDS];
     float reach[REPORT_MAX_SEEDS], rlen[REPORT_MAX_SEEDS];
@@ -244,7 +242,7 @@ report(int nseeds) {
     printf(" seed   entr  pairH  edge  moran   lzss  water%% river%% land%%  comps largest%% patch  sink   poi  poiR%%  road\n");
     for (int s = 0; s < nseeds; s++) {
         tilemap_gen_generate(&gen, (uint64_t)(s + 1));
-        tilemap_gen_stats(&gen, &st[s], scratch);
+        tilemap_gen_stats(&gen, &st[s]);
         playability(&gen, &reach[s], &rlen[s]);
         int poi_total = 0;
         for (int i = 0; i < POI_KIND_COUNT; i++)
@@ -379,7 +377,6 @@ main(int argc, char **argv) {
     }
 
     static tilemap_gen_t gen;
-    static uint8_t scratch[TM_W * TM_H];
 
     if (report_mode) {
         int nseeds = argc > 2 ? atoi(argv[2]) : 25;
@@ -396,7 +393,7 @@ main(int argc, char **argv) {
         for (int s = 0; s < N_SEEDS; s++) {
             tilemap_gen_generate(&gen, SEEDS[s]);
             tilemap_gen_stats_t st;
-            tilemap_gen_stats(&gen, &st, scratch);
+            tilemap_gen_stats(&gen, &st);
             record_one(SEEDS[s], &st);
         }
         printf("};\n");
@@ -416,7 +413,7 @@ main(int argc, char **argv) {
             n_bad++;
         }
         tilemap_gen_stats_t st;
-        tilemap_gen_stats(&gen, &st, scratch);
+        tilemap_gen_stats(&gen, &st);
         int bad = check_one(SEEDS[s], &GOLDEN[s], &st);
         printf("seed %-5llu %s (entropy %.3f, water %.1f%%, components %d, POIs %d)\n",
                (unsigned long long)SEEDS[s], bad ? "FAIL" : "ok  ",

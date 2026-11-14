@@ -181,7 +181,8 @@ fixture_y(void) {
                           .acc = y_acc, .order = y_order };
 }
 
-/* Confluence at (2,1): three order-1 upstreams -> Strahler 2. Sources stay 1. */
+/* Confluence at (2,1): three order-1 upstreams -> Strahler 2.
+   Sources stay 1. */
 static void
 test_hydro_strahler_confluence(void) {
     rlk_drain_t d = fixture_y();

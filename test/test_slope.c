@@ -30,7 +30,8 @@ test_flat(void) {
             assert(rlk_slope_get(&g_grid, i, j, ZSCALE) == 0.0f);
 }
 
-/* Constant eastward gradient: Horn 3x3 gives exactly zscale * GRAD / cellsize. */
+/* Constant eastward gradient: Horn 3x3 gives exactly zscale * GRAD /
+   cellsize. */
 
 static void
 test_east_gradient(void) {

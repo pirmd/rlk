@@ -19,6 +19,7 @@
 #include "mask.h"
 #include "poi.h"
 #include "scatter.h"
+#include "stats.h"
 #include "tilemap.h"
 #include "entity.h"
 

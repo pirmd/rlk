@@ -79,7 +79,7 @@ rlk_tilemap_set(rlk_tilemap_t *tm, int x, int y, rlk_tile_t tile) {
     if (t) *t = tile;
 }
 
-/* Lattice of the tilemap: tile-aligned (cellsize = 1), origin = tilemap origin. */
+/* Lattice of the tilemap: tile-aligned (cellsize 1), same origin. */
 static inline rlk_lattice_t
 rlk_tilemap_lattice(const rlk_tilemap_t *tm) {
     assert(tm);

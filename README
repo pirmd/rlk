@@ -53,7 +53,7 @@ Documentation:
   doc/architecture.md   # Zones (base / domains / user land), memory model,
                         # determinism contract, recipes
   doc/conventions.md    # Naming rules
-  doc/metrics.md        # Map quality metrics: what each probe measures, golden
+  doc/stats.md          # Map quality stats: what each probe measures, golden
                         # policy, multi-seed report (demo/test_tilemap_gen)
 
 Headers:
@@ -73,6 +73,8 @@ Headers:
                        # + 4-connected flood fill / component labelling (rlk_mask_flood, rlk_mask_components)
     poi.h              # Points of Interest (anchor, bbox, type, seed)
     scatter.h          # Stateless jittered-grid scatter (one point per cell)
+    stats.h            # Deterministic map stats (entropy, edge/pair entropy,
+                       # Moran's I, LZSS bits, patches) on caller-owned rasters
     tilemap.h          # Tile grid over a world rect + tile props + index/line drawing
 
   Domain terrain:
@@ -107,19 +109,16 @@ Headers:
                        # regeneration, save/load (seed + diffs), predicate search
 
 Demos (demo/ is flat like the lib; prefixes mark generic vs demo-only blocks):
-  demo/demo_viewer.c         # Generic PXL viewer: demo_viewer [world|ca|bsp] [seed]
-                             # (world: stage probes + river/POI/A* path overlays)
-  demo/demo_world.c          # Fantasy map in terminal: tilemap_gen + local ca/bsp content per POI
-                             # + rlk_scatter_mask points on the forest mask (headless ASCII + stats;
-                             # roads/POI networks = game logic, not demoed)
-  demo/demo_gis.c            # GIS export: .asc/.pgm rasters for external tools (QGIS/GDAL, terminal);
-                             # the same stage/field probes are browsable interactively in demo_viewer
-  demo/test_tilemap_gen.c    # Golden map stats per seed, run by `make check` (test_* = harness)
-  demo/tilemap_gen.* gen_*   # Fantasy map generator package (pure demo)
-  demo/src_*.h               # Viewer demo sources (world/dungeon; pure demo)
-  demo/gis_export.h          # Generic GIS export helpers (.asc/.pgm)
+  demo/demo_viewer.c         # PXL viewer: demo_viewer [world|ca|bsp] [seed]
+                             # (world mode: stage probes + river/POI/A* overlays)
+  demo/demo_world.c          # Fantasy map in a terminal: tilemap_gen + ca/bsp per POI,
+                             # scatter points, ASCII render, rlk_stats_* probes
+  demo/demo_gis.c            # GIS raster export .asc/.pgm for external tools (QGIS/GDAL)
+  demo/test_tilemap_gen.c    # Golden map stats per seed, run by `make check`
+  demo/tilemap_gen.* gen_*   # Fantasy map generator package
+  demo/src_*.h gis_export.h  # Viewer demo sources + GIS export helpers
   demo/source.h viewer.h viewer_app.h widget.h font_6x10.h
-                             # Generic PXL viewer harness (header-only).
+                             # Generic PXL viewer harness (header-only)
 
 License:
   MIT. See LICENSE.

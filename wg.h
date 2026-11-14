@@ -27,7 +27,7 @@
 #define RLK_WG_MAX_STAGES      16       /* max pipeline stages in wg->stages[] */
 #define RLK_WG_MAX_AXES        3        /* max axes; size of zone lo/hi[] */
 #define RLK_WG_MAX_ZONES       16       /* max zones in wg->zones[] */
-/* Unbounded bound for an axis/zone side: use -/+RLK_WG_AXIS_UNBOUNDED in lo/hi. */
+/* Unbounded axis/zone bound: use -/+RLK_WG_AXIS_UNBOUNDED in lo/hi. */
 #define RLK_WG_AXIS_UNBOUNDED  1000.0f
 /* Stage cfg field/slot index meaning "disabled" (sampled field, derived
    slot or output slot, depending on the cfg field). */

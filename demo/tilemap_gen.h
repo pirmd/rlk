@@ -121,7 +121,7 @@ enum {
     D_SLOPE,         /* D8 downslope, elev units/tile (wg_hydro) */
     D_STRAHLER,      /* Strahler stream order (wg_hydro) */
     D_SPEED,         /* Manning speed estimate (wg_hydro) */
-    D_TEMP_LAT,      /* latitudinal thermal gradient (demo stage, specialist review 2026-10-30) */
+    D_TEMP_LAT,      /* latitudinal thermal gradient (demo stage) */
     F_NDERIVED
 };
 
@@ -137,9 +137,8 @@ enum {
 
 /* --- Zone (biome) indices ------------------------------------------------ */
 
-/* Zones: water by elevation, then 6 land biomes on the (temp, hum) plane
-   (Köppen simplified; humidity axis + 6 biomes from specialist review
-   2026-10-30, geographer P0), then mountain/snow by elevation. */
+/* Zones: water by elevation, 6 land biomes on the (temp, hum) plane
+   (Köppen simplified), then mountain/snow by elevation. */
 enum {
     Z_DEEP = 0,
     Z_SHALLOW,
@@ -194,10 +193,10 @@ enum {
 
 /* --- State --------------------------------------------------------------- */
 
-/* Latitudinal thermal gradient stage config (specialist review 2026-10-30,
-   geographer): D_TEMP_LAT = clamp(F_TEMP - temp_drop * |py| / lat_half_span).
-   The Köppen classify axis reads the result instead of raw F_TEMP, so map
-   edges (poles) are colder. Must run after the relief stage (lapse write-back). */
+/* Latitudinal thermal gradient stage config:
+   D_TEMP_LAT = clamp(F_TEMP - temp_drop * |py| / lat_half_span).
+   Classify reads the result instead of raw F_TEMP (map edges = colder poles).
+   Must run after the relief stage (lapse write-back). */
 typedef struct {
     uint8_t f_temp;          /* sampled field read (post-lapse) */
     uint8_t slot_out;        /* derived slot written */
@@ -282,19 +281,21 @@ void tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed);
 
 /* --- Post-generation stats (map probes) ---------------------------------- */
 
+/* Map probes: generic kernels in stats.h (rlk_stats_*), aggregated here
+   with the game-specific counts. */
 typedef struct {
     uint32_t tile_count[TILE_COUNT];  /* histogram of final tile types */
-    float entropy;                    /* Shannon entropy of tile types, bits */
+    float entropy;                    /* rlk_stats_entropy(tile_count), bits */
     float water_frac;                 /* WATER + LAKE fraction */
     float river_frac;                 /* RIVER fraction */
     float land_frac;                  /* walkable land fraction */
-    float edge_frac;                  /* adjacent (4-conn) tile pairs with different types: spatial diversity */
-    float pair_entropy;               /* Shannon entropy of adjacent tile pairs (right/down), bits per pair */
-    float moran_elev;                 /* Moran's I of the final elevation field (4-conn): terrain clumpiness, ~[-1,1] */
-    float compress_ratio;             /* LZSS bit count / raw bit count of the tilemap: low = regular/repetitive */
-    int n_components;                 /* connected walkable components (4-conn) */
+    float edge_frac;                  /* rlk_stats_edge_frac of the type stream */
+    float pair_entropy;               /* rlk_stats_pair_entropy, bits per pair */
+    float moran_elev;                 /* rlk_stats_moran_i of final_elev */
+    float compress_ratio;             /* rlk_stats_lzss_bits / raw bits, type stream */
+    int n_components;                 /* rlk_mask_components of the walkable mask */
     int largest_component;            /* size in tiles of the largest one */
-    int n_patches;                    /* connected same-type patches (4-conn): spatial fragmentation */
+    int n_patches;                    /* rlk_stats_patches of the type stream */
     int n_sinkholes;                  /* sinkholes (karst dolines) */
     int n_poi[POI_KIND_COUNT];        /* POIs per kind */
 } tilemap_gen_stats_t;
@@ -303,9 +304,8 @@ typedef struct {
    demo_world: no water, rock, house or void). */
 int tilemap_gen_walkable(uint8_t type);
 
-/* Fill st from gen. scratch = TM_W*TM_H caller-owned bytes (flood fill). */
-void tilemap_gen_stats(const tilemap_gen_t *gen, tilemap_gen_stats_t *st,
-                       uint8_t *scratch);
+/* Fill st from gen (all scratch internal). */
+void tilemap_gen_stats(const tilemap_gen_t *gen, tilemap_gen_stats_t *st);
 
 /* Print a human-readable summary of st (and the seed) to stdout. */
 void tilemap_gen_stats_print(const tilemap_gen_t *gen,

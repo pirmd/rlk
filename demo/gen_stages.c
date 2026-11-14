@@ -11,11 +11,9 @@
 
 #include "gen_internal.h"
 
-/* Apply the province region bias to a single field value at float position
-   (x, y), through the stock region stage on a throwaway ctx: only the Voronoi
-   weights depend on (x, y), the other field values are irrelevant (their
-   bias/gain are 0). Used to bias the coarse drain grid exactly like the tile
-   pipeline. */
+/* Province-bias one field value at float position (x, y): run the stock
+   region stage on a throwaway ctx (only the Voronoi weights depend on (x,y)).
+   Used to bias the coarse drain grid like the tile pipeline. */
 static float
 gen_province_mod_field(const tilemap_gen_t *gen, int f, float value, float x, float y) {
     rlk_wg_ctx_t ctx = {0};
@@ -29,13 +27,10 @@ gen_province_mod_field(const tilemap_gen_t *gen, int f, float value, float x, fl
     return ctx.field[f];
 }
 
-/* Stage 0: provinces (specialist review 2026-10-30, geographer P0: 4-5 Voronoi
-   provinces with per-type field bias, applied before relief/rivers).
-   Re-sample F_HUM at a large coordinate offset (at low
-   climate freqs the 128x96 map only covers a few lattice cells, so fields
-   sampled at the same origin can correlate spuriously; the offset
-   decorrelates humidity for any seed), then run the stock region stage:
-   per-province bias/gain on the sampled fields, before relief/rivers. */
+/* Stage 0: provinces. Re-sample F_HUM at a large offset — at low climate
+   freqs the map covers only a few lattice cells, so same-origin fields can
+   correlate spuriously. Then the stock region stage applies per-province
+   bias/gain. Runs before relief/rivers. */
 void
 gen_province_stage(rlk_wg_ctx_t *ctx, const void *data) {
     const tilemap_gen_t *gen = (const tilemap_gen_t *)data;
@@ -45,12 +40,10 @@ gen_province_stage(rlk_wg_ctx_t *ctx, const void *data) {
     gen->prov_mod.fn(ctx, gen->prov_mod.data);
 }
 
-/* Stage 3 wrapper: stock wg_relief stage, then rain shadow (post-relief;
-   specialist review 2026-10-30, geographer P0: orographic rain shadow).
-   Dominant wind west -> east: air rising on the west slope of a range
-   (elevation increasing eastward) is humid (orographic lift), air sinking
-   on the east slope is dry (foehn). The slope is read from the coarse
-   elevation grid, i.e. the same terrain the relief stage displays. */
+/* Stage 3: stock wg_relief, then rain shadow on F_HUM. Wind west -> east:
+   humidify where elevation increases eastward, dry the lee side; the slope is
+   read from the coarse elev grid (same terrain the relief stage displays).
+   Bias clamped to +/-0.10 (below). */
 void
 gen_relief_rain_stage(rlk_wg_ctx_t *ctx, const void *data) {
     const tilemap_gen_t *gen = (const tilemap_gen_t *)data;
@@ -70,11 +63,9 @@ gen_relief_rain_stage(rlk_wg_ctx_t *ctx, const void *data) {
     ctx->field[F_HUM] = hum < 0.0f ? 0.0f : (hum > 1.0f ? 1.0f : hum);
 }
 
-/* Stage: modulate the river mask by Strahler order (specialist review
-   2026-10-30, hydrologist P1: width by stream order) — headwater streams
-   (order 1-2) run narrow, rivers (3-4) normal, big rivers (5+) wide.
-   The mask threshold in the writers (mask > 0.5) turns the scale factor
-   into a width change of roughly +/-0.7 tile around the drain SDF width. */
+/* Stage 4: river width by Strahler order — headwaters (1-2) x0.7, rivers
+   (3-4) x1.0, big rivers (5+) x1.6. Writers threshold the mask at 0.5, so
+   this scales the visible width around the drain SDF width. */
 void
 gen_strahler_stage(rlk_wg_ctx_t *ctx, const void *data) {
     (void)data;
@@ -87,11 +78,9 @@ gen_strahler_stage(rlk_wg_ctx_t *ctx, const void *data) {
 }
 
 /* --- Light geology -------------------------------------------------------
-   Structures are computed from demo-owned noise (geo_noise), shared by the
-   coarse grid (gen_relief_elev_fn, so rivers follow the structured terrain)
-   and the tile pipeline (gen_geology_stage, post-relief). No plate
-   tectonics: faults (horst/graben offset), folds (sinusoidal bands), domes
-   (broad uplifts) and a few volcanic cones. */
+   Faults (horst/graben), folds, domes, volcanic cones from demo-owned noise
+   (geo_noise), shared by the coarse grid (gen_relief_elev_fn) and the tile
+   pipeline (gen_geology_stage), so rivers follow the structured terrain. */
 
 #define GEO_FAULT_AMP   0.08f   /* vertical offset along a fault line */
 #define GEO_FOLD_AMP    0.05f   /* fold undulation amplitude */
@@ -183,14 +172,12 @@ gen_geology_stage(rlk_wg_ctx_t *ctx, const void *data) {
     gen->litho_buf[idx] = litho;
 }
 
-/* Elevation grid function: the wg_relief cfg's BASE elevation (cont + hills +
-   mountains, before river/fjord carving) evaluated at an arbitrary float
-   position, so the drain grid sees the same terrain the tile pipeline
-   displays — rivers follow the displayed relief. All relief parameters come
-   from the stage cfg (single source of truth); the province bias goes
-   through the stock region stage. Sampled at the true cell centre
-   (rlk_grid_center convention), like rlk_wg_fill_grid. Needs rlk_wg_init
-   first (fields sampled via rlk_wg_sample_field). */
+/* Coarse drain-grid elevation: the relief base elevation (cont + hills +
+   mountains, pre-carve) at float position, province- and geology-biased —
+   the same terrain the tile pipeline displays, so rivers follow it. Params
+   come from the relief cfg (single source of truth). Sampled at cell centres
+   like rlk_wg_fill_grid; needs rlk_wg_init first. Clamp: the drain requires
+   elevation < RLK_DRAIN_SCALE (hills + mountains + geology can overflow). */
 float
 gen_relief_elev_fn(float px, float py, const void *user) {
     const gen_relief_ctx_t *ctx = (const gen_relief_ctx_t *)user;
@@ -217,7 +204,8 @@ gen_relief_elev_fn(float px, float py, const void *user) {
     float mt = rlk_smoothstep_ramp(rc->mountain_lo, rc->mountain_hi, cont);
     elev += rc->mountain_amp * mt * ridge;
 
-    /* Light geology: same structural bias as the tile pipeline (gen_geology_stage) */
+    /* Light geology: same structural bias as the tile pipeline
+       (gen_geology_stage) */
     elev += gen_geo_eval(ctx->gen, px, py, elev, NULL, NULL);
 
     /* The drain grid requires elevation in [0, RLK_DRAIN_SCALE): clamp the
@@ -225,13 +213,10 @@ gen_relief_elev_fn(float px, float py, const void *user) {
     return rlk_clampf(elev, 0.0f, 1.0f - 1.0f / RLK_DRAIN_SCALE);
 }
 
-/* Stage: latitudinal thermal gradient (specialist review 2026-10-30,
-   geographer): F_TEMP only knows altitudinal lapse cooling, no latitude —
-   yet the map is ~64 tiles "tall". Subtract a linear gradient peaking at
-   the map top/bottom edges (|py| / lat_half_span). Runs after the relief
-   stage, which write-backs the lapse-cooled F_TEMP. The Köppen classify
-   axis reads the result (D_TEMP_LAT) instead of raw F_TEMP; POI detectors
-   keep raw F_TEMP. */
+/* Stage 7: latitudinal temperature gradient. F_TEMP has only altitudinal
+   lapse, so subtract temp_drop * |py| / lat_half_span (peaks at the map
+   edges). Runs after relief (lapse write-back); classify reads D_TEMP_LAT,
+   POI detectors keep raw F_TEMP. */
 void
 gen_temp_lat_stage(rlk_wg_ctx_t *ctx, const void *data) {
     const gen_temp_lat_cfg_t *c = (const gen_temp_lat_cfg_t *)data;
@@ -243,13 +228,10 @@ gen_temp_lat_stage(rlk_wg_ctx_t *ctx, const void *data) {
 }
 
 /* --- POI: terrain-constrained detectors -----------------------------------
-   The stock rlk_wg_poi stages cover one tested field (threshold) plus
-   optional drain/grid constraints. This stage adds kinds constrained by
-   multi-field ranges (elev/temp/hum/river/slope) and geology bitmasks
-   (litho/struct buffers, not wg fields), all readable from the per-tile ctx
-   and the geology buffers (geology stage runs before, per tile). Boundary:
-   multi-field ranges stay here until a second real consumer appears (YAGNI);
-   then generalize rlk_wg_poi_cfg_t to a small table of (field, lo, hi). */
+   Table-driven (POI_DETS): multi-field ranges (elev/temp/hum/river/slope) +
+   geology bitmasks, complementing the stock rlk_wg_poi (single-field
+   threshold + drain/grid constraints). Stays demo-local until a second
+   consumer appears (YAGNI). */
 
 typedef struct {
     uint8_t type;
@@ -270,10 +252,10 @@ typedef struct {
 #define RANGE (1.0e9f)
 #define BIT(v) (1u << (v))
 
-/* Zone-equivalent constraints expressed on the axis fields (stages run
-   before classify, so ctx->zone is not available yet): beach = elev
-   [ELEV_SHALLOW, ELEV_BEACH], lowland biomes = [ELEV_BEACH, ELEV_LOWLAND],
-   mountain/snow = [ELEV_LOWLAND, 1], temperate band = temp [TEMP_COLD, TEMP_HOT]. */
+/* Zone-equivalent ranges on axis fields (stages run before classify, so
+   ctx->zone is not set yet): beach [ELEV_SHALLOW, ELEV_BEACH], lowlands
+   [ELEV_BEACH, ELEV_LOWLAND], mountains [ELEV_LOWLAND, 1], temperate
+   temp [TEMP_COLD, TEMP_HOT]. */
 static const poi_det_t POI_DETS[] = {
     /* hamlet: small settlement on temperate lowlands (plains or steppe) */
     { POI_HAMLET, 0xBE01ULL,

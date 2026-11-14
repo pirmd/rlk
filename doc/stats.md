@@ -1,23 +1,32 @@
-# Map quality metrics (demo harness)
+# Map quality stats (stats.h + demo harness)
 
-Where: `tilemap_gen_stats()` (demo/gen_stats.c) fills `tilemap_gen_stats_t`
-(demo/tilemap_gen.h). The harness `demo/test_tilemap_gen.c` runs them:
+Lib kernels in `stats.h`: `rlk_stats_entropy`, `rlk_stats_edge_frac`,
+`rlk_stats_pair_entropy`, `rlk_stats_moran_i`, `rlk_stats_lzss_bits`,
+`rlk_stats_patches`; connectivity via `rlk_mask_components`. For a whole
+raster, `rlk_stats_raster()` bundles the stream probes in one call over a
+single workspace:
+
+  static rlk_stats_ws_unit_t ws[RLK_STATS_WS_UNITS(W, H, NTYPES)];  /* const-expr size */
+  rlk_stats_raster_t r;
+  rlk_stats_raster(stream, W, H, NTYPES, &r, ws);
+
+The demo aggregates them with game-specific counts in `tilemap_gen_stats()`
+(demo/gen_stats.c, struct in demo/tilemap_gen.h). `demo/test_tilemap_gen.c`
+runs the probes per seed:
 
   make check                        # golden check on 5 seeds (rc != 0 on drift)
   demo/test_tilemap_gen record      # print a new GOLDEN table (intentional changes only)
-  demo/test_tilemap_gen report [n]  # multi-seed table (seeds 1..n, default 25) with
-                                    # min/max/mean, cross-seed diversity, playability
+  demo/test_tilemap_gen report [n]  # multi-seed table (seeds 1..n, default 25):
+                                    # min/max/mean, cross-seed diversity, playability proxy
 
 Golden policy: floats with tolerance (entropy/pair/moran 1e-3, fractions/lzss
-1e-4), integer counts exact. Re-record only on an intentional change of the
-generation or of the stats output. A determinism check (same seed generated
-twice, tilemap hash compared) runs on every golden seed and never needs
-re-record.
+1e-4), counts exact; re-record only on an intentional change. A determinism
+check (same seed twice, tilemap hash compared) runs on every golden seed and
+never needs re-record.
 
-## Metrics
+## Stats
 
-Representation-direct (computed from the tilemap/elevation, deterministic
-per seed):
+Computed from the tilemap/elevation, deterministic per seed:
 
 - entropy       Shannon entropy of tile types, bits (composition diversity)
 - water/river/land_frac   tile-type coverage fractions
@@ -38,10 +47,10 @@ Harness-only (report mode, not in the golden):
 
 - cross-seed mean pairwise Hamming distance between the maps of seeds 1..n:
   diversity of the generator itself (SOTA: mean pairwise NCD between levels)
-- poiR% / road  playability proxy: over all pairs of surface settlement POIs
+- poiR% / road — playability proxy: over all pairs of settlement POIs
   (village/tower/hamlet/fort), anchors snapped to the nearest walkable tile,
-  rlk_path_find on the walkable mask; poiR% = reachable pairs / total,
-  road = mean path length in tiles over reachable pairs
+  paths via rlk_path_find on the walkable mask; poiR% = reachable pairs /
+  total, road = mean path length in tiles
 
 ## SOTA references
 

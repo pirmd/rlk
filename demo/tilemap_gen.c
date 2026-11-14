@@ -36,10 +36,9 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
     wg->fields[F_CREEK]  = (rlk_wg_field_t){ .kind = RLK_WG_FBM,   .salt = 11, .octaves = 2, .freq = 0.025f, .gain = 0.5f };
     wg->fields[F_HUM]    = (rlk_wg_field_t){ .kind = RLK_WG_FBM,   .salt = 12, .octaves = 4, .freq = 0.040f, .gain = 0.5f };
 
-    /* --- Provinces (specialist review 2026-10-30, geographer P0): stock
-       Region stage biasing the sampled fields before relief/rivers.
-       Type 0 is neutral; 1..4 are ARID/LUSH/COLD/ISLES.
-       cell 64 tiles, blend 16 tiles: macro-zones a few cells wide. */
+    /* --- Provinces: stock Region stage biasing sampled fields before
+       relief/rivers. Type 0 neutral; 1..4 = ARID/LUSH/COLD/ISLES.
+       cell 64, blend 16: macro-zones a few cells wide. */
     gen->prov_cfg = (rlk_wg_region_cfg_t){
         .ntypes = 5,
         .cell = 64,
@@ -53,12 +52,10 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
     gen->prov_cfg.types[4].bias[F_CONT] = -0.10f;  /* ISLES: more sea   */
     gen->prov_mod = rlk_wg_region(&gen->prov_cfg);
 
-    /* --- Axes & zones (full wg config), then init: seeds the wg noise, so the
-       macro grid below can sample the wg fields directly (rlk_wg_sample_field).
-       3-axis climate plane (elev x temp x hum): specialist review 2026-10-30,
-       geographer P0 (Köppen simplified on temp x hum). Axis 1 reads
-       F_TEMP_LAT (lapse-cooled + latitudinal gradient, stage 7), not raw
-       F_TEMP, so the map edges are colder (review 2026-10-30). --- */
+    /* --- Axes & zones, then init: seeds the wg noise so the macro grid below
+       can sample wg fields directly (rlk_wg_sample_field). Climate plane
+       (elev x temp x hum); axis 1 reads F_TEMP_LAT (lapse + latitudinal
+       gradient, stage 7), not raw F_TEMP, so map edges are colder. */
     wg->naxes = 3;
     wg->axes[0] = (rlk_wg_axis_t){ .slot = F_ELEV,     .jitter_slot = F_DETAIL, .jitter_amp = 0.03f };
     wg->axes[1] = (rlk_wg_axis_t){ .slot = F_TEMP_LAT, .jitter_slot = F_DETAIL, .jitter_amp = 0.03f };
@@ -211,11 +208,10 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
     };
     rlk_wg_add(wg, rlk_wg_hydro(&gen->hydro_stage));
 
-    /* Stage 3: wg_rivers — project drainage into per-tile river masks.
-       Channel width follows the drain SDF (~log2(acc), capped at cellsize);
-       mask fades 1 tile past the bank, widened by log(acc) (Hack, review
-       2026-10-30, acc_log_gain); valley reach = 2 * cellsize.
-       Meanders from F_WIG_X/Y, creeks from F_CREEK, lakes from the filtered grid. */
+    /* Stage 3: wg_rivers — per-tile river masks from the drain SDF (width
+       ~log2(acc), capped at cellsize), bank fade 1 tile (widened by
+       acc_log_gain), valley reach 2*cellsize. Meanders F_WIG_X/Y, creeks
+       F_CREEK, lakes from the filtered grid. */
     gen->rivers_stage = (rlk_wg_rivers_cfg_t){
         .drain = &gen->drain,
         .elev = &gen->elev_grid,
@@ -226,7 +222,7 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
         .carve = 0.03f,
         .slot_mask = D_RIVER_MASK,
         .slot_carve = D_RIVER_CARVE,
-        /* Hack's law (specialist review 2026-10-30): banks widen with log(acc) */
+        /* Hack's law: banks widen with log(acc) */
         .acc_log_gain = 0.3f,
         /* Lake tiles come from the F_LAKE slot (wg_drain stage): keep the
            river mask pure so the estuary widening only affects rivers. */
@@ -243,7 +239,7 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
     /* Stage 4: Strahler width — narrow headwaters, wide big rivers */
     rlk_wg_add(wg, (rlk_wg_stage_t){ .fn = gen_strahler_stage, .data = gen });
 
-    /* Stage 5: wg_relief — standardised elevation (domain warp, fjords, lapse).
+    /* Stage 5: wg_relief — standardised elevation (warp, fjords, lapse).
        The cfg was built above, before the macro grid fill. */
     gen->relief_mod = rlk_wg_relief(&gen->relief_stage);
     /* Wrapper around the stock relief stage, adding the rain shadow on F_HUM.
@@ -254,11 +250,11 @@ tilemap_gen_generate(tilemap_gen_t *gen, uint64_t seed) {
     rain.data = gen;
     rlk_wg_add(wg, rain);
 
-    /* Stage 6: geology — structural bias on the final elevation + lithology */
+    /* Stage 6: geology — structural bias on final elevation + lithology */
     rlk_wg_add(wg, (rlk_wg_stage_t){ .fn = gen_geology_stage, .data = gen });
 
-    /* Stage 7: latitudinal thermal gradient — after relief (lapse write-back),
-       before classify. The Köppen axis reads D_TEMP_LAT (review 2026-10-30). */
+    /* Stage 7: latitudinal temperature gradient — after relief (lapse),
+       before classify; the Köppen axis reads D_TEMP_LAT. */
     gen->temp_lat_cfg = (gen_temp_lat_cfg_t){
         .f_temp = F_TEMP,
         .slot_out = D_TEMP_LAT,

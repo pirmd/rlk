@@ -2,18 +2,13 @@
 #define RLK_PATH_DISTANCE_H
 
 /*
- * Multi-source Dijkstra distance field on the same cost model as
- * rlk_path_find (rlk_path_cost_t). All sources are seeded with g = 0 and
- * the window is flooded once: g[cell] is the cheapest cost from any
- * source, parent[cell] the next cell on that cheapest route (gradient
- * descent toward the nearest source). Typical uses: flow fields (one
- * flood per goal instead of one A* per agent), spawn weighting, heat or
- * danger maps, O(1) "nearest source" queries.
- * Deterministic: heap ties are broken by cell index, never by memory
- * addresses. Zero-allocation: the caller provides the scratch buffers.
- *
- * rlk_path_distance_build resets the whole window (O(w*h)) on every call:
- * pass small windows around the area of interest, not whole maps.
+ * Multi-source Dijkstra distance field, same cost model as rlk_path_find.
+ * All sources seeded with g = 0, window flooded once: g[cell] = cheapest
+ * cost from any source, parent[cell] = next cell toward it. Flow fields
+ * (one flood per goal instead of one A* per agent), spawn weighting, heat
+ * maps, O(1) nearest-source queries. Deterministic (heap ties by cell
+ * index), zero-allocation; resets the whole window per call — pass small
+ * windows, not whole maps.
  *
  *   int g[W*H], parent[W*H], heap[W*H], heap_pos[W*H];
  *   rlk_path_distance_scratch_t scr = { g, parent, heap, heap_pos };

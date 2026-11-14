@@ -13,7 +13,8 @@
 #define REGION_SEED_SALT 0x9E0F5C3D11ULL
 #define CELL_TYPE_SALT 3
 
-/* Region type of a Voronoi cell: decorrelated hash of the cell id, in [0, ntypes). */
+/* Region type of a Voronoi cell: decorrelated hash of the cell id,
+   in [0, ntypes). */
 static uint8_t
 cell_type(uint64_t cell_id, int ntypes) {
     return (uint8_t)((rlk_hash_sub(cell_id, CELL_TYPE_SALT) >> 33) % (uint64_t)ntypes);

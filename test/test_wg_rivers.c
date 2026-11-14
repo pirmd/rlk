@@ -323,9 +323,8 @@ test_rivers_stage_lake(void) {
     assert(any_lake);
 }
 
-/* Log-width law (specialist review 2026-10-30): acc_log_gain > 0 widens the
-   bank fade with log10(acc), so the total mask strictly grows; gain <= 0
-   switches the rule off. */
+/* acc_log_gain > 0 widens the bank fade with log10(acc), so the total mask
+   strictly grows; gain <= 0 switches the rule off. */
 static unsigned long
 mask_sum(rlk_wg_t *wg) {
     run_fill(wg);

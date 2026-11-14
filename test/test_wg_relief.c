@@ -99,7 +99,7 @@ test_relief_stage_basic(void) {
             assert(elev_at(x, y) == cont_at(&wg, x, y));
 }
 
-/* Hills: elev = cont + hills_amp * (hills - 0.5), sampled at the tile centre. */
+/* Hills: elev = cont + hills_amp * (hills - 0.5) at the tile centre. */
 static void
 test_relief_stage_hills(void) {
     rlk_wg_t wg = wg_min();

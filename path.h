@@ -2,17 +2,13 @@
 #define RLK_PATH_H
 
 /*
- * A* pathfinding with integer costs on a tile-aligned window
- * (rlk_lattice_t with cellsize == 1). 8-connected: a cardinal step costs
- * 2 * enter cost, a diagonal step costs 3 * enter cost (exact 1.5 ratio,
- * no rounding) and is only allowed when both adjacent cardinal cells are
- * enterable (no corner cutting). The heuristic is the octile distance
- * scaled the same way, so it is admissible and consistent. Deterministic:
- * heap ties are broken by larger g, then by cell index, never by memory
- * addresses. Zero-allocation: the caller provides the scratch buffers.
- *
- * rlk_path_find resets the whole window (O(w*h)) on every call: pass
- * small windows around the entity, not whole maps.
+ * A* with integer costs on a tile-aligned window (cellsize == 1).
+ * 8-connected: cardinal step = 2 * enter cost, diagonal = 3 * enter cost
+ * (exact 1.5 ratio), allowed only when both adjacent cardinal cells are
+ * enterable (no corner cutting). Octile heuristic scaled the same way
+ * (admissible, consistent). Deterministic: heap ties by larger g, then
+ * cell index. Zero-allocation. Resets the whole window per call: pass
+ * small windows, not whole maps.
  *
  *   int g[W*H], parent[W*H], heap[W*H], heap_pos[W*H], f[W*H];
  *   uint8_t closed[W*H];

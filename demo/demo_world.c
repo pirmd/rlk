@@ -1,22 +1,16 @@
 /*
  * World map demo (terminal): tilemap_gen map + local POI content.
  *
- * Shows the rlk worldgen pipeline headless on one seed:
- *   1. tilemap_gen generates the overworld (terrain, rivers, POIs)
- *   2. each cave/dungeon POI gets local content (rlk_ca_fill / rlk_bsp_fill)
- *      over its bbox; already-processed POIs are reserved (no overlap)
- *   3. map stats + ASCII render
- *
- * Deliberately NOT here: roads between POIs, POI networks, spawn-driven
- * composition — that is game logic (a pirr-style world layer, see the
- * wg_network backlog item), not an rlk demo. Pathfinding is demoed in
- * demo_viewer (nav source) and exercised headless by test_tilemap_gen
- * (playability probe). Stage/field probes: demo_viewer modes/overlays.
- * Raster export for GIS tools: demo_gis.
- *
- * Terminal-only: no PXL dependency.
- *
  *   demo_world [seed]
+ *
+ * 1. tilemap_gen generates the overworld (terrain, rivers, POIs)
+ * 2. each cave/dungeon POI gets local content (rlk_ca_fill / rlk_bsp_fill)
+ *    over its bbox; processed POIs are reserved (no overlap)
+ * 3. map stats (rlk_stats_*) + ASCII render
+ *
+ * Not demoed (game logic, not rlk): roads/POI networks/spawn composition.
+ * Pathfinding: demo_viewer nav overlay + test_tilemap_gen playability probe.
+ * GIS raster export: demo_gis. Terminal-only: no PXL dependency.
  */
 
 #include <stdint.h>
@@ -155,7 +149,6 @@ main(int argc, char **argv) {
 
     /* Static buffers: no allocation. */
     static tilemap_gen_t gen;
-    static uint8_t stat_scratch[TM_W * TM_H];
     static uint8_t ca_grid[MAX_POI_SZ * MAX_POI_SZ];
     static int ca_regions[MAX_POI_SZ * MAX_POI_SZ];
     static uint8_t bsp_grid[MAX_POI_SZ * MAX_POI_SZ];
@@ -176,7 +169,7 @@ main(int argc, char **argv) {
 
     /* 1b. Map probes: stats right after generation (deterministic per seed). */
     tilemap_gen_stats_t stats;
-    tilemap_gen_stats(&gen, &stats, stat_scratch);
+    tilemap_gen_stats(&gen, &stats);
     tilemap_gen_stats_print(&gen, &stats);
     printf("\n");
 

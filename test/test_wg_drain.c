@@ -6,8 +6,9 @@
 
 static rlk_tile_t tilebuf[MAP * MAP];
 
-/* Writer: derived[0]=acc -> variant, derived[1]=dir -> type, derived[2]=fill depth -> flags.
-   acc and fill depth are clamped [0,1] -> 0..255; dir is raw 0..8. */
+/* Writer: derived[0]=acc -> variant, derived[1]=dir -> type,
+   derived[2]=fill depth -> flags. acc and fill depth are clamped
+   [0,1] -> 0..255; dir is raw 0..8. */
 static void
 write_drain(const rlk_wg_ctx_t *ctx, const void *data, rlk_tile_t *out) {
     (void)data;

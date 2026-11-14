@@ -131,7 +131,7 @@ test_fill_grid(void) {
 
     do_fill();
 
-    /* After fill: grid has walls+floors, iterations ran, window geometry set. */
+    /* After fill: grid has walls+floors, window geometry set. */
     int floor_count = 0;
     int wall_count = 0;
     for (size_t i = 0; i < FIXTURE_GRID_SIZE; i++) {

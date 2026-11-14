@@ -308,7 +308,7 @@ rlk_bsp_fill(rlk_bsp_t *bsp, const rlk_lattice_t *win, rlk_tilemap_t *tm,
             const int wx = l->origin_x + x * cs;
             const int wy = l->origin_y + y * cs;
             uint8_t cell = bsp->grid[idx];
-            /* Preset biome to cell type, then the writer fills type/flags/variant. */
+            /* Preset biome; the writer fills type/flags/variant. */
             rlk_tile_t tile = { .biome = cell };
             bsp->write(bsp->seed, bsp->write_data, wx, wy, &tile);
             for (int dy = 0; dy < cs; dy++) {

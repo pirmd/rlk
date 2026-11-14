@@ -179,7 +179,7 @@ write_tile(const rlk_wg_ctx_t *ctx, void *user) {
     rlk_tilemap_t *tm = (rlk_tilemap_t *)user;
     rlk_tile_t *tile = rlk_tilemap_get(tm, ctx->wx, ctx->wy);
     assert(tile);
-    /* Reset the tile, store the zone index, then the zone writer fills the rest. */
+    /* Reset the tile, store the zone index; the writer fills the rest. */
     *tile = (rlk_tile_t){.biome = ctx->zone};
     const rlk_wg_zone_t *z = &ctx->wg->zones[ctx->zone];
     z->write(ctx, z->data, tile);

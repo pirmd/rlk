@@ -13,7 +13,8 @@ rlk_clampf(float v, float lo, float hi) {
     return v < lo ? lo : (v > hi ? hi : v);
 }
 
-/* Linear interpolation between a and b at t. Unclamped; t may be outside [0,1]. */
+/* Linear interpolation between a and b at t. Unclamped: t may be outside
+   [0,1]. */
 static inline float
 rlk_lerp(float a, float b, float t) {
     return a + (b - a) * t;
